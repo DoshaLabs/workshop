@@ -12,6 +12,7 @@ export const KEY_MAX = 200
 
 export class TileStore {
   private data: Record<string, unknown> | null = null
+  private loading: Promise<Record<string, unknown>> | null = null
   private chain: Promise<void> = Promise.resolve()
 
   constructor(private readonly file: string) {}
@@ -20,15 +21,39 @@ export class TileStore {
     return new TileStore(join(dataDir, id, 'store.json'))
   }
 
-  private async load(): Promise<Record<string, unknown>> {
-    if (this.data) return this.data
+  private load(): Promise<Record<string, unknown>> {
+    if (this.data) return Promise.resolve(this.data)
+    // One read per store, however many calls arrive before it finishes (two reads of a bad file
+    // would both try to move it aside).
+    this.loading ??= this.read().then((d) => (this.data = d))
+    return this.loading
+  }
+
+  /**
+   * A missing file is an empty store. A file that cannot be read, or is not a JSON object, is
+   * moved aside to `store.json.broken-<time>` and the store starts empty: starting empty over it
+   * would let the next write destroy whatever it held. If it cannot even be moved, the store
+   * refuses to work rather than write over it.
+   */
+  private async read(): Promise<Record<string, unknown>> {
+    let why: string
     try {
       const parsed = JSON.parse(await readFile(this.file, 'utf8')) as unknown
-      this.data = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
-    } catch {
-      this.data = {}
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>
+      why = `it holds ${Array.isArray(parsed) ? 'an array' : parsed === null ? 'null' : typeof parsed}, not an object`
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return {}
+      why = err instanceof SyntaxError ? `it is not JSON: ${err.message}` : (err as Error).message
     }
-    return this.data
+    const aside = `${this.file}.broken-${new Date().toISOString().replace(/[:.]/g, '-')}`
+    try {
+      await rename(this.file, aside)
+    } catch (err) {
+      this.loading = null
+      throw new Error(`storage: ${this.file} could not be read (${why}) nor moved aside (${(err as Error).message})`)
+    }
+    console.warn(`[workshop] storage: ${this.file} could not be read (${why}); moved to ${aside}, starting empty`)
+    return {}
   }
 
   async get(key: string): Promise<unknown> {
