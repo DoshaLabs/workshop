@@ -1,133 +1,155 @@
-# What is missing, and the order to build it
+# The work list
 
-Written 10 Nov 2026, after the second build session. `CLAUDE.md` is the design; this file is the
-gap between it and the code, as a work list. Section numbers (§) are `CLAUDE.md`'s. Sizes are
-rough: S = under a session, M = one session, L = several.
+Rewritten 10 Nov 2026, late, after phases 1 (first round) and 2 landed. `CLAUDE.md` is the
+design; this file is what is left, in the order to build it. Section numbers (§) are
+`CLAUDE.md`'s. Sizes: S = under a session, M = one session, L = several.
 
-## Where things stand
+## Done so far
 
-Built: the sandbox and most of the tile contract (§5), themes, sessions as terminals (§7), the
-Wikipedia and Reminders tiles, the `+` menu with "make one with Claude", `workshop tile dev`.
+- The sandbox and tile contract (§5): storage, sessions, usage, door, notify, files, the overlay
+  view, core's fonts. Not yet: `transcripts`, the trusted tier.
+- Tiles: Wikipedia (deck's, with clock, weather, lightbox) and Reminders.
+- Sessions: the real CLI in tmux, conversation tiles, context and cost on each, the usage meters,
+  ⌘1–9 / ⌘[ ⌘] / ⌘N, park and resume.
+- The status mark: the Knot by default, sprite packs over it, the setup screen, Foxtrot's mapping.
+- The tile column: four rows, ↕, the `+` cell with "make one with Claude", dev tiles remembered.
+- Themes, fonts (Nunito, JetBrains Mono, Source Serif 4), `npm run dev`.
 
-The three things that make workshop feel unlike deck today:
+## Track A: the tile menu becomes three tabs (M)
 
-1. **A session is only a row and a terminal.** deck shows every session as a live conversation
-   tile, with status, context and cost on it. Workshop computes context % and cost per session
-   (`usage.ts`) and shows neither anywhere; the top bar's 5-hour and weekly meters are hidden
-   until a session has reported, so a fresh window shows no usage at all.
-2. **No mascot.** No sprite-pack format, no setup screen to drop a sheet into, no Foxtrot mapping,
-   no pose on a session's head. Status is a dot.
-3. **Nothing can be installed.** Not the app (no packaging), not a tile (no install, no index).
+The `+` cell's menu (`TilePicker.tsx`) is one list today. It becomes:
 
-## Phase 0: land and verify what exists (S)
-
-- Commit the second session's work.
-- A person clicks through the app: launcher, theme picker, `+` menu, ↕, tabs in Reminders, the
-  Wikipedia lightbox, drag-select in a terminal.
-- A real Claude builds a tile through "make one with Claude" (so far only the stand-in has).
-- Tests for what was never exercised: the real fleet poll, sessions surviving a restart and a
-  reboot, the WebRTC and DNS side doors, camera and microphone.
-- `workshop.storage` must move an unreadable store aside, not start empty over it.
-
-## Phase 1: sessions as deck has them (L) · §7, §9
-
-The daily experience. Until this is done Colin cannot move from deck to workshop, and nothing
-else gets used for real.
-
-| Piece | From deck | Size |
+| Tab | What is in it | Source |
 |---|---|---|
-| ✅ Context % and cost on each session's row; usage meters always present (empty until known) | `usage.ts` data exists | S |
-| ✅ Session tiles: the conversation, not a terminal, for every unfocused session | `transcript.ts`, `ChatView` | L |
-| `workshop.sessions.transcript` + the `transcripts` permission and its loud prompt | same tailer | M |
-| Subagent and helper-session tiles with pause and kill (wolfpack) | hooks, sidecar reading | L |
-| The leash: PreToolUse held at `/pretool` | `hooks.ts` | M |
-| Permission prompts answered from a tile (the biggest gap against the Claude app) | new; verify the route first | M |
-| Preview pane: read, tick boxes, edit a file a session points at | deck's pane | M |
-| ✅ Keyboard shortcuts (⌘1–9, ⌘[ ⌘], ⌘N); still to do: drag to reorder tiles, image paste into a prompt | deck | M |
-| ✅ Tile column state (`off`, `extra`, `span`) into core's settings, out of `localStorage` | | S |
+| **Built in** | Tiles that ship with workshop: Wikipedia, Reminders, Git, later Files and Spend | `tiles/` in the app |
+| **Yours** | Tiles you are building or loaded from a folder; "make one with Claude"; "load a folder"; stop loading | `settings.devTiles` |
+| **Marketplace** | Tiles from the index: name, author, hint, permissions, install / update / remove | the index (track D) |
 
-The four ✅ rows were done on 10 Nov 2026 (`docs/progress/2026-11-10-phase1.md`).
+- A tile's row shows the same things on every tab: icon, name, hint, its permissions in plain
+  words, and whether it is on.
+- Marketplace before the index exists: the tab is there and says what it will hold. It must not
+  be a dead end once track D lands, so build it against the index's file format from the start.
+- This reverses one line of the old plan: Wikipedia and Reminders stay built in. They are still
+  written the author's way (ground rule 9), they just ship in the app.
 
-## Phase 2: the mascot (M) · §8
+## Track B: the trusted tier (M, after Colin agrees the design) · §5
 
-Independent of everything else; can run beside phase 1. **Done 10 Nov 2026**
-(`docs/progress/2026-11-10-phase2.md`), with Colin's change of the same day: the Knot, not a dot
-or the fox, is the default mark.
+Blocks Git, Spotify and PS2. A proposal to react to, not a decision:
 
-- [x] The Knot: the default status mark on every session and the app's mark, themed, tested for
-  contrast in every theme.
-- [x] The sprite-pack format: a PNG plus JSON mapping each state to a row or run of frames and a speed.
-- [x] The setup screen: drop a PNG, guess the grid, map states with a live preview, save.
-- [x] The Foxtrot mapping for Elthen's sheet (our data, not his art), the link to his page, the
-  credit and licence lines. No sheet in the repo, no fetching it for the user.
-- [x] The pose on every session head (idle, look around, run, leap, sleep); the Knot when no pack
-  is installed; `notify({ bark })` wired to the leap and the Knot's flare.
-- [x] The worker coat as a tested tint and a pack field (drawn nowhere until subagent tiles exist).
-- [ ] ~~Commission the owned fox~~: no longer needed for launch (§8).
+- A trusted tile adds `backend.mjs`. Core runs it as its own process (Electron `utilityProcess`),
+  started when the tile is turned on and stopped when it is turned off or core quits.
+- The page calls `workshop.backend.call(op, body)`; core passes it to the backend and the answer
+  back. The page stays in the sandbox: only the backend has the machine.
+- The manifest declares `"backend": { "entry": "backend.mjs", "ops": [...] }`. Undeclared ops are
+  refused by core before they reach the backend, as with the door.
+- The backend is told which session folders exist (it needs them for git) but gets no session
+  tokens and cannot type into a session.
+- At launch only tiles on the **Built in** tab may have a backend. An installed or local tile
+  that declares one is refused, with the reason shown. Opening it to others comes with the
+  review process and the "full access" badge (§5), later.
+- To decide: one process per tile or one shared; whether a backend may keep running with the
+  tile turned off (Spotify's now-playing would want it; default no).
 
-## Phase 3: finish the author's path (L) · §5, §6
+## Track C: the Git tile, written fresh (L) · §4
 
-Ground rule 9 says our own tiles walk this path, so it has to exist end to end.
+Not a port of deck's `git.ts`. Built in, trusted tier, on the contract, from the starter.
 
-- `workshop tile check <folder>`: the validator from the shell, for authors, for the Claude
-  building a tile (which cannot see the window), and for the index's CI. (S)
-- Install, update, remove: a folder into userData `tiles/` at a pinned commit, the permission
-  prompt on install and again when permissions change, storage kept or deleted on remove. (M)
-- The trusted tier: design `backend.mjs` with Colin first (process model, what it may be asked,
-  the louder prompt), then build it. Git, Spotify and PS2 wait on this. (L)
-- The tile template as its own repo with an `npm create` script; `template/` here is its seed. (S)
-- Move Wikipedia and Reminders out of core into their own repos, installed like anyone's. (S)
-- A flag-parsing helper for door ops in the template (every tile with options rewrites it). (S)
+1. **Changes**: every open session by project; a line each with branch, files touched, `+n −m`;
+   click to unfold the diffs.
+2. **Worktrees**: a row per worktree with its session, branch, ahead / behind main, dirty or
+   clean; open a session there, diff against main, rebase, merge, open a PR, remove once merged;
+   a stale filter; a warning when two worktrees touch one file; "new chat in a worktree".
+3. **History**: the log across branches, each commit tagged with the session that made it; a
+   "what did Claude do today" filter.
+4. **PRs and CI**: your open pull requests and their checks, through `gh`.
 
-## Phase 4: the tiles the plan promises (L) · §3, §4
+Rules carried from §4: destructive actions are two clicks (the first arms the button red for
+three seconds); never force-push; every poll runs with `GIT_OPTIONAL_LOCKS=0` so it never fights
+Claude for the index lock. Order: Changes first (it is the diff review pane §9 asks for), then
+Worktrees, History, PRs. Needs from core: sessions' folders (`sessions: read` has them) and
+which session made a commit (new: core records each session's commits, or the backend matches
+by time and worktree; decide while building).
 
-Each is its own track once phase 3's pieces it needs exist. Sandboxed ones can start now.
+## Track D: the marketplace, smallest version that works (L) · §6
+
+1. `workshop tile check <folder>`: the validator from the shell. Authors, the Claude building a
+   tile, and the index's CI all need it. (S)
+2. Install, update, remove: a tile cloned at a pinned commit into userData `tiles/`; the
+   permission prompt on install and again when permissions change; storage kept or deleted on
+   remove. (M)
+3. The index: a repo with `tiles.json` (id, repo, pinned commit, permissions, category, author)
+   and CI that runs `tile check`, confirms nothing is built on install, flags permissions, and
+   routes transcripts-plus-network to a person. Core reads it over https. (M)
+4. The Marketplace tab reads the index and installs from it. (S, on track A)
+5. Seed it with one tile of ours built outside core (a focus timer made with "make one with
+   Claude" is the obvious first), so the whole path has been walked once.
+
+Later, only when strangers are submitting: the static site, the install counter and rankings,
+profiles (optional sign-up, never required; to decide: what one holds, GitHub sign-in or not),
+sprite packs as a second category, the tile template as its own repo with `npm create`.
+
+## Track E: the rest of sessions (L) · §7, §9
+
+| Piece | Size |
+|---|---|
+| Preview pane: read, tick boxes, edit a file a session points at; file paths in a conversation become clickable | M |
+| Subagent and helper-session tiles with pause and kill (wolfpack); the worker coat finally drawn | L |
+| The leash: PreToolUse held at `/pretool` | M |
+| Permission prompts answered from a session's tile (verify the route first; the biggest gap against the Claude app) | M |
+| Drag to reorder tiles, both columns | S |
+| Image paste into a tile's prompt bar | S |
+| `workshop.sessions.transcript` and the `transcripts` permission, with its loud prompt | M |
+
+## Track F: loose ends and things only half done (S each)
+
+- Nobody has clicked through the app by hand since phases 1 and 2. Do that first.
+- A real Claude has never built a tile through "make one with Claude".
+- "Bark" is deck's word and means nothing to a tile author. Rename it in the contract
+  (`notify({ text, attention: true })` or similar) before anyone outside uses it.
+- `workshop.storage` starts empty over a store it cannot parse; it must move the file aside.
+- A project is the session's start folder, not its repo root: core should resolve the root once
+  and report it in `workshop.sessions` (Reminders files by it; Git needs it).
+- Never exercised: sessions surviving a restart and a reboot, the WebRTC and DNS side doors,
+  camera and microphone, reduced motion, the Knot's clocks stopping in a hidden window, a very
+  long transcript's first read.
+- A type scale as variables; a font setting beside the theme picker; Glass's picture wall.
+- The two agent worktrees under `.claude/worktrees/` can be removed.
+
+## Track G: the other promised tiles · §3
 
 | Tile | Tier | Waits on |
 |---|---|---|
-| Spend / usage | Sandboxed | nothing (`usage` exists) |
-| Files (a directory tree) | Sandboxed | nothing (`files` exists) |
+| Spend / usage | Built in, sandboxed | nothing |
+| Files (a directory tree) | Built in, sandboxed | nothing |
 | Web-app tiles (a site by name and URL) | Core | a decision: how a site fits the sandbox |
-| Posture | Sandboxed | camera permission tested |
-| Game Boy, PS1 | Sandboxed, own repos | install; the GPL core stays out of this repo |
-| Git (four tabs) | Trusted, core | the trusted tier |
-| Spotify | Trusted | the trusted tier |
-| PS2 | Trusted | the trusted tier |
+| Posture | Marketplace, sandboxed | camera tested; install |
+| Game Boy, PS1 | Marketplace, own repos | install; the GPL core stays out of this repo |
+| Spotify, PS2 | Trusted | track B, and the trusted tier opened beyond built-ins |
 
-## Phase 5: something a stranger can install (M) · §10
+## Track H: something a stranger can install (M) · §10
 
-- Packaging: electron-builder, `tmux.conf` / the door CLI / `tiles/` / `template/` as
-  `extraResources` (they are read from inside the asar today), icon, entitlements, signing.
-- The install script (macOS, tmux, a logged-in `claude`).
-- First launch: the tutorial session, built on "make one with Claude" with a focus timer.
-- `README` (macOS, Claude Code, how to build a tile) and `LICENSE`.
-- Bring your own model: per-session provider profiles (`ANTHROPIC_BASE_URL` and friends).
-- Glass's picture wall.
+Packaging (electron-builder; `tmux.conf`, the door CLI, `tiles/`, `template/`, `assets/` as
+`extraResources`), the install script, the tutorial session on first launch, `README`,
+`LICENSE`, bring-your-own-model provider profiles.
 
-## Phase 6: the marketplace (L) · §6
+## Order
 
-Only worth starting when phases 3 and 5 are done: nobody can install from an index into an app
-that cannot install tiles or be installed itself.
+Next round, three agents side by side (they touch different files):
 
-1. The index repo: `tiles.json`, CI that runs `tile check`, flags permissions and routes
-   transcripts-plus-network to a person.
-2. The Browse tab in the `+` menu, reading the index.
-3. The static site.
-4. The install counter (tile id only, can be turned off), then rankings.
-5. Profiles: optional, never needed to write, share or submit a tile. To decide: what a profile
-   holds, and whether sign-in is GitHub's.
-6. Sprite packs as a second category.
+1. **Track A + D1 + D2**: the three-tab menu, `tile check`, install / update / remove.
+2. **Track E, first half**: the preview pane with clickable paths, drag to reorder, image paste.
+3. **Track F**: the loose ends, starting with the rename of "bark" and the storage fix.
 
-## Order, and what can run at once
+Then, once Colin has agreed track B's design: **B then C** (the trusted tier, then Git, Changes
+tab first), beside **D3–D5** (the index and the Marketplace tab live). Then the second half of
+E (wolfpack, leash, permission prompts), G's two sandboxed built-ins, and H.
 
-0 first. Then 1 and 2 side by side (different files), with phase 3's `tile check` and install
-slotted in early because they are small and unblock phase 4's sandboxed tiles. The trusted tier
-needs a design conversation before any code. 5 before 6.
+## Decisions that are Colin's
 
-Decisions that are Colin's and block work:
-
-- The trusted tier's design (blocks git, Spotify, PS2).
-- Whether permission prompts can ride the PreToolUse route (verify, then decide the UI).
+- Track B's design (blocks Git, Spotify, PS2).
+- The name and home of the index repo, and the public name of the app (it also names the bridge
+  and the template's package).
+- Renaming "bark" in the contract, and to what.
+- Whether permission prompts can ride the PreToolUse route (verify, then choose the UI).
 - How web-app tiles fit the sandbox.
-- The public name (blocks the template's package name and the bridge's name).
 - Profiles: what they hold and how sign-in works.
