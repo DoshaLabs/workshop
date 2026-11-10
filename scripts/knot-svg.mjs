@@ -169,18 +169,18 @@ const TWINKLE = `.tw{animation:tw 4s ease-in-out infinite alternate}@keyframes t
 
 // ── knot.svg ─────────────────────────────────────────────────────────────────
 
-// One cycle is P loops. The app's working knot takes 2.4 s a loop, which was too busy for a page
-// people read (Colin, 10 Nov 2026), so the pictures turn at 6 s a loop, between working and
-// resting. 36 frames a loop keeps each step small enough to read as motion; the strand is drawn
-// with a few fewer segments to hold the files near their old size.
-const LOOP = 6
-const PER_LOOP = 36
+// One cycle is P loops. The app's working knot takes 2.4 s a loop, which is too busy for a page
+// people read (Colin, 10 Nov 2026), so the pictures turn at 8 s a loop, at 15 frames a second:
+// smooth enough to read as motion. Every frame is stored in the file, so the frame rate is paid in
+// size (about 1 MB each); the strand is drawn with fewer segments to keep it there.
+const LOOP = 8
+const PER_LOOP = 15 * LOOP
 
 function knotSvg() {
   const S = 240
   const pad = 20
   const W = S + pad * 2
-  const k = knotFrames({ S, frames: PER_LOOP * P, segs: 96, prefix: 'k', x: pad, y: pad, seconds: LOOP * P })
+  const k = knotFrames({ S, frames: PER_LOOP * P, segs: 84, prefix: 'k', x: pad, y: pad, seconds: LOOP * P })
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${W}" width="${W}" height="${W}" role="img" aria-label="The Knot, workshop's mark: a cinquefoil, the (2,5) torus knot, turning, a pulse riding its strand">
 <title>The Knot</title>
 <defs>${SKY_DEFS}<clipPath id="disc"><circle cx="${W / 2}" cy="${W / 2}" r="${W / 2}"/></clipPath></defs>
@@ -199,7 +199,7 @@ function bannerSvg() {
   const S = 300
   const kx = 104
   const ky = (H - S) / 2
-  const k = knotFrames({ S, frames: PER_LOOP * P, segs: 92, prefix: 'b', x: kx, y: ky, seconds: LOOP * P })
+  const k = knotFrames({ S, frames: PER_LOOP * P, segs: 80, prefix: 'b', x: kx, y: ky, seconds: LOOP * P })
   // "workshop" and the tagline, set from their outlines beside the knot.
   const word = words.word
   const wordSize = 150

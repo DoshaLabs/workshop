@@ -29,20 +29,22 @@ interface Live {
   visible: boolean
   last: number
   S: number
+  /** Overrides the mode's speed and frame rate (the hero). */
+  look?: { size: number; loop: number; fps: number }
 }
 
 const knots: Live[] = []
 
-function add(canvas: HTMLCanvasElement, mode: KnotMode, start: number): Live | null {
+function add(canvas: HTMLCanvasElement, mode: KnotMode, start: number, look?: Live['look']): Live | null {
   const ctx = canvas.getContext('2d')
   if (!ctx) return null
-  const k: Live = { canvas, ctx, mode, clock: wrapClock(start), flareAt: -1e9, visible: true, last: 0, S: 0 }
+  const k: Live = { canvas, ctx, mode, clock: wrapClock(start), flareAt: -1e9, visible: true, last: 0, S: 0, look }
   knots.push(k)
   return k
 }
 
 function draw(k: Live, now: number): void {
-  const look = MODES[k.mode]
+  const look = k.look ?? MODES[k.mode]
   const S = k.canvas.clientWidth
   if (!S) return
   const dpr = Math.min(2, window.devicePixelRatio || 1)
@@ -99,7 +101,7 @@ function tick(now: number): void {
       k.last = 0
       continue
     }
-    const look = MODES[k.mode]
+    const look = k.look ?? MODES[k.mode]
     const flaring = now - k.flareAt < FLARE_MS
     // Each knot at its own frame rate, as in the app: an idle one wants six a second.
     const fps = flaring ? 30 : look.fps
@@ -128,9 +130,10 @@ const io = new IntersectionObserver((entries) => {
   }
 })
 
-// The hero: the app's mark, working.
+// The hero: the app's mark, full size, but slower than a working session (2.4 s a loop is too busy
+// for a page people read; Colin, 10 Nov 2026) and at every frame the display can show.
 const hero = document.querySelector<HTMLCanvasElement>('#hero-knot')
-if (hero) add(hero, 'work', 0)
+if (hero) add(hero, 'work', 0, { size: MODES.work.size, loop: 8, fps: 120 })
 
 // The five states, each a button: pressing one flares it, as a call for attention does in the app.
 for (const el of document.querySelectorAll<HTMLButtonElement>('[data-mode]')) {
