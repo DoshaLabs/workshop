@@ -81,6 +81,9 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   `workshop` (userData `workshop`), `workshop-dev` under `npm run dev` (its own socket and folder).
 - Bridge: `sessions.list/watch/paste` (no titles: they quote the conversation) and
   `usage.get/watch` (the two windows, and per session context % and cost, from the status line).
+- `sessions: "launch"` (bridge 1.4; read < launch < write): `workshop.sessions.launch({ folder,
+  worktree? })` opens the launcher filled in, Start focused, only from a real click in the page.
+  It never starts a session or writes a prompt.
 - Overlay (bridge 1.1, `permissions.overlay`): `openOverlay()` lays the tile's own webview over
   the window below a strip core draws (`App.tsx`, `TileLayer.tsx`). Main opens it only after real
   input in that page (`input-event` / `before-input-event`, used up per open) and takes Esc from
@@ -108,8 +111,13 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   sharing one are named together) with branch, files and `+n −m` against HEAD (untracked lines
   counted, binary not), unfolding to the diff the backend parsed into hunks. The page names
   sessions by id; the backend finds their folders. Every git call: argv, no shell,
-  GIT_OPTIONAL_LOCKS=0, no pager or colour, a timeout and a cap. Worktrees, History and PRs say
-  "Coming". Door: `git show`.
+  GIT_OPTIONAL_LOCKS=0, no pager or colour, a timeout and a cap. Door: `git show`.
+  Worktrees: every worktree of each open session's project, with its sessions, ahead / behind main
+  (origin/HEAD, else main, else master), clean or dirty, a stale filter and a warning when two touch
+  one file; diff against main, rebase, merge into main (where main is checked out) and remove once
+  merged, each destructive one two clicks, refused while a session there is busy or the tree is
+  dirty, a conflict aborted at once (`docs/progress/2026-11-10-worktrees.md`). History and PRs say
+  "Coming".
 - Theme variables include `--ws-green` and `--ws-red` (the terminal's, at 4.5:1 on the panel).
 - Session tiles (phase 1, `docs/progress/2026-11-10-phase1.md`): the left column is a column of
   tiles, one per open session, each its live conversation (`ChatView.tsx`; prose as markdown in
@@ -301,7 +309,7 @@ built ON the tile contract (trusted tier) so that tier is exercised before stran
   touched and `+n −m`; click one to unfold its diffs. (deck's version shows only the focused
   session; `src/main/git.ts` there is the starting point, including `GIT_OPTIONAL_LOCKS=0` so a
   poll never fights Claude for the index lock.)
-- **Worktrees.** One row per worktree in the project: the session that owns it, its branch, ahead
+- **Worktrees** (built; Open a PR waits for the PRs tab). One row per worktree in the project: the session that owns it, its branch, ahead
   / behind main, dirty or clean. One-click actions: open a session there, diff against main,
   rebase onto main, merge into main, open a PR, remove the worktree once merged. A "stale" filter
   for worktrees whose session is gone. A warning when two worktrees touch the same file. "New
@@ -438,6 +446,7 @@ Behind a permission:
 workshop.storage.get/set/watch     // "storage": one JSON store per tile, written atomically by main
 workshop.sessions.list/watch       // "sessions": "read"  → name, start folder (project), repo root (root), status, focused
 workshop.sessions.transcript(id)   // "transcripts"       → the conversation (see the safeguard)
+workshop.sessions.launch({ folder, worktree })  // "sessions": "launch" → the new-session form filled in; the user presses Start
 workshop.sessions.paste(id, text)  // "sessions": "write" → type into a session
 workshop.usage.get/watch           // "usage"             → costs and rate-limit windows, computed by core
 workshop.door.handle(op, fn)       // "door"              → fn(args, caller, { session }) answers a Claude session
@@ -507,7 +516,7 @@ This generalizes what deck does by hand for each tile (`/deck:mol`, `/deck:remin
 | PS1 | Sandboxed | files, storage |
 | Spotify | Sandboxed | music (core drives Spotify.app and Music.app by AppleScript; art through the tile's origin) |
 | PS2 | Trusted | backend (PCSX2) |
-| Git (core) | Trusted | backend (`git`, `gh`), sessions read |
+| Git (core) | Trusted | backend (`git`, `gh`), sessions launch |
 
 ---
 
