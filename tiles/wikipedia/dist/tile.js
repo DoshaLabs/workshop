@@ -26,6 +26,7 @@ import {
   look,
   otherClock,
   pictureFrom,
+  placesExit,
   placesFrom,
   randomPastDay,
   removePlace,
@@ -374,14 +375,11 @@ function searchPlaces(text) {
   }, SEARCH_DEBOUNCE_MS)
 }
 
+/** Choosing a place is the whole job: it is saved and the editor closes, back to the picture. */
 function pickPlace(p) {
   placeHits = null
+  placesOpen = false
   savePlaces(addPlace(places ?? [], p))
-  const input = main.querySelector('.wiki-place-input')
-  if (input) {
-    input.value = ''
-    input.focus()
-  }
 }
 
 // ---- drawing
@@ -563,7 +561,7 @@ function renderPlaces() {
       { class: 'wiki-places-units' },
       ['F', 'C'].map((u) => el('button', { class: u === unit ? 'on' : '', onclick: only(() => saveUnit(u)) }, `°${u}`))
     ),
-    el('button', { class: 'wiki-back', title: 'Close (Esc)', onclick: only(closePlaces) }, first ? 'not now' : 'done')
+    placesExit(places) && el('button', { class: 'wiki-back', title: 'Close (Esc)', onclick: only(closePlaces) }, placesExit(places))
   )
   put(list, 
     ...(places ?? []).map((p, i) =>

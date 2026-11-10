@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { cleanColumn, legacyColumn, LEGACY_KEYS } from '@shared/column'
+import { cleanColumn, DEFAULT_ORDER, firstColumn, legacyColumn, LEGACY_KEYS } from '@shared/column'
+import { ordered } from '@shared/order'
 import { SettingsStore, cleanSettings } from '../src/main/settings'
 
 describe('cleanColumn', () => {
@@ -43,5 +44,19 @@ describe('settings: column', () => {
     expect(JSON.parse(readFileSync(file, 'utf8')).column).toEqual({ off: ['wikipedia'], extra: [], spans: { reminders: 2 } })
     await s.patch({ column: 'junk' as never, theme: 'nord' })
     expect(new SettingsStore(file).get()).toMatchObject({ theme: 'nord', column: { off: ['wikipedia'] } })
+  })
+})
+
+describe('firstColumn', () => {
+  const catalog = ['git', 'reminders', 'wikipedia']
+  it('puts Wikipedia at the top of a new profile', () => {
+    const c = firstColumn({ off: [], extra: [], spans: {} })
+    expect(c.order).toEqual([...DEFAULT_ORDER])
+    expect(ordered(catalog, c.order ?? [])).toEqual(['wikipedia', 'git', 'reminders'])
+  })
+  it('leaves a profile that already had a column as it was', () => {
+    const old = { off: ['git'], extra: [], spans: {} }
+    expect(firstColumn(old)).toBe(old)
+    expect(firstColumn({ off: [], extra: [], spans: {}, order: ['reminders'] }).order).toEqual(['reminders'])
   })
 })

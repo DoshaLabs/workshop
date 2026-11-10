@@ -250,10 +250,8 @@ button {
   gap: 8px;
   padding: 0 8px 4px;
 }
-.wiki-places-head .wiki-back {
-  margin-left: auto;
-}
 .wiki-places-units {
+  margin-left: auto;
   display: flex;
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 999px;

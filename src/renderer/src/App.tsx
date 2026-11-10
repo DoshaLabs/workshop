@@ -14,7 +14,7 @@ import { Guard } from './Guard'
 import { setPalette } from './terminals'
 import { shortcutOrder, type LaunchPrefill, type SessionsState } from '@shared/sessions'
 import { stepFrom } from '@shared/shortcuts'
-import { LEGACY_KEYS, legacyColumn, type ColumnState } from '@shared/column'
+import { LEGACY_KEYS, firstColumn, legacyColumn, type ColumnState } from '@shared/column'
 import type { Usage } from '@shared/usage'
 import { UsageMeter } from './UsageMeter'
 import { TileLayer, type Instance } from './TileLayer'
@@ -42,6 +42,11 @@ function applyTheme(t: ThemeState): void {
   setPalette(t.term)
 }
 
+/** The ⌘ number of session `id`, if it is one of the first nine. */
+const focusKey = (st: SessionsState | null, order: string[] | undefined, id: string): number | undefined => {
+  const i = shortcutOrder(st, order).indexOf(id)
+  return i >= 0 && i < 9 ? i + 1 : undefined
+}
 const instanceN = (key: string): number => Number(/\.(\d)$/.exec(key)?.[1] ?? 1)
 const tileIdOf = (key: string): string => key.replace(/\.\d$/, '')
 
@@ -99,9 +104,9 @@ export function App() {
         if (saved) return apply(saved)
         let legacy: ColumnState
         try {
-          legacy = legacyColumn((k) => localStorage.getItem(k))
+          legacy = firstColumn(legacyColumn((k) => localStorage.getItem(k)))
         } catch {
-          legacy = { off: [], extra: [], spans: {} }
+          legacy = firstColumn({ off: [], extra: [], spans: {} })
         }
         await window.core.setColumn(legacy)
         try {
@@ -166,6 +171,16 @@ export function App() {
     ]
     return () => offs.forEach((f) => f())
   }, [])
+
+  // A wheel a tile's page could not use scrolls the column it sits in (preload/tile.ts passes it on).
+  const tileScroll = useRef<HTMLDivElement>(null)
+  useEffect(
+    () =>
+      window.core.onTileWheel((_key, dy) => {
+        if (tileScroll.current) tileScroll.current.scrollTop += dy
+      }),
+    []
+  )
 
   // A session coming into focus (started, resumed, clicked) takes the center back from a tile.
   const focusId = sessions?.focus ?? null
@@ -338,7 +353,7 @@ export function App() {
             </div>
           </section>
         ) : focused && !launcher ? (
-          <FocusPane session={focused} usage={usage} />
+          <FocusPane session={focused} usage={usage} n={focusKey(sessions, sessionOrder, focused.id)} />
         ) : (
           <div className="center-scroll">
             <Launcher recent={sessions?.recent ?? []} prefill={prefill} onStarted={() => setLauncher(false)} />
@@ -362,7 +377,7 @@ export function App() {
       </main>
 
       <aside className="col tiles">
-        <div className="tile-scroll">
+        <div className="tile-scroll" ref={tileScroll}>
           {shown.map((i) => {
             const t = i.tile
             const head = heads[i.key]

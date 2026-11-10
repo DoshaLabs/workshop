@@ -93,6 +93,8 @@ export const CH = {
   musicGet: 'ws:tile:music-get',
   musicWatch: 'ws:tile:music-watch', // send: true when the page starts watching, false when it stops
   musicControl: 'ws:tile:music-control',
+  /** send: a wheel the page could not use (it has nothing left to scroll that way), for the column: dy in px. */
+  wheel: 'ws:tile:wheel',
   // main → tile page
   view: 'ws:tile:view',
   theme: 'ws:tile:theme',
@@ -113,6 +115,8 @@ export const CH = {
   tilePane: 'ws:core:tile-pane',
   tileOverlay: 'ws:core:tile-overlay',
   tileNotify: 'ws:core:tile-notify',
+  /** A wheel a tile's page passed on: (instance key, dy in px). The tile column scrolls by it. */
+  tileWheel: 'ws:core:tile-wheel',
   themeChanged: 'ws:core:theme',
   setSettings: 'ws:core:set-settings',
   // sessions: core window ⇄ main

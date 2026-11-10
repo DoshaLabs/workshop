@@ -823,8 +823,8 @@ button {
   height: 100%;
 }
 
-/* ---- the session column (SessionColumn.tsx): tiles of conversations, as deck's left column. Three
-   to a column, so a conversation has room to be read; the rest scroll on. */
+/* ---- the session column (SessionColumn.tsx): tiles of conversations, as deck's left column. Four
+   to a column, one row of the tile column each, so the two line up; the rest scroll on. */
 .col.sessions,
 :root[data-wall='true'] .col.sessions {
   background: transparent;
@@ -841,7 +841,7 @@ button {
   scrollbar-width: none;
 }
 .tile.session-tile {
-  height: calc((100cqh - 2 * 8px) / 3);
+  /* One row of the tile column (.tile's height): the two columns line up, as in deck. */
   cursor: pointer;
 }
 .tile.session-tile.attention,
@@ -885,8 +885,8 @@ button {
   white-space: nowrap;
 }
 .tile.tile-plus.session-plus {
-  height: 48px;
-  font-size: 24px;
+  /* A row tall, as deck's left +: the column keeps the tile column's rhythm. */
+  font-size: 34px;
 }
 .parked {
   padding-bottom: 4px;
@@ -2383,4 +2383,54 @@ a.md-path:hover {
 .mascot-state-name small,
 .mascot-pose small {
   font-size: 13px;
+}
+
+/* ---- the window's drag strip (ui fixes, 10 Nov 2026). The bar is .app's padding, a drag region;
+   every child of .app is no-drag (.app > *). The tile layer is a child too, fixed over the whole
+   window for the tile pages to be placed in, so it made the whole window no-drag, the bar
+   included: a drag in the bar selected text instead of moving the window. It and the pages in it
+   take no part (`initial` is no region at all; the value is inherited, and `none` is not a keyword
+   Chromium takes here). A page in a column lies over the column, which is no-drag anyway. */
+.app > .tile-layer {
+  -webkit-app-region: initial;
+}
+
+/* The top bar's controls box drags too between its controls (as deck's .topbar does). */
+.app > .topbar {
+  -webkit-app-region: drag;
+}
+.topbar > * {
+  -webkit-app-region: no-drag;
+}
+
+/* ---- text selection: core's chrome is not text to select (heads, the bar, the columns, the
+   launcher's labels and pills, the + menu); what a person reads or copies is. */
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chat,
+.pane.preview .preview-body,
+input,
+textarea,
+[contenteditable='true'] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+/* A selection started in one conversation stays in it: while the button is down (main.tsx),
+   every other conversation is not selectable. */
+:root.ws-selecting .chat:not([data-selecting]) {
+  user-select: none;
+  -webkit-user-select: none;
+}
+/* A session tile's conversation scrolls for history; at its ends the wheel goes on to the column. */
+.session-tile .chat {
+  overflow-y: auto;
+  overscroll-behavior: auto;
+  scrollbar-width: none;
+}
+.focus-pane.file-over {
+  outline: 1.5px solid var(--ws-accent);
+  outline-offset: -1.5px;
+  border-radius: 10px;
 }

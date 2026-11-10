@@ -630,6 +630,14 @@ function bridge(): void {
   ipcMain.handle(CH.backendCall, (e, op: unknown, body: unknown) => backends.call(withBackend(e).manifest.id, String(op), body))
   ipcMain.handle(CH.backendStatus, (e) => backends.status(withBackend(e).manifest.id))
 
+  // A wheel the page had no use for goes to the tile column (deck's rule: a tile never eats the
+  // wheel). Only from a live tile's top frame, only while it is in the column, never a pinch.
+  ipcMain.on(CH.wheel, (e, dy: unknown) => {
+    const g = guestOf(e)
+    if (!g || (views.get(g.key) ?? 'tile') !== 'tile' || typeof dy !== 'number' || !Number.isFinite(dy) || dy === 0) return
+    win?.webContents.send(CH.tileWheel, g.key, Math.max(-4000, Math.min(4000, dy)))
+  })
+
   ipcMain.on(CH.doorReady, (e, ops: unknown) => {
     const t = tileOf(e)
     const g = guests.get(e.sender.id)

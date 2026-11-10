@@ -46,6 +46,22 @@ export function cleanColumn(raw: unknown): ColumnState | null {
   return { off: list(r.off, isId), extra: list(r.extra, isExtra), spans, ...order, ...sessions }
 }
 
+/**
+ * Where a new profile's tile column starts: Wikipedia at the top right, the rest after it in the
+ * catalog's order (which is the folders' names, so it would otherwise come last).
+ */
+export const DEFAULT_ORDER: readonly string[] = ['wikipedia']
+
+/**
+ * The column a profile starts with when settings has never held one: what the window's old
+ * localStorage kept, if anything (an existing profile, left as it was), else a new profile's,
+ * Wikipedia first.
+ */
+export function firstColumn(legacy: ColumnState): ColumnState {
+  const used = legacy.off.length > 0 || legacy.extra.length > 0 || Object.keys(legacy.spans).length > 0 || legacy.order !== undefined
+  return used ? legacy : { ...legacy, order: [...DEFAULT_ORDER] }
+}
+
 /** What the window's localStorage held before the column moved into settings (bad JSON reads as nothing). */
 export function legacyColumn(get: (key: string) => string | null): ColumnState {
   const read = (key: string): unknown => {
