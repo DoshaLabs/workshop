@@ -1389,3 +1389,332 @@ button {
   max-width: 100%;
   height: auto;
 }
+
+/* ==== Track E: the preview pane (PreviewPane.tsx), file links in a conversation, drag to reorder
+   (reorder.ts) and pictures in a session's prompt bar. ==== */
+
+/* -- the preview pane: the center column, a file a session points at */
+.preview {
+  min-height: 0;
+}
+.preview > .head {
+  flex: none;
+  gap: 8px;
+}
+.preview > .head .name {
+  flex: 0 1 auto;
+}
+.preview-dirty {
+  color: var(--ws-accent);
+}
+.preview-where,
+.preview-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ws-muted);
+  font-size: 11px;
+}
+.preview-where {
+  flex: 1 1 0;
+  font-family: var(--ws-font-mono);
+}
+.preview-meta {
+  flex: none;
+}
+.preview-btn {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--ws-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ws-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.preview-btn:hover {
+  color: var(--ws-ink);
+}
+.preview-btn.on {
+  border-color: var(--ws-accent);
+  color: var(--ws-accent);
+}
+.preview-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.preview-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--ws-line);
+  background: color-mix(in srgb, var(--ws-accent) 10%, transparent);
+  font-size: 12px;
+}
+.preview-bar > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.preview-bar.is-problem {
+  background: color-mix(in srgb, var(--ws-blocked) 12%, transparent);
+}
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.preview-body.is-editing {
+  display: flex;
+  overflow: hidden;
+}
+.preview-note {
+  margin: 0;
+  padding: 16px;
+  color: var(--ws-muted);
+}
+/* Markdown at reading size, in a measure that reads, in the serif face. */
+.chat-text.preview-md {
+  max-width: 72ch;
+  margin: 0 auto;
+  padding: 20px 28px 48px;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.chat-text.preview-md h1,
+.chat-text.preview-md h2 {
+  margin: 18px 0 8px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+.chat-text.preview-md h2 {
+  font-size: 18px;
+}
+.chat-text.preview-md h3,
+.chat-text.preview-md h4,
+.chat-text.preview-md h5,
+.chat-text.preview-md h6 {
+  margin: 14px 0 6px;
+  font-size: 15px;
+}
+.chat-text.preview-md p,
+.chat-text.preview-md ul,
+.chat-text.preview-md ol,
+.chat-text.preview-md blockquote {
+  margin: 0 0 10px;
+}
+.chat-text.preview-md ul,
+.chat-text.preview-md ol {
+  padding-left: 24px;
+}
+.chat-text.preview-md li.md-task {
+  margin-left: -24px;
+}
+.chat-text.preview-md code {
+  font-size: 13px;
+}
+.chat-text.preview-md .md-table table {
+  font-size: 13px;
+}
+.preview-md .md-task > input {
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+}
+.preview-md .md-task > input:not(:disabled) {
+  cursor: pointer;
+}
+/* Code and plain text: mono, numbered, the line a reference pointed at marked. */
+.preview-code,
+.preview-plain {
+  margin: 0;
+  padding: 10px 0 40px;
+  font: 12px/1.55 var(--ws-font-mono);
+  color: var(--ws-ink);
+  tab-size: 2;
+}
+.preview-plain {
+  padding: 10px 14px 40px;
+  white-space: pre;
+}
+.preview-row {
+  display: flex;
+  white-space: pre;
+}
+.preview-row > code {
+  font: inherit;
+  padding-right: 14px;
+}
+.preview-row[data-hit='1'] {
+  background: color-mix(in srgb, var(--ws-accent) 18%, transparent);
+}
+.preview-ln {
+  flex: none;
+  width: 5ch;
+  padding-right: 12px;
+  margin-right: 12px;
+  text-align: right;
+  color: var(--ws-muted);
+  border-right: 1px solid var(--ws-line);
+  user-select: none;
+}
+.preview-edit {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 18px 40px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--ws-ink);
+  font: 12px/1.55 var(--ws-font-mono);
+  tab-size: 2;
+}
+.preview-refused {
+  max-width: 52ch;
+  margin: 48px auto;
+  padding: 0 24px;
+  text-align: center;
+  color: var(--ws-muted);
+}
+.preview-path {
+  font: 11px var(--ws-font-mono);
+  word-break: break-all;
+}
+
+/* -- file references in a conversation: a link to the preview pane */
+a.md-path {
+  color: var(--ws-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+a.md-path:hover {
+  text-decoration: underline;
+}
+.chat-text a.md-path code,
+.chat-user a.md-path {
+  color: var(--ws-accent);
+}
+.chat-tool a.chat-tool-label.md-path {
+  color: inherit;
+}
+.chat-tool a.chat-tool-label.md-path:hover {
+  color: var(--ws-accent);
+}
+
+/* -- drag to reorder: the grip on a tile's head, the bar where it will land, and the pages let go */
+.grip {
+  flex: none;
+  margin-left: -4px;
+  color: var(--ws-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: grab;
+  opacity: 0.45;
+  user-select: none;
+}
+.head:hover > .grip,
+.grip:focus-visible {
+  opacity: 1;
+}
+.grip:active {
+  cursor: grabbing;
+}
+/* A tile page is a webview over the window and takes every pointer event over it, drags too; while
+   a drag is on, the pages let the pointer through to the cell beneath. */
+.ws-dragging .tile-page {
+  pointer-events: none;
+}
+.drop-before {
+  box-shadow: 0 -5px 0 -2px var(--ws-accent);
+}
+.drop-after {
+  box-shadow: 0 5px 0 -2px var(--ws-accent);
+}
+.drag-ghost {
+  position: fixed;
+  top: -200px;
+  left: 0;
+  min-width: 160px;
+  max-width: 280px;
+  border: 1px solid var(--ws-accent);
+  border-radius: 8px;
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  font: 12px var(--ws-font);
+  overflow: hidden;
+}
+.drag-ghost .head {
+  border-bottom: none;
+}
+.session-recent {
+  flex: none;
+  align-self: center;
+  font-size: 11px;
+}
+
+/* -- pictures waiting in a session's prompt bar, above it */
+.tile.session-tile.file-over {
+  border-color: var(--ws-accent);
+}
+.prompt-chips {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 4px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px;
+}
+.prompt-chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 40px;
+  min-width: 40px;
+  max-width: 120px;
+  border: 1px solid var(--ws-line);
+  border-radius: 6px;
+  background: var(--ws-panel);
+  overflow: hidden;
+}
+.prompt-chip img {
+  display: block;
+  height: 100%;
+  max-width: 120px;
+  object-fit: cover;
+}
+.prompt-chip-name {
+  padding: 0 18px 0 6px;
+  font: 10px var(--ws-font-mono);
+  color: var(--ws-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prompt-chip button {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ws-bg) 75%, transparent);
+  color: var(--ws-ink);
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+.prompt-problem {
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--ws-panel);
+  color: var(--ws-blocked);
+  font-size: 11px;
+}

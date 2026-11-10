@@ -12,6 +12,14 @@ export interface ColumnState {
   extra: string[]
   /** Heights set with ↕, by instance, in rows (1 to 4). */
   spans: Record<string, number>
+  /** The tile column's order, by instance, once a tile has been dragged (shared/order.ts). */
+  order?: string[]
+  /**
+   * The session column's order, by session id, once a session has been dragged. Absent, the column
+   * is most recently active first and ⌘1–9 follow the order sessions were started; present, both
+   * follow it (shared/sessions.ts shortcutOrder).
+   */
+  sessions?: string[]
 }
 
 export const EMPTY_COLUMN: ColumnState = { off: [], extra: [], spans: {} }
@@ -22,6 +30,7 @@ const LIMIT = 200
 const isId = (x: unknown): x is string => typeof x === 'string' && ID_RE.test(x)
 const isExtra = (x: unknown): x is string => typeof x === 'string' && /^(.+)\.([2-4])$/.test(x) && ID_RE.test(x.replace(/\.[2-4]$/, ''))
 const isInstance = (x: string): boolean => isId(x) || isExtra(x)
+const isSessionId = (x: unknown): x is string => typeof x === 'string' && /^[0-9a-f]{6}$/.test(x)
 
 /** Only well-formed entries, deduplicated and capped; null if `raw` is not a column at all. */
 export function cleanColumn(raw: unknown): ColumnState | null {
@@ -31,7 +40,10 @@ export function cleanColumn(raw: unknown): ColumnState | null {
   const spans: Record<string, number> = {}
   if (r.spans && typeof r.spans === 'object' && !Array.isArray(r.spans))
     for (const [k, n] of Object.entries(r.spans as Record<string, unknown>).slice(0, LIMIT)) if (isInstance(k) && Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 4) spans[k] = n as number
-  return { off: list(r.off, isId), extra: list(r.extra, isExtra), spans }
+  // The two orders are left out until first saved, so a column without them reads as before.
+  const order = Array.isArray(r.order) ? { order: list(r.order, (x): x is string => typeof x === 'string' && isInstance(x)) } : {}
+  const sessions = Array.isArray(r.sessions) ? { sessions: list(r.sessions, isSessionId) } : {}
+  return { off: list(r.off, isId), extra: list(r.extra, isExtra), spans, ...order, ...sessions }
 }
 
 /** What the window's localStorage held before the column moved into settings (bad JSON reads as nothing). */

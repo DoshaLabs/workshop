@@ -2,8 +2,8 @@
 // numbered lists (nested; `- [ ]` / `- [x]` task items), fenced code, pipe tables, quotes, rules,
 // and inline code, bold, italic and links. It builds a tree that the window turns into elements
 // (renderer/src/Markdown.tsx), never HTML, so nothing in a reply can inject markup. Carried from
-// deck's lib/markdown.tsx, split so the parsing is pure and tested (test/markdown.test.ts); deck's
-// clickable file references wait for the preview pane.
+// deck's lib/markdown.tsx, split so the parsing is pure and tested (test/markdown.test.ts). A task
+// item carries its source line, which is what the preview pane ticks on disk.
 
 export type Inline =
   | { t: 'text'; v: string }
@@ -16,6 +16,8 @@ export interface ListItem {
   inl: Inline[]
   /** A task item: done or not. Undefined for a plain item. */
   task?: boolean
+  /** A task item's line in the source (0-based), so the preview pane can tick that line on disk. */
+  line?: number
   kids: MdBlock | null
 }
 
@@ -32,13 +34,15 @@ const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/
 const TASK_ITEM = /^\[([ xX])\](?:\s+(.*))?$/
 
 interface RawItem {
+  line: number
   indent: number
   ordered: boolean
   text: string
   kids: RawItem[]
 }
 
-export function parseMarkdown(src: string): MdBlock[] {
+/** `base` is the line `src` starts at in the whole file (a quote's body is parsed on its own). */
+export function parseMarkdown(src: string, base = 0): MdBlock[] {
   const lines = src.split(/\r?\n/)
   const out: MdBlock[] = []
   let i = 0
@@ -89,7 +93,7 @@ export function parseMarkdown(src: string): MdBlock[] {
       while (i < lines.length) {
         const m = LIST_ITEM.exec(lines[i])
         if (m) {
-          const item: RawItem = { indent: m[1].replace(/\t/g, '    ').length, ordered: /\d/.test(m[2]), text: m[3], kids: [] }
+          const item: RawItem = { line: base + i, indent: m[1].replace(/\t/g, '    ').length, ordered: /\d/.test(m[2]), text: m[3], kids: [] }
           while (open.length && open[open.length - 1].indent >= item.indent) open.pop()
           ;(open.length ? open[open.length - 1].kids : roots).push(item)
           open.push(item)
@@ -103,8 +107,9 @@ export function parseMarkdown(src: string): MdBlock[] {
     }
     if (/^\s*>/.test(line)) {
       const q: string[] = []
+      const at = i
       while (i < lines.length && /^\s*>/.test(lines[i])) q.push(lines[i++].replace(/^\s*>\s?/, ''))
-      out.push({ t: 'quote', blocks: parseMarkdown(q.join('\n')) })
+      out.push({ t: 'quote', blocks: parseMarkdown(q.join('\n'), base + at) })
       continue
     }
     const p: string[] = [line]
@@ -122,7 +127,7 @@ function list(items: RawItem[]): MdBlock {
     items: items.map((it) => {
       const task = TASK_ITEM.exec(it.text)
       const kids = it.kids.length ? list(it.kids) : null
-      return task ? { inl: parseInline(task[2] ?? ''), task: task[1] !== ' ', kids } : { inl: parseInline(it.text), kids }
+      return task ? { inl: parseInline(task[2] ?? ''), task: task[1] !== ' ', line: it.line, kids } : { inl: parseInline(it.text), kids }
     })
   }
 }

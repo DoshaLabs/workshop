@@ -30,6 +30,11 @@ export interface DoorHost {
    * Answered 204 at once whatever happens: a hook must never wait on core.
    */
   hook?(name: string, token: string, payload: unknown): void
+  /**
+   * POST /core/<name>: a call to core itself from a session (the preview pane's `doc`), with the
+   * session's token. Unlike a hook it is answered: the result, or the error it threw.
+   */
+  core?(name: string, token: string, payload: unknown): Promise<unknown>
 }
 
 type Reply = { ok: true; result: unknown } | { ok: false; error: string }
@@ -142,6 +147,17 @@ export class Door {
         // a hook's malformed body is nobody's problem
       }
       return
+    }
+
+    const own = /^\/core\/([a-z-]{1,32})$/.exec(req.url ?? '')
+    if (own) {
+      if (!this.host.core) return send(404, { ok: false, error: 'POST /tile/<id>' })
+      try {
+        const result = await this.host.core(own[1], token, JSON.parse((await readBody(req)) || '{}'))
+        return send(200, { ok: true, result })
+      } catch (err) {
+        return send(400, { ok: false, error: (err as Error).message })
+      }
     }
 
     const m = /^\/tile\/([a-z0-9-]{1,40})$/.exec(req.url ?? '')

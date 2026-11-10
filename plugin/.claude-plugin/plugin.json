@@ -1,0 +1,9 @@
+{
+  "name": "workshop",
+  "description": "Core's own skills for a Claude session running inside workshop: open a file in the preview pane.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DoshaLabs"
+  },
+  "license": "MIT"
+}

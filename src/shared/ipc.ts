@@ -141,5 +141,13 @@ export const CH = {
   mascotSave: 'ws:core:mascot-save',
   mascotRemove: 'ws:core:mascot-remove',
   mascotChanged: 'ws:core:mascot', // main → window: the active pack, or null
-  mascotBark: 'ws:core:mascot-bark' // main → window: a session's mascot leaps once
+  mascotBark: 'ws:core:mascot-bark', // main → window: a session's mascot leaps once
+  // track E: the preview pane (main/preview.ts) and images for a prompt (main/drops.ts)
+  previewRead: 'ws:core:preview-read',
+  previewWrite: 'ws:core:preview-write',
+  previewTask: 'ws:core:preview-task',
+  previewWatch: 'ws:core:preview-watch',
+  previewOpen: 'ws:core:preview-open', // main → window: a session asked for a file (the doc CLI)
+  previewChanged: 'ws:core:preview-changed', // main → window: the watched file changed on disk
+  dropKeep: 'ws:core:drop-keep'
 } as const

@@ -2,6 +2,8 @@
 // CLI in its own tmux session (CLAUDE.md §7): it survives the app quitting, and closing it in
 // the window only parks it.
 
+import { ordered } from './order'
+
 export type SessionStatus = 'starting' | 'busy' | 'idle' | 'blocked' | 'dead' | 'unknown'
 
 export interface SessionRecord {
@@ -54,10 +56,20 @@ export interface NewSessionOpts {
  * The open sessions in the order ⌘1–9 reach them (and ⌘[ ⌘] step through): the order they were
  * started. The column is ordered by recency, which changes as you work; a number that moved with it
  * could not be learnt by the fingers, so the number stays put and each tile wears its own.
+ *
+ * Once the user has dragged a session (`manual`, the column's saved order), the column stays where
+ * they put it, and the numbers follow it: ⌘1 is the top tile. A session the order has not seen
+ * goes to the foot, so a new session takes the next number and never renumbers the others.
  */
-export function shortcutOrder(s: SessionsState | null): string[] {
-  return (s?.sessions ?? [])
+export function shortcutOrder(s: SessionsState | null, manual?: string[]): string[] {
+  const started = (s?.sessions ?? [])
     .filter((x) => x.open)
     .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
     .map((x) => x.id)
+  return manual ? ordered(started, manual) : started
+}
+
+/** The open sessions as the column draws them: most recently active first, or the user's order. */
+export function columnOrder(s: SessionsState | null, manual?: string[]): string[] {
+  return manual ? shortcutOrder(s, manual) : (s?.sessions ?? []).filter((x) => x.open).map((x) => x.id)
 }

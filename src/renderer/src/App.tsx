@@ -21,6 +21,10 @@ import { TileLayer, type Instance } from './TileLayer'
 import { TilePicker } from './TilePicker'
 import { MascotSetup } from './MascotSetup'
 import { AppMark } from './Knot'
+import { PreviewPane } from './PreviewPane'
+import { closeDoc, useDoc } from './preview-store'
+import { useReorder } from './reorder'
+import { arrange, moved, ordered, pruned } from '@shared/order'
 
 const MAX_INSTANCES = 4
 /** The tile column is this many rows tall, as deck's is by default: a tile is one row unless it asks for more or ↕ made it taller. */
@@ -63,6 +67,11 @@ export function App() {
   const [mascotSetup, setMascotSetup] = useState(false)
   /** Heights the user set with ↕, by instance; a tile without one takes its manifest's `span`. */
   const [spans, setSpans] = useState<Record<string, number>>({})
+  /** The orders the user dragged the two columns into (settings.column), or none yet. */
+  const [order, setOrder] = useState<string[] | undefined>(undefined)
+  const [sessionOrder, setSessionOrder] = useState<string[] | undefined>(undefined)
+  /** The file in the preview pane, if any (track E): it takes the center until closed. */
+  const doc = useDoc()
   /**
    * The column's state is core's (main/settings.ts), so clearing the window's storage cannot reset it.
    * No tile is drawn until it has arrived: a page mounted for a tile that turns out to be off would
@@ -77,6 +86,8 @@ export function App() {
       setOff(c.off)
       setExtra(c.extra)
       setSpans(c.spans)
+      setOrder(c.order)
+      setSessionOrder(c.sessions)
       setColumnReady(true)
     }
     window.core
@@ -107,8 +118,8 @@ export function App() {
     }
   }, [])
   useEffect(() => {
-    if (columnReady) window.core.setColumn({ off, extra, spans }).catch((err) => console.error('[window] the tile column could not be saved:', err))
-  }, [columnReady, off, extra, spans])
+    if (columnReady) window.core.setColumn({ off, extra, spans, ...(order ? { order } : {}), ...(sessionOrder ? { sessions: sessionOrder } : {}) }).catch((err) => console.error('[window] the tile column could not be saved:', err))
+  }, [columnReady, off, extra, spans, order, sessionOrder])
   const spanOf = (i: Instance): number => {
     const n = spans[i.key] ?? i.tile.manifest.span
     return Number.isInteger(n) && n >= 1 && n <= ROWS ? n : 1
@@ -150,6 +161,7 @@ export function App() {
     if (focusId) {
       setPane(null)
       setLauncher(false)
+      closeDoc()
     }
   }, [focusId])
 
@@ -157,9 +169,12 @@ export function App() {
   // reached this way takes the whole center: the launcher, a pane and an overlay give way.
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
+  const sessionOrderRef = useRef(sessionOrder)
+  sessionOrderRef.current = sessionOrder
   useEffect(
     () =>
       window.core.onShortcut((s) => {
+        if (!closeDoc()) return
         if (s.kind === 'new') {
           setPane(null)
           setOverlay(null)
@@ -167,8 +182,8 @@ export function App() {
           return
         }
         const st = sessionsRef.current
-        const order = shortcutOrder(st)
-        const id = s.kind === 'focus' ? (order[s.n - 1] ?? null) : stepFrom(order, st?.focus ?? null, s.dir)
+        const keys = shortcutOrder(st, sessionOrderRef.current)
+        const id = s.kind === 'focus' ? (keys[s.n - 1] ?? null) : stepFrom(keys, st?.focus ?? null, s.dir)
         if (!id) return
         setPane(null)
         setOverlay(null)
@@ -181,6 +196,11 @@ export function App() {
   useEffect(() => {
     if (focusId) setMascotSetup(false)
   }, [focusId])
+
+  // Anything else taking the center closes the preview pane (which asks first if it has unsaved edits).
+  useEffect(() => {
+    if (pane || launcher || mascotSetup) closeDoc()
+  }, [pane, launcher, mascotSetup])
 
 
   /** Every instance that is on, each tile's together, in the catalog's order. */
@@ -230,6 +250,24 @@ export function App() {
   }
   const countOf = (id: string): number => instances.filter((i) => i.tile.manifest.id === id).length
 
+  // The tile column in the order the user dragged it into; tiles it has not seen at the foot.
+  const shown = useMemo(() => {
+    const byKey = new Map(instances.map((i) => [i.key, i]))
+    return ordered([...byKey.keys()], order ?? []).map((k) => byKey.get(k)!)
+  }, [instances, order])
+  const tileDrag = useReorder('tiles', (key, target, after) => {
+    const showing = instances.map((i) => i.key)
+    const known = new Set(tiles.map((t) => t.manifest.id))
+    setOrder(pruned(moved(arrange(showing, order ?? []), key, target, after), showing, (k) => known.has(tileIdOf(k))))
+  })
+  const moveSession = (key: string, target: string | null, after: boolean): void => {
+    const all = sessions?.sessions ?? []
+    const open = all.filter((x) => x.open).map((x) => x.id)
+    // The first drag starts from the column as it is drawn now (most recently active first).
+    const from = sessionOrder ?? open
+    setSessionOrder(pruned(moved(arrange(open, from), key, target, after), open, (k) => all.some((x) => x.id === k)))
+  }
+
   const paneInst = instances.find((i) => i.key === pane)
   const overInst = instances.find((i) => i.key === overlay)
   const focused = sessions?.sessions.find((s) => s.id === sessions.focus && s.open) ?? null
@@ -249,12 +287,17 @@ export function App() {
         <SessionColumn
           state={sessions}
           usage={usage}
-          center={focused && !launcher && !paneInst ? focused.id : null}
+          center={focused && !launcher && !paneInst && !doc ? focused.id : null}
+          order={sessionOrder}
+          onMove={moveSession}
+          onRecent={() => setSessionOrder(undefined)}
           onNew={() => {
+            if (!closeDoc()) return
             setPane(null)
             setLauncher(true)
           }}
           onPick={() => {
+            closeDoc()
             setPane(null)
             setLauncher(false)
           }}
@@ -262,7 +305,9 @@ export function App() {
       </Guard>
 
       <main className="col center">
-        {mascotSetup ? (
+        {doc ? (
+          <PreviewPane target={doc} onClose={() => closeDoc(true)} />
+        ) : mascotSetup ? (
           <div className="center-scroll">
             <MascotSetup onClose={() => setMascotSetup(false)} />
           </div>
@@ -305,12 +350,13 @@ export function App() {
 
       <aside className="col tiles">
         <div className="tile-scroll">
-          {instances.map((i) => {
+          {shown.map((i) => {
             const t = i.tile
             const head = heads[i.key]
             return (
-              <article key={i.key} className={`tile ${pane === i.key ? 'in-pane' : ''}`} style={{ '--span': spanOf(i) } as CSSProperties}>
+              <article key={i.key} className={`tile ${pane === i.key ? 'in-pane' : ''} ${tileDrag.mark(i.key)}`} data-tile={i.key} style={{ '--span': spanOf(i) } as CSSProperties} {...tileDrag.target(i.key)}>
                 <header className="head">
+                  <span {...tileDrag.grip(i.key, label(i))}>⠿</span>
                   <Icon tile={t} />
                   <span className="name" title={t.manifest.hint}>
                     {label(i)}
@@ -359,7 +405,7 @@ export function App() {
               onClose={() => setPicker(false)}
             />
           ) : (
-            <button className="tile tile-plus" title="Add a tile, or make one with Claude" onClick={() => setPicker(true)}>
+            <button className={`tile tile-plus ${tileDrag.mark(null)}`} title="Add a tile, or make one with Claude" onClick={() => setPicker(true)} {...tileDrag.target(null)}>
               +
             </button>
           )}
