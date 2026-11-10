@@ -1932,3 +1932,41 @@ a.md-path:hover {
   padding-top: 0;
   padding-bottom: 0;
 }
+
+/* ---- Recorder: the top bar's screen recorder button (RecordButton.tsx). A hollow dot at rest, a
+   filled one while the frame is open, and the theme's red with the time filmed while a take runs. */
+.rec-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.rec-btn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+}
+.rec-btn.is-open .rec-btn-dot {
+  background: currentColor;
+}
+.rec-btn.is-live {
+  color: var(--ws-blocked);
+  border-color: var(--ws-blocked);
+}
+.rec-btn.is-live .rec-btn-dot {
+  background: var(--ws-blocked);
+  border-color: var(--ws-blocked);
+  animation: rec-btn-pulse 1.2s ease-in-out infinite;
+}
+@keyframes rec-btn-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rec-btn.is-live .rec-btn-dot {
+    animation: none;
+  }
+}

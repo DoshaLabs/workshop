@@ -21,10 +21,14 @@ export default defineConfig({
   preload: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: shared },
-    build: { emptyOutDir: false }
+    // The screen recorder's frame has a preload of its own (main/recorder.ts). It imports nothing
+    // index.ts imports, so the two entries share no chunk.
+    build: { emptyOutDir: false, rollupOptions: { input: { index: resolve('src/preload/index.ts'), recorder: resolve('src/preload/recorder.ts') } } }
   },
+  // Core's window, and the screen recorder's frame (a window of its own: main/recorder.ts).
   renderer: {
     plugins: [react()],
-    resolve: { alias: shared }
+    resolve: { alias: shared },
+    build: { rollupOptions: { input: { index: resolve('src/renderer/index.html'), recorder: resolve('src/renderer/recorder.html') } } }
   }
 })

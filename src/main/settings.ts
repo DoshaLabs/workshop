@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DEFAULT_THEME_ID, THEMES, type Appearance } from '@shared/themes'
 import { cleanColumn, type ColumnState } from '@shared/column'
+import { cleanPrefs, type RecPrefs } from '@shared/recorder'
 
 export interface Settings {
   theme: string
@@ -18,6 +19,8 @@ export interface Settings {
   column?: ColumnState
   /** Where the + menu's Marketplace tab reads the tile index (`tiles.json`): an https URL, or a file on this Mac. Absent: none yet. */
   index?: string
+  /** The screen recorder's switches (sound, microphone, safe zones). Absent: the defaults (shared/recorder.ts). */
+  recorder?: RecPrefs
 }
 
 const DEFAULTS: Settings = { theme: DEFAULT_THEME_ID, appearance: 'system', devTiles: [], mascot: null }
@@ -31,7 +34,8 @@ export function cleanSettings(raw: unknown, base: Settings = DEFAULTS): Settings
     devTiles: Array.isArray(r.devTiles) ? [...new Set(r.devTiles.filter((d): d is string => typeof d === 'string' && d.startsWith('/')))].slice(0, 50) : base.devTiles,
     mascot: r.mascot === null || (typeof r.mascot === 'string' && /^[a-z0-9][a-z0-9-]{0,39}$/.test(r.mascot)) ? (r.mascot as string | null) : base.mascot,
     ...column(r.column, base.column),
-    ...indexOf(r.index, base.index)
+    ...indexOf(r.index, base.index),
+    ...(r.recorder !== undefined || base.recorder ? { recorder: cleanPrefs(r.recorder, base.recorder) } : {})
   }
 }
 

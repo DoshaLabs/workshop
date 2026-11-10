@@ -158,5 +158,9 @@ export const CH = {
   previewWatch: 'ws:core:preview-watch',
   previewOpen: 'ws:core:preview-open', // main → window: a session asked for a file (the doc CLI)
   previewChanged: 'ws:core:preview-changed', // main → window: the watched file changed on disk
-  dropKeep: 'ws:core:drop-keep'
+  dropKeep: 'ws:core:drop-keep',
+  // the screen recorder (main/recorder.ts): the top bar's button
+  recToggle: 'ws:core:rec-toggle',
+  recStateGet: 'ws:core:rec-state-get',
+  recState: 'ws:core:rec-state' // main → window
 } as const

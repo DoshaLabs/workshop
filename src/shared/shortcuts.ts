@@ -29,6 +29,14 @@ export function shortcutOf(i: KeyInput): Shortcut | null {
 }
 
 /**
+ * ⌘⇧O: the screen recorder (open it; while it is up, stop the take or close it). Main acts on it
+ * itself, wherever the focus is, including the recorder's own frame; the window never hears of it.
+ */
+export function isRecorderKey(i: KeyInput): boolean {
+  return i.type === 'keyDown' && i.meta && i.shift && !i.control && !i.alt && ((i.key || '').toLowerCase() === 'o' || i.code === 'KeyO')
+}
+
+/**
  * The session a step lands on: the next or previous in `order` (⌘1–9's order) after `current`,
  * wrapping. From nothing, ⌘] takes the first and ⌘[ the last.
  */

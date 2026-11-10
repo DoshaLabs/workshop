@@ -1,0 +1,197 @@
+/* The screen recorder's frame. Its own window over everything, painted in core's theme (main hands
+   the --ws-* variables over at load and on every change). The band you drag by is never fully
+   clear, or macOS lets clicks through it. "Recording" is the theme's red (--ws-blocked). Mirrors
+   REC_PAD (14) and REC_BAR (46) in shared/recorder.ts. Nothing inside the filmed rectangle may be
+   drawn while a take runs: the guides and the countdown are gone by then. */
+
+@font-face {
+  font-family: 'Nunito';
+  src: url('../../../../assets/fonts/nunito.woff2') format('woff2');
+  font-weight: 200 1000;
+  font-style: normal;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  font: 600 12px/1 var(--ws-font, -apple-system, sans-serif);
+  color: var(--ws-ink);
+}
+
+.rec {
+  --edge: var(--ws-accent);
+  --live: var(--ws-blocked);
+  position: relative;
+  height: 100%;
+}
+.rec.is-live {
+  --edge: var(--live);
+}
+
+.rec-frame {
+  position: absolute;
+  inset: 0 0 46px 0;
+  padding: 14px;
+  box-sizing: border-box;
+  border-radius: 12px 12px 0 0;
+  background: color-mix(in srgb, var(--ws-panel) 60%, transparent);
+  cursor: grab;
+}
+.rec-frame:active {
+  cursor: grabbing;
+}
+.rec-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  outline: 2px solid var(--edge);
+  outline-offset: 1px;
+  background: transparent;
+  cursor: default;
+}
+
+/* Instagram Reels' own furniture, in proportion: the top ~14% (the header), the bottom ~20% (caption,
+   audio line), the right ~13% (the like / comment / share column). */
+.rec-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.rec-guides > div {
+  position: absolute;
+  border: 1px dashed color-mix(in srgb, var(--ws-ink) 55%, transparent);
+  background: color-mix(in srgb, var(--ws-ink) 6%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ws-bg) 25%, transparent);
+}
+.rec-safe-top {
+  inset: 0 0 auto 0;
+  height: 14%;
+}
+.rec-safe-bottom {
+  inset: auto 0 0 0;
+  height: 20%;
+}
+.rec-safe-right {
+  top: 14%;
+  bottom: 20%;
+  right: 0;
+  width: 13%;
+}
+
+.rec-count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 120px;
+  font-weight: 800;
+  color: var(--ws-ink);
+  text-shadow: 0 4px 24px var(--ws-bg);
+  pointer-events: none;
+}
+
+.rec-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  border-radius: 0 0 12px 12px;
+  background: color-mix(in srgb, var(--ws-panel) 94%, transparent);
+  border-top: 1px solid var(--ws-line);
+  cursor: grab;
+}
+.rec-bar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ws-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.rec-bar button:hover:not(:disabled) {
+  background: var(--ws-line);
+  color: var(--ws-ink);
+}
+.rec-bar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.rec-bar .rec-tog.on {
+  color: var(--ws-ink);
+}
+.rec-glyph {
+  flex: none;
+}
+.rec-bar .rec-go {
+  min-width: 70px;
+  color: var(--live);
+  background: color-mix(in srgb, var(--live) 14%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+.rec-go span {
+  color: var(--ws-ink);
+}
+.rec-bar .rec-go.is-live {
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+@keyframes rec-pulse {
+  50% {
+    background: color-mix(in srgb, var(--live) 32%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rec-bar .rec-go.is-live {
+    animation: none;
+    background: color-mix(in srgb, var(--live) 28%, transparent);
+  }
+}
+.rec-space {
+  flex: 1;
+}
+.rec-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 30px;
+  color: var(--ws-muted);
+  cursor: nwse-resize;
+}
+
+/* A warning sits over the bar, never inside the filmed rectangle. */
+.rec-note {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-radius: 0 0 12px 12px;
+  background: color-mix(in srgb, var(--live) 35%, var(--ws-panel));
+  color: var(--ws-ink);
+  font-weight: 500;
+  line-height: 1.25;
+  overflow: hidden;
+  cursor: pointer;
+}

@@ -16,6 +16,8 @@ import type { Backends } from './backend'
 import { previewSmoke, reorderSmoke } from './smoke-preview'
 import { musicSmoke } from './smoke-music'
 import type { MusicHost } from './music'
+import { recorderSmoke } from './smoke-recorder'
+import type { Recorder } from './recorder'
 
 interface Ctx {
   win: BrowserWindow
@@ -32,6 +34,8 @@ interface Ctx {
   backends?: Backends
   /** `workshop.music`, driven by a stand-in for osascript (smoke-music.ts). */
   music?: MusicHost
+  /** The screen recorder (main/recorder.ts). */
+  recorder?: Recorder
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -204,6 +208,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await backendSmoke(check, ctx)
     await musicSmoke(check, ctx)
     await knotClock(check, ctx)
+    await recorderSmoke(check, ctx)
     // Last: it stops this core's sessions.
     await restart(check, ctx)
   } catch (err) {
