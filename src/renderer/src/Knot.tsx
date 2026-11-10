@@ -60,6 +60,9 @@ const knots = new Set<Live>()
 let timer = 0
 let raf = 0
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
+/** For the smoke checks: frames drawn and times the clock woke, in this window, so far. Two integers. */
+const counts = { draws: 0, wakes: 0 }
+;(window as unknown as { knotCounts: typeof counts }).knotCounts = counts
 const io = new IntersectionObserver((entries) => {
   for (const e of entries) {
     const k = [...knots].find((x) => x.canvas === e.target)
@@ -98,11 +101,13 @@ function wake(): void {
 
 function tick(now: number): void {
   raf = 0
+  counts.wakes++
   for (const k of knots) if (dueIn(k, now) <= 1) draw(k, now)
   wake()
 }
 
 function draw(k: Live, now: number): void {
+  counts.draws++
   const look = MODES[k.mode]
   const dt = k.last ? Math.min(0.25, (now - k.last) / 1000) : 0
   k.last = now

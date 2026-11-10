@@ -186,7 +186,9 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await themes(check, ctx)
     await mascot(check, ctx)
     await projects(check, ctx)
+    await sideDoors(check, ctx)
     await instances(check, ctx)
+    await knotClock(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
   }
@@ -968,4 +970,116 @@ async function projects(check: (name: string, ok: boolean, detail?: string) => v
   if (r) await post(door.port, '/tile/reminders', { op: 'rm', args: [r.id] }, { Authorization: `Bearer ${door.token}` })
   await core.sessions.kill(id)
   await core.sessions.kill(other)
+}
+
+/**
+ * The two side doors a request filter cannot see, tried from inside the probe's page. Each is
+ * tried from core's own window too, which has no such guard, as the control: a door that is shut
+ * for the tile but open for the control is shut by the sandbox, not by the network the smoke ran on.
+ *
+ * WebRTC: a STUN request for a server-reflexive candidate is UDP leaving the machine (and the
+ * public address coming back). DNS: a prefetch or preconnect to a host the tile did not declare,
+ * looked for in Chromium's own net log of the tile's session. The prefetch is NOT closed (below).
+ */
+async function sideDoors(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile, userData }: Ctx): Promise<void> {
+  const probe = liveByTile.get('probe')!.wc
+  const STUN = `(async () => {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }] })
+    const seen = []
+    pc.onicecandidate = (e) => { if (e.candidate && e.candidate.candidate) seen.push(e.candidate.type + '/' + e.candidate.protocol + ' ' + e.candidate.address) }
+    pc.createDataChannel('x')
+    await pc.setLocalDescription(await pc.createOffer())
+    await new Promise((r) => { const t = setTimeout(r, 6000); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); r() } } })
+    pc.close()
+    return seen
+  })()`
+  const [tile, control] = (await Promise.all([probe.executeJavaScript(STUN), win.webContents.executeJavaScript(STUN)])) as string[][]
+  const reflexive = (xs: string[]): boolean => xs.some((x) => x.startsWith('srflx') || x.startsWith('relay'))
+  check('side doors: WebRTC from a tile reaches no STUN server', !reflexive(tile), JSON.stringify(tile))
+  check('side doors: (control) core’s own window does reach one, so the check can see a leak', reflexive(control), JSON.stringify(control))
+  check('side doors: WebRTC from a tile shows no local address', !tile.some((x) => /\d+\.\d+\.\d+\.\d+/.test(x) && !x.endsWith('.local')), JSON.stringify(tile))
+
+  const tag = Math.random().toString(36).slice(2, 10)
+  // A page that tries to turn prefetching back on first, then hints from itself and from a srcdoc frame.
+  const hint = (who: string): string => `(() => {
+    const m = document.createElement('meta'); m.httpEquiv = 'x-dns-prefetch-control'; m.content = 'on'; document.head.appendChild(m)
+    for (const rel of ['dns-prefetch', 'preconnect']) { const l = document.createElement('link'); l.rel = rel; l.href = 'https://ws-' + rel + '-${who}-${tag}.example.com/'; document.head.appendChild(l) }
+    const f = document.createElement('iframe'); f.style.display = 'none'
+    f.srcdoc = '<meta http-equiv="x-dns-prefetch-control" content="on"><link rel="dns-prefetch" href="https://ws-frame-${who}-${tag}.example.com/">'
+    document.body.appendChild(f)
+    return true
+  })()`
+  const logged = async (wc: WebContents, who: string): Promise<string> => {
+    const file = join(process.env.WORKSHOP_NETLOG_DIR ?? userData, `netlog-${who}.json`)
+    await wc.session.netLog.startLogging(file)
+    await wc.executeJavaScript(hint(who))
+    await sleep(2500)
+    await wc.session.netLog.stopLogging()
+    return readFile(file, 'utf8')
+  }
+  const tileLog = await logged(probe, 'tile')
+  const controlLog = await logged(win.webContents, 'core')
+  // A name was looked up when the resolver took a request for it or a DNS query asked for it.
+  const looked = (log: string, who: string): string[] =>
+    ['dns-prefetch', 'preconnect', 'frame'].filter((rel) => new RegExp(`"(host|hostname|qname)":"[^"]*ws-${rel}-${who}-${tag}\\.example\\.com`).test(log))
+  const leaked = looked(tileLog, 'tile')
+  check('side doors: (control) the net log shows core’s window looking a prefetched name up', looked(controlLog, 'core').includes('dns-prefetch'), looked(controlLog, 'core').join(', '))
+  // NOT closed (Electron 44): <link rel=dns-prefetch>, in the page or in a srcdoc frame, is
+  // resolved whatever the dead proxy, an X-DNS-Prefetch-Control header or a default-src 'self'
+  // CSP say, so a tile can send a name of its choosing to the DNS resolver. Printed, not checked,
+  // so the day it closes is noticed; docs/progress/2026-11-10-track-f.md has what was tried.
+  console.log(`known open: names a tile's page made Chromium look up: ${leaked.join(', ') || 'none (the side door has closed: update the notes)'}`)
+}
+
+/**
+ * The Knots' one clock (Knot.tsx): under reduced motion each knot draws one still frame and the
+ * clock stops; in a hidden window it does not wake at all. Reduced motion is the system setting
+ * emulated through the devtools protocol, which fires the same media-query change. The hidden
+ * window is real: the smoke window (never shown) is shown at zero opacity, without focus, then hidden.
+ */
+async function knotClock(check: (name: string, ok: boolean, detail?: string) => void, { win }: Ctx): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const counts = (): Promise<{ draws: number; wakes: number }> => js(`({ ...window.knotCounts })`)
+  const over = async (ms: number): Promise<{ draws: number; wakes: number }> => {
+    const a = await counts()
+    await sleep(ms)
+    const b = await counts()
+    return { draws: b.draws - a.draws, wakes: b.wakes - a.wakes }
+  }
+  const knots = (await js(`document.querySelectorAll('canvas.knot').length`)) as number
+  const moving = await over(1500)
+  check('knot clock: it runs (the app mark rests at 6 frames a second)', knots > 0 && moving.draws >= 6, `${knots} knots, ${JSON.stringify(moving)}`)
+
+  const cdp = win.webContents.debugger
+  cdp.attach('1.3')
+  try {
+    const before = await counts()
+    await cdp.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    await sleep(400)
+    const after = await counts()
+    const still = await over(2000)
+    check('knot clock: reduced motion draws one still frame per knot', (await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) === true && after.draws - before.draws === knots, `${after.draws - before.draws} frames for ${knots} knots`)
+    check('knot clock: then nothing more under reduced motion', still.draws === 0 && still.wakes === 0, JSON.stringify(still))
+    await cdp.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
+    await sleep(300)
+    check('knot clock: and moves again without it', (await over(1500)).draws >= 6)
+  } finally {
+    cdp.detach()
+  }
+
+  const neverShown = (await js(`document.visibilityState`)) as string
+  // Smoke turns background throttling off, and with it Electron keeps the page "visible" when hidden;
+  // the app runs with it on, so it is on for this check.
+  win.webContents.setBackgroundThrottling(true)
+  win.setOpacity(0)
+  win.showInactive()
+  await waitFor('the window to be visible', async () => (await js(`document.visibilityState`)) === 'visible', 5000).catch(() => undefined)
+  const shown = await over(1500)
+  win.hide()
+  await waitFor('the window to be hidden', async () => (await js(`document.hidden`)) === true, 5000).catch(() => undefined)
+  const hidden = (await js(`document.hidden`)) as boolean
+  const asleep = await over(2500)
+  check('knot clock: a hidden window wakes it not once', hidden && shown.draws > 0 && asleep.wakes === 0 && asleep.draws === 0, `never shown: ${neverShown}; shown ${JSON.stringify(shown)}; hidden ${hidden} ${JSON.stringify(asleep)}`)
+  win.webContents.setBackgroundThrottling(false)
+  win.setOpacity(1)
 }
