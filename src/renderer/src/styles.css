@@ -1582,6 +1582,7 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
 
 /* ==== Track E: the preview pane (PreviewPane.tsx), file links in a conversation, drag to reorder
    (reorder.ts) and pictures in a session's prompt bar. ==== */
