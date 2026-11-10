@@ -32,9 +32,9 @@ The `+` cell's menu (`TilePicker.tsx`) is one list today. It becomes:
 - This reverses one line of the old plan: Wikipedia and Reminders stay built in. They are still
   written the author's way (ground rule 9), they just ship in the app.
 
-## Track B: the trusted tier (M, after Colin agrees the design) · §5
+## Track B: the trusted tier (M) · §5
 
-Blocks Git, Spotify and PS2. A proposal to react to, not a decision:
+Blocks Git, Spotify and PS2. **Agreed by Colin, 10 Nov 2026**, as written here:
 
 - A trusted tile adds `backend.mjs`. Core runs it as its own process (Electron `utilityProcess`),
   started when the tile is turned on and stopped when it is turned off or core quits.
@@ -47,8 +47,8 @@ Blocks Git, Spotify and PS2. A proposal to react to, not a decision:
 - At launch only tiles on the **Built in** tab may have a backend. An installed or local tile
   that declares one is refused, with the reason shown. Opening it to others comes with the
   review process and the "full access" badge (§5), later.
-- To decide: one process per tile or one shared; whether a backend may keep running with the
-  tile turned off (Spotify's now-playing would want it; default no).
+- One process per tile. A backend stops when its tile is turned off; there is no background flag
+  (Colin, 10 Nov 2026).
 
 ## Track C: the Git tile, written fresh (L) · §4
 
@@ -104,8 +104,8 @@ sprite packs as a second category, the tile template as its own repo with `npm c
 
 - Nobody has clicked through the app by hand since phases 1 and 2. Do that first.
 - A real Claude has never built a tile through "make one with Claude".
-- "Bark" is deck's word and means nothing to a tile author. Rename it in the contract
-  (`notify({ text, attention: true })` or similar) before anyone outside uses it.
+- "Bark" is deck's word and means nothing to a tile author. Rename it in the contract to
+  `notify({ text, attention: true })` (Colin, 10 Nov 2026) before anyone outside uses it.
 - `workshop.storage` starts empty over a store it cannot parse; it must move the file aside.
 - A project is the session's start folder, not its repo root: core should resolve the root once
   and report it in `workshop.sessions` (Reminders files by it; Git needs it).
@@ -140,16 +140,14 @@ Next round, three agents side by side (they touch different files):
 2. **Track E, first half**: the preview pane with clickable paths, drag to reorder, image paste.
 3. **Track F**: the loose ends, starting with the rename of "bark" and the storage fix.
 
-Then, once Colin has agreed track B's design: **B then C** (the trusted tier, then Git, Changes
+Then **B then C** (the trusted tier, then Git, Changes
 tab first), beside **D3–D5** (the index and the Marketplace tab live). Then the second half of
 E (wolfpack, leash, permission prompts), G's two sandboxed built-ins, and H.
 
 ## Decisions that are Colin's
 
-- Track B's design (blocks Git, Spotify, PS2).
 - The name and home of the index repo, and the public name of the app (it also names the bridge
   and the template's package).
-- Renaming "bark" in the contract, and to what.
 - Whether permission prompts can ride the PreToolUse route (verify, then choose the UI).
 - How web-app tiles fit the sandbox.
 - Profiles: what they hold and how sign-in works.
