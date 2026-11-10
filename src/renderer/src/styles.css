@@ -48,8 +48,10 @@ button {
   /* Thirds, as in deck: sessions, what you are on now, tiles. */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
+  /* The top bar: tall enough for the app's mark (the Knot) to turn at a size it reads at. */
+  --bar: 56px;
   height: 100%;
-  padding: 40px 8px 8px;
+  padding: var(--bar) 8px 8px;
   -webkit-app-region: drag;
 }
 .app > * {
@@ -282,7 +284,7 @@ button {
   padding: 24px;
 }
 .launcher {
-  margin: 4vh auto 0;
+  margin: 0 auto;
   max-width: 560px;
   display: flex;
   flex-direction: column;
@@ -639,7 +641,7 @@ button {
   top: 0;
   left: 0;
   right: 0;
-  height: 40px;
+  height: var(--bar);
   z-index: 20;
   display: flex;
   align-items: center;
@@ -683,7 +685,7 @@ button {
 }
 .overlay-box {
   position: fixed;
-  top: 40px;
+  top: var(--bar);
   left: 0;
   right: 0;
   bottom: 0;
@@ -693,7 +695,7 @@ button {
 /* ---- the top bar: the window's drag strip, with the theme picker on the right */
 .topbar {
   position: fixed;
-  top: 6px;
+  top: calc((var(--bar) - 28px) / 2);
   right: 10px;
   height: 28px;
   display: flex;
@@ -1222,10 +1224,10 @@ button {
    Not a control, so the window can still be dragged by it. */
 .app-mark {
   position: fixed;
-  top: 7px;
-  left: 80px;
-  width: 26px;
-  height: 26px;
+  top: calc((var(--bar) - 44px) / 2);
+  left: 84px;
+  width: 44px;
+  height: 44px;
   z-index: 10;
   pointer-events: none;
   -webkit-app-region: drag;

@@ -208,14 +208,14 @@ const LABEL: Record<KnotMode, string> = {
 /** A session's status as a Knot. */
 export function SessionKnot({ id, status, attention }: { id?: string; status: SessionStatus; attention: boolean }) {
   const mode = knotMode(status, attention)
-  return <KnotCanvas mode={mode} size={20} barkId={id} status={status} className={`session-knot ${status}`} title={LABEL[mode]} />
+  return <KnotCanvas mode={mode} size={24} barkId={id} status={status} className={`session-knot ${status}`} title={LABEL[mode]} />
 }
 
 /** The app's mark, top left beside the window's buttons: full size and fast while any session works. */
 export function AppMark({ working }: { working: boolean }) {
   return (
     <div className="app-mark" aria-hidden="true">
-      <KnotCanvas mode={working ? 'work' : 'rest'} size={26} barkId="*" title={working ? 'A session is working' : 'No session is working'} />
+      <KnotCanvas mode={working ? 'work' : 'rest'} size={44} barkId="*" title={working ? 'A session is working' : 'No session is working'} />
     </div>
   )
 }

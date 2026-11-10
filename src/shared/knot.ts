@@ -37,8 +37,8 @@ export const MODES: Record<KnotMode, ModeLook> = {
   work: { size: 1, loop: 2.4, fps: 30 },
   needs: { size: 0.85, loop: 7, fps: 15 },
   start: { size: 0.75, loop: 5, fps: 15 },
-  rest: { size: 0.5, loop: 22, fps: 6 },
-  dead: { size: 0.5, loop: 0, fps: 0 }
+  rest: { size: 0.62, loop: 22, fps: 6 },
+  dead: { size: 0.62, loop: 0, fps: 0 }
 }
 
 export function knotMode(status: SessionStatus, attention: boolean): KnotMode {
@@ -231,14 +231,15 @@ export interface KnotDraw {
 export const segsFor = (S: number): number => Math.max(48, Math.min(160, Math.round(S * 3)))
 
 /**
- * Draws the Knot. The strand's width depends on the box, not on the radius, so a small (inactive)
- * knot stays a legible line rather than thinning to nothing.
+ * Draws the Knot. The strand thins with the radius, but only part of the way and never below a
+ * pixel: at full width a small (inactive) knot's strands ran together into a blob, and scaled
+ * all the way they would thin to nothing.
  */
 export function drawKnot(ctx: KnotCtx, { S, ph, palette, size, flare = 0, segs = segsFor(S) }: KnotDraw): void {
   const c = S / 2
   // The knot's reach is about 2.1 units; full size leaves a pixel's margin in the box.
   const sc = (S / 2 / 2.2) * size * (1 + 0.12 * flare)
-  const lw = Math.max(1.35, S / 15)
+  const lw = Math.max(1, (S / 16) * (0.4 + 0.6 * size))
   const pts = knotPoints(ph, segs).map(([x, y, z]) => [c + x * sc, c + y * sc, z] as const)
   const order = Array.from({ length: segs }, (_, i) => i).sort((a, b) => pts[a][2] - pts[b][2])
   const head = (((ph / TAU) % 1) + 1) % 1
@@ -253,7 +254,7 @@ export function drawKnot(ctx: KnotCtx, { S, ph, palette, size, flare = 0, segs =
     const shade = Math.floor(((((f * 2 + shift) % 1) + 1) % 1) * SHADES) % SHADES
     const band = depth > 0.62 ? 0 : depth > 0.32 ? 1 : 2
     ctx.strokeStyle = palette.strand[shade][band]
-    ctx.lineWidth = lw * (0.75 + 0.45 * depth) * (1 + glow * (0.7 + 0.6 * flare))
+    ctx.lineWidth = Math.max(1, lw * (0.75 + 0.45 * depth) * (1 + glow * (0.7 + 0.6 * flare)))
     ctx.beginPath()
     ctx.moveTo(pts[j][0], pts[j][1])
     ctx.lineTo(pts[j + 1][0], pts[j + 1][1])

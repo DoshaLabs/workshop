@@ -604,6 +604,8 @@ function createWindow(): void {
     show: !SMOKE,
     title: 'workshop',
     titleBarStyle: 'hiddenInset',
+    // The window's buttons sit at the middle of the top bar (`--bar` in styles.css, 56 px).
+    trafficLightPosition: { x: 18, y: 20 },
     backgroundColor: vars()['--ws-bg'],
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

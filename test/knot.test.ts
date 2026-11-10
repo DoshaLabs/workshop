@@ -69,7 +69,7 @@ describe('the status language', () => {
   })
   it('is full size and fast at work, much smaller and slow at rest, still when dead', () => {
     expect(MODES.work.size).toBe(1)
-    expect(MODES.rest.size).toBeLessThanOrEqual(0.5)
+    expect(MODES.rest.size).toBeLessThanOrEqual(0.65)
     expect(MODES.work.loop).toBeLessThan(MODES.rest.loop / 5)
     expect(MODES.rest.fps).toBeLessThanOrEqual(8)
     expect(MODES.dead.loop).toBe(0)
@@ -109,7 +109,7 @@ describe('contrast, every theme, every mode, both sizes', () => {
                 const worst = Math.min(contrast(c, panel), contrast(c, bg))
                 if (worst < MIN_CONTRAST) throw new Error(`${name} ${mode} ${s}: ${worst.toFixed(2)}:1`)
               }
-              // The strand stays a line at the small size: the width follows the box, not the radius.
+              // The strand stays a line at the small size: it thins with the radius, never below a pixel.
               expect(Math.min(...r.widths)).toBeGreaterThanOrEqual(1)
             }
           }
