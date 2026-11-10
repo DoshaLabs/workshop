@@ -10,6 +10,8 @@ import type { DoorCall } from '@shared/ipc'
 import type { Manifest } from '@shared/manifest'
 
 const BODY_MAX = 64 * 1024
+/** A hook's body: a PostToolUse payload carries the Bash call's output, which the CLI caps near 30,000 characters. */
+const HOOK_BODY_MAX = 1024 * 1024
 const RESULT_MAX = 1024 * 1024
 
 export interface DoorHost {
@@ -142,7 +144,7 @@ export class Door {
       res.writeHead(204)
       res.end()
       try {
-        this.host.hook?.(hook[1], token, JSON.parse((await readBody(req)) || '{}'))
+        this.host.hook?.(hook[1], token, JSON.parse((await readBody(req, HOOK_BODY_MAX)) || '{}'))
       } catch {
         // a hook's malformed body is nobody's problem
       }
@@ -204,13 +206,13 @@ export class Door {
   }
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, max = BODY_MAX): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0
     const chunks: Buffer[] = []
     req.on('data', (c: Buffer) => {
       size += c.length
-      if (size > BODY_MAX) {
+      if (size > max) {
         reject(new Error('body too large'))
         req.destroy()
       } else chunks.push(c)

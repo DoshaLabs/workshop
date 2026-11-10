@@ -13,6 +13,7 @@ import type { Door } from './door'
 import { installs } from './smoke-install'
 import { gitSmoke } from './smoke-git'
 import { worktreesSmoke } from './smoke-worktrees'
+import { historySmoke } from './smoke-history'
 import { backendSmoke } from './smoke-backend'
 import type { Backends } from './backend'
 import { previewSmoke, reorderSmoke } from './smoke-preview'
@@ -212,6 +213,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await backendSmoke(check, ctx)
     await gitSmoke(check, ctx)
     await worktreesSmoke(check, ctx)
+    await historySmoke(check, ctx)
     await musicSmoke(check, ctx)
     await knotClock(check, ctx)
     await recorderSmoke(check, ctx)

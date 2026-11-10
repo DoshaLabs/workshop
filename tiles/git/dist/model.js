@@ -154,3 +154,101 @@ export function projectOverlaps(p) {
   }
   return out
 }
+
+/**
+ * What the bar draws, with what a condition left out dropped: `replaceChildren` draws null,
+ * undefined and false as words, which put "null" before "live" while a tab had no filter.
+ */
+export const shown = (parts) => parts.filter((p) => p != null && p !== false && p !== '')
+
+/** The head's badge: the number of changed files, or nothing (never "null" or "0") before the first answer or when clean. */
+export const badgeOf = (files) => (Number.isFinite(files) && files > 0 ? String(files) : '')
+
+// ---- the History tab
+
+/** How far back "Today, by session" looks: the last 24 hours, by when each commit was made. */
+export const DAY_MS = 24 * 3_600_000
+
+/** "a", "a or b", "a, b or c". */
+export function orList(list) {
+  return list.length <= 1 ? (list[0] ?? '') : `${list.slice(0, -1).join(', ')} or ${list.at(-1)}`
+}
+
+/** A commit's session tag as words: "wt-feat" (core saw it made), "probably wt-feat" (a guess), '' (no session). */
+export function byLabel(by) {
+  if (!by) return ''
+  return by.kind === 'exact' ? by.names[0] : `probably ${orList(by.names)}`
+}
+
+/** Why the tag says what it does (its tooltip). */
+export function byTitle(by) {
+  if (!by) return 'No session is known to have made this commit.'
+  if (by.kind === 'exact') return `Made by ${by.names[0]}: recorded when the session committed it.`
+  const many = by.names.length > 1
+  return `A guess: on the branch ${many ? 'these sessions work' : 'this session works'} on, and committed while ${many ? 'they were' : 'it was'} open. Not recorded.`
+}
+
+/** "just now", "5 min ago", "3 h ago", "yesterday", "4 days ago", then the date. */
+export function ago(ms, now = Date.now()) {
+  const s = Math.max(0, Math.round((now - ms) / 1000))
+  if (s < 60) return 'just now'
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`
+  if (s < 86_400) return `${Math.floor(s / 3600)} h ago`
+  const d = Math.floor(s / 86_400)
+  if (d === 1) return 'yesterday'
+  if (d < 30) return `${d} days ago`
+  return new Date(ms).toISOString().slice(0, 10)
+}
+
+/**
+ * "Today, by session": the commits of the last 24 hours (by commit time) in every project, grouped
+ * by the session that made them, the group with the newest commit first. A commit tagged exactly,
+ * or guessed to be one session's, goes to that session (the guess still shows on its row); a guess
+ * between several sessions goes to "Not sure which session" in its project, and an untagged one to
+ * "No session" in its project.
+ * → [{ key, label, kind: 'session' | 'unsure' | 'none', project, root, exact, probable, commits }]
+ */
+export function todayBySession(projects, now = Date.now()) {
+  const groups = new Map()
+  for (const p of projects ?? []) {
+    for (const c of p.commits) {
+      if (c.ct < now - DAY_MS) continue
+      let key
+      let label
+      let kind
+      if (c.by && c.by.ids.length === 1) {
+        key = `s ${c.by.ids[0]}`
+        label = c.by.names[0]
+        kind = 'session'
+      } else if (c.by) {
+        key = `unsure ${p.root}`
+        label = 'Not sure which session'
+        kind = 'unsure'
+      } else {
+        key = `none ${p.root}`
+        label = 'No session'
+        kind = 'none'
+      }
+      let g = groups.get(key)
+      if (!g) groups.set(key, (g = { key, label, kind, project: p.name, root: p.root, exact: 0, probable: 0, commits: [] }))
+      g.commits.push(c)
+      if (c.by?.kind === 'exact') g.exact++
+      else if (c.by) g.probable++
+    }
+  }
+  const order = { session: 0, unsure: 1, none: 2 }
+  return [...groups.values()].sort((a, b) => order[a.kind] - order[b.kind] || b.commits[0].ct - a.commits[0].ct)
+}
+
+/** What a group's head says beside its name: "3 commits", "3 commits, 1 a guess", "2 commits, all guesses". */
+export function groupCount(g) {
+  const n = plural(g.commits.length, 'commit')
+  if (g.kind !== 'session' || !g.probable) return n
+  return g.probable === g.commits.length ? `${n}, all guesses` : `${n}, ${g.probable} ${g.probable === 1 ? 'a guess' : 'guesses'}`
+}
+
+/** The refs a row shows: the branch checked out first, then branches, tags, remotes. */
+export function refsShown(refs) {
+  const order = { head: 0, branch: 1, tag: 2, remote: 3 }
+  return [...(refs ?? [])].sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name))
+}

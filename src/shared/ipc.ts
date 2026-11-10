@@ -99,6 +99,8 @@ export const CH = {
   storageChanged: 'ws:tile:storage-changed',
   doorCall: 'ws:tile:door-call',
   backendStatusChanged: 'ws:tile:backend-status-changed',
+  /** Something a tile's backend told its pages (`kit.emit`): { name, data }. */
+  backendEvent: 'ws:tile:backend-event',
   musicChanged: 'ws:tile:music-changed',
   // core window → main
   listTiles: 'ws:core:list-tiles',

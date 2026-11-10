@@ -2,7 +2,7 @@
 // utilityProcess). It connects the wire (backend-protocol.ts) to process.parentPort, then loads
 // the tile's backend.mjs and calls its default export with the kit, so a backend reads like
 //
-//   export default function ({ handle, sessions, onSessions }) {
+//   export default function ({ handle, sessions, onSessions, commits, onCommits, emit }) {
 //     handle('status', async (body) => ({ ... }))
 //   }
 //

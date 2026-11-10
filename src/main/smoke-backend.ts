@@ -91,7 +91,7 @@ export async function backendSmoke(check: Check, { win, door, liveByTile, userDa
   }).catch(() => undefined)
   const mine = seen?.list?.find((s: { id: string }) => s.id === made.id)
   check('backend: the sessions arrive, with name, folder, root and status', !!mine && mine.name === 'backend-watch' && mine.folder === cwd && mine.root === cwd && typeof mine.status === 'string' && seen.heard >= 1, JSON.stringify(seen))
-  check('backend: a session as it sees one holds nothing to act as it', !!mine && Object.keys(mine).sort().join() === 'folder,id,name,root,status', JSON.stringify(mine))
+  check('backend: a session as it sees one holds nothing to act as it', !!mine && Object.keys(mine).sort().join() === 'active,folder,id,name,root,started,status', JSON.stringify(mine))
   await win.webContents.executeJavaScript(`window.core.kill(${JSON.stringify(made.id)})`)
 
   // A crash: the call it was answering fails, the backend comes back, the page is told.

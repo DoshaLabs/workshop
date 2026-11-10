@@ -4,11 +4,19 @@ import { describe, expect, it } from 'vitest'
 import { THEMES, themeVars } from '@shared/themes'
 import { luminance, parseColor } from '@shared/knot'
 // @ts-expect-error plain JavaScript, as a tile's page is
-import { branchLabel, filesLabel, names, numbered, openIds, sessionsKey, signature, totals, worktreeOfSession } from '../tiles/git/dist/model.js'
+import { badgeOf, branchLabel, filesLabel, shown, names, numbered, openIds, sessionsKey, signature, totals, worktreeOfSession } from '../tiles/git/dist/model.js'
 // @ts-expect-error plain JavaScript, as the tile ships it
 import { dropWorktrees, parseWorktrees } from '../tiles/git/lib/parse.mjs'
 
 describe('git tile page', () => {
+  it('draws nothing for what a condition left out of the bar, so no "null" before "live"', () => {
+    const live = { live: true }
+    expect(shown([null, undefined, false, '', live])).toEqual([live])
+    expect(shown(['tabs', null, 'live'])).toEqual(['tabs', 'live'])
+    for (const v of [null, undefined, NaN, 0, -1]) expect(badgeOf(v)).toBe('')
+    expect(badgeOf(3)).toBe('3')
+  })
+
   it('asks about open sessions only, and asks again when one opens, closes or changes status', () => {
     const list = [
       { id: 'a', open: true, status: 'busy' },

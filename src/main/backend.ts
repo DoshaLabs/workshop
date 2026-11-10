@@ -11,9 +11,9 @@
 import { createWriteStream, mkdirSync, renameSync, statSync, type WriteStream } from 'node:fs'
 import { join } from 'node:path'
 import type { BackendDecl } from '@shared/manifest'
-import { BODY_MAX, RESULT_MAX, STABLE_MS, plainJson, readFromBackend, restartDelay, type BackendSession, type FromBackend, type ToBackend } from './backend-protocol'
+import { BODY_MAX, RESULT_MAX, STABLE_MS, plainJson, readFromBackend, restartDelay, type BackendCommit, type BackendSession, type FromBackend, type ToBackend } from './backend-protocol'
 
-export type { BackendSession }
+export type { BackendCommit, BackendSession }
 
 /** What core knows of a tile with a backend. */
 export interface BackendTile {
@@ -71,6 +71,8 @@ export interface BackendsOptions {
   spawn: Spawn
   /** A tile's backend changed state: core passes it to the tile's pages. */
   onStatus?: (id: string, status: BackendStatus) => void
+  /** A tile's backend emitted an event for its pages: core passes it to them. */
+  onEvent?: (id: string, name: string, data: unknown) => void
   /** Delays before each restart; one more death than this gives up (backend-protocol.ts). */
   delays?: number[]
   stableMs?: number
@@ -79,6 +81,7 @@ export interface BackendsOptions {
 export class Backends {
   private readonly runs = new Map<string, Run>()
   private sessions: BackendSession[] = []
+  private commits: BackendCommit[] = []
   private nextId = 1
 
   constructor(private readonly o: BackendsOptions) {}
@@ -104,8 +107,14 @@ export class Backends {
 
   /** The sessions changed: every backend hears the whole list. */
   setSessions(list: BackendSession[]): void {
-    this.sessions = list.map((s) => ({ id: s.id, name: s.name, folder: s.folder, root: s.root, status: s.status }))
+    this.sessions = list.map((s) => ({ id: s.id, name: s.name, folder: s.folder, root: s.root, status: s.status, started: s.started, active: s.active }))
     for (const run of this.runs.values()) if (run.child && run.state === 'running') run.child.post({ type: 'sessions', sessions: this.sessions })
+  }
+
+  /** Core recorded a commit: every backend hears the whole list (shas, session ids and names, times). */
+  setCommits(list: BackendCommit[]): void {
+    this.commits = list.map((c) => ({ sha: c.sha, session: c.session, name: c.name, at: c.at }))
+    for (const run of this.runs.values()) if (run.child && run.state === 'running') run.child.post({ type: 'commits', commits: this.commits })
   }
 
   status(id: string): BackendStatus {
@@ -195,9 +204,11 @@ export class Backends {
 
   private receive(run: Run, m: FromBackend, setFatal: (e: string) => void): void {
     if (m.type === 'fatal') return setFatal(m.error)
+    if (m.type === 'event') return this.o.onEvent?.(run.tile.id, m.name, m.data)
     if (m.type === 'ready') {
       this.setState(run, 'running')
       run.child!.post({ type: 'sessions', sessions: this.sessions })
+      run.child!.post({ type: 'commits', commits: this.commits })
       for (const [id, p] of run.pending) if (!p.sent) this.send(run, id, p)
       return
     }

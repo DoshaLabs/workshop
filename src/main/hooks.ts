@@ -6,6 +6,10 @@
 //   command line), at the port core is on NOW (read from `port` in the profile, so a session that
 //   outlived a restart still finds core). They never block Claude: two seconds, errors swallowed,
 //   exit 0.
+// - a PostToolUse hook on Bash calls, posting to /hook/tool, so core can record which session made
+//   a commit (main/commits.ts). It runs after every Bash call, so it is as cheap as a hook can be:
+//   the shell looks for "git" anywhere in the payload first and posts nothing otherwise. Only shas
+//   are kept; the command and its output are read and dropped.
 // - the status line, which is how the account's 5-hour and weekly windows reach core (usage).
 //   `statusLine` is one object, so ours replaces the user's; the script posts the JSON to core and
 //   then runs the user's own command on the same input, so what they see is unchanged.
@@ -92,7 +96,20 @@ export class SessionSettings {
 
   /** A hook command posting its stdin to /hook/<path>. */
   private post(path: string): string {
-    return `curl -s -m 2 -X POST "http://127.0.0.1:$(cat ${sq(this.portFile)} 2>/dev/null)/hook/${path}" -H @"$WORKSHOP_AUTH" -H 'content-type: application/json' --data-binary @- >/dev/null 2>&1; exit 0`
+    return `${this.curl(path)} >/dev/null 2>&1; exit 0`
+  }
+
+  /** The curl that posts stdin to /hook/<path>, at the port core is on now, with the session's token. Two seconds at most. */
+  private curl(path: string): string {
+    return `curl -s -m 2 -X POST "http://127.0.0.1:$(cat ${sq(this.portFile)} 2>/dev/null)/hook/${path}" -H @"$WORKSHOP_AUTH" -H 'content-type: application/json' --data-binary @-`
+  }
+
+  /**
+   * PostToolUse on Bash: posted only when the payload mentions git at all (a plain `ls` costs one
+   * shell and no request). Never blocks: two seconds, errors swallowed, exit 0.
+   */
+  private postIfGit(path: string): string {
+    return `p=$(cat); case "$p" in *git*) printf '%s' "$p" | ${this.curl(path)} >/dev/null 2>&1 ;; esac; exit 0`
   }
 
   private writeStatusScript(theirs: unknown): Record<string, unknown> {
@@ -102,7 +119,7 @@ export class SessionSettings {
       '#!/bin/bash',
       '# Written by workshop at every launch (src/main/hooks.ts): usage for core, then your own status line.',
       'input=$(cat)',
-      `printf '%s' "$input" | ${this.post('status').replace(/; exit 0$/, '')} &`,
+      `printf '%s' "$input" | ${this.curl('status')} >/dev/null 2>&1 &`,
       own ? `printf '%s' "$input" | (\n${own}\n)` : ':',
       ''
     ].join('\n')
@@ -122,7 +139,8 @@ export class SessionSettings {
         Stop: hook('stop'),
         UserPromptSubmit: hook('prompt'),
         SubagentStart: hook('subagent-start'),
-        SubagentStop: hook('subagent-stop')
+        SubagentStop: hook('subagent-stop'),
+        PostToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: this.postIfGit('tool'), timeout: 5 }] }]
       }
     }
     writeFileSync(this.path, JSON.stringify(settings, null, 2))

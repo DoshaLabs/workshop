@@ -444,3 +444,70 @@ body:not(.pane) .l .no:first-child {
   margin: 2px 0 0;
   padding-left: 16px;
 }
+
+/* The History tab */
+.commit .line {
+  padding: 3px 10px 4px;
+}
+.subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.sha {
+  flex: none;
+  font: 11px var(--mono);
+}
+.commit .row2 {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.ago {
+  flex: none;
+  white-space: nowrap;
+}
+/* Exact: the session's name, plain. A guess: "probably …", in italics and dashed, never the same look. */
+.by {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 3px;
+  padding: 0 5px;
+}
+.by.exact {
+  color: var(--ws-ink);
+  background: color-mix(in srgb, var(--ws-accent) 22%, transparent);
+}
+.by.probable {
+  color: var(--ws-muted);
+  font-style: italic;
+  border: 1px dashed var(--ws-line);
+}
+.ref {
+  flex: none;
+  font: 10.5px var(--mono);
+  border: 1px solid var(--ws-line);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: var(--ws-muted);
+  max-width: 14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ref.head {
+  color: var(--ws-accent);
+  border-color: var(--ws-accent);
+}
+.ref.tag {
+  color: var(--ws-ink);
+}
+.act.more {
+  margin: 6px 10px 2px;
+}
+.hgroup .project-head .dot {
+  align-self: center;
+}

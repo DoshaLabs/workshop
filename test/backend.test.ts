@@ -77,6 +77,19 @@ describe('the kit a backend.mjs is handed', () => {
     await receive({ type: 'sessions', sessions: [] })
     expect(seen).toEqual([1])
   })
+
+  it('keeps the commit records it is told, and emits events as plain JSON with a checked name', async () => {
+    const { out, kit, receive } = setup()
+    const seen: number[] = []
+    kit.onCommits((l) => seen.push(l.length))
+    await receive({ type: 'commits', commits: [{ sha: 'b'.repeat(40), session: 's1', name: 'one', at: 1 }] })
+    expect(kit.commits()).toEqual([{ sha: 'b'.repeat(40), session: 's1', name: 'one', at: 1 }])
+    expect(seen).toEqual([1])
+    kit.emit('commits', { n: 1 })
+    expect(out.pop()).toEqual({ type: 'event', name: 'commits', data: { n: 1 } })
+    expect(() => kit.emit('No', 1)).toThrow(/name/)
+    expect(() => kit.emit('big', 'x'.repeat(70_000))).toThrow(/KB/)
+  })
 })
 
 /** A backend process that does what the test tells it. */
@@ -150,12 +163,13 @@ describe('a backend\'s life', () => {
   })
 
   it('holds calls until it is ready, then hears the sessions first', async () => {
-    b.setSessions([{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy' }])
+    b.setSessions([{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy', started: 5, active: null }])
     b.sync([tile()])
     const p = b.call('git', 'status', { path: '.' })
     expect(last().calls()).toEqual([])
     last().say({ type: 'ready', ops: ['status'] })
-    expect(last().sent[0]).toEqual({ type: 'sessions', sessions: [{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy' }] })
+    expect(last().sent[0]).toEqual({ type: 'sessions', sessions: [{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy', started: 5, active: null }] })
+    expect(last().sent[1]).toEqual({ type: 'commits', commits: [] })
     const c = last().calls()[0]
     expect(c).toMatchObject({ op: 'status', body: { path: '.' } })
     last().say({ type: 'reply', id: c.id, ok: true, result: { clean: true } })
@@ -165,8 +179,33 @@ describe('a backend\'s life', () => {
   it('passes on every change to the sessions, and only what a backend may know of them', () => {
     b.sync([tile()])
     last().say({ type: 'ready', ops: [] })
-    b.setSessions([{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy', token: 'secret' } as never])
-    expect(last().sent.at(-1)).toEqual({ type: 'sessions', sessions: [{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy' }] })
+    b.setSessions([{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy', started: 1, active: 2, token: 'secret' } as never])
+    expect(last().sent.at(-1)).toEqual({ type: 'sessions', sessions: [{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy', started: 1, active: 2 }] })
+  })
+
+  it('passes on the commit records, only shas, session ids and names, and times', () => {
+    b.sync([tile()])
+    last().say({ type: 'ready', ops: [] })
+    b.setCommits([{ sha: 'a'.repeat(40), session: 'a1b2c3', name: 'one', at: 7, command: 'git commit -m secret' } as never])
+    expect(last().sent.at(-1)).toEqual({ type: 'commits', commits: [{ sha: 'a'.repeat(40), session: 'a1b2c3', name: 'one', at: 7 }] })
+  })
+
+  it('hands a backend\'s events to its pages, and drops a malformed one', () => {
+    const events: unknown[] = []
+    const b2 = new Backends({
+      spawn: () => {
+        const c = new FakeChild()
+        children.push(c)
+        return c
+      },
+      onEvent: (id, name, data) => events.push([id, name, data])
+    })
+    b2.sync([tile()])
+    last().say({ type: 'ready', ops: [] })
+    last().say({ type: 'event', name: 'commits', data: { n: 1 } })
+    last().say({ type: 'event', name: 'Bad Name', data: 1 })
+    expect(events).toEqual([['git', 'commits', { n: 1 }]])
+    b2.stopAll()
   })
 
   it('refuses an op the manifest does not list before the backend hears of it', async () => {

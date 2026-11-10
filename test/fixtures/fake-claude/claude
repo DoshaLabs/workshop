@@ -5,7 +5,9 @@
 //   prompt hook → (the line's action) → status line → Stop hook → prints "DONE <line>".
 // Actions: `door` calls the probe tile through $WORKSHOP_TILE; `tile <id> <op> [args]` calls any
 // tile the same way (as a skill would); `doc <args>` runs the preview pane's CLI ($WORKSHOP_DOC); `spoof` sends a Stop hook that
-// claims another session's id. It writes what it was started with to $WORKSHOP_HOME/fake-<id>.json.
+// claims another session's id; `bash <command>` runs a shell command in its folder as the Bash tool
+// would, then fires PostToolUse with the payload Claude Code 2.1.322 sends (matchers honoured, and
+// `tool_response.gitOperation` when the output reads like git commit's). It writes what it was started with to $WORKSHOP_HOME/fake-<id>.json.
 // Like the real CLI it appends each turn to $CLAUDE_CONFIG_DIR/projects/<its folder>/<session id>.jsonl
 // (the file appears at the first prompt): the prompt, prose with markdown, a tool call and its
 // result, a subagent's line and a meta line (which a tile must not show), and a title.
@@ -27,8 +29,33 @@ const run = (cmd, input) => {
     return String(err.stdout || err.message)
   }
 }
-const hook = (event, extra = {}) => {
-  for (const group of settings.hooks[event] || []) for (const h of group.hooks) run(h.command, { session_id: sid, hook_event_name: event, ...extra })
+const hook = (event, extra = {}, tool) => {
+  for (const group of settings.hooks[event] || []) {
+    // A matcher is a tool name or a regular expression over it; none (or "*") matches every tool.
+    if (tool && group.matcher && group.matcher !== '*' && !new RegExp(`^(?:${group.matcher})$`).test(tool)) continue
+    for (const h of group.hooks) run(h.command, { session_id: sid, hook_event_name: event, ...extra })
+  }
+}
+
+// The Bash tool: the command in this folder, then PostToolUse as the real CLI sends it.
+const bash = (command) => {
+  const t0 = Date.now()
+  let stdout = ''
+  let stderr = ''
+  try {
+    stdout = execSync(command, { shell: '/bin/sh', cwd: process.cwd(), encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'] })
+  } catch (err) {
+    stdout = String(err.stdout || '')
+    stderr = String(err.stderr || err.message)
+  }
+  const made = /^\[(\S+)(?: \(root-commit\))? ([0-9a-f]{7,})\]/m.exec(stdout)
+  const response = { stdout, stderr, interrupted: false, isImage: false, noOutputExpected: false, ...(made ? { gitOperation: { commit: { sha: made[2], kind: 'committed', branch: made[1] } } } : {}) }
+  hook(
+    'PostToolUse',
+    { transcript_path: transcript, cwd: process.cwd(), permission_mode: 'default', tool_name: 'Bash', tool_input: { command, description: 'Run a command' }, tool_response: response, tool_use_id: `toolu_bash_${Date.now()}`, duration_ms: Date.now() - t0 },
+    'Bash'
+  )
+  return stdout + stderr
 }
 
 // The folder name is the CLI's own encoding of the cwd; core never relies on it (it finds the file by id).
@@ -70,6 +97,7 @@ process.stdin.on('data', (chunk) => {
     if (line === 'door') console.log(run(`node "$WORKSHOP_TILE" probe echo from-session`, {}).replace(/\s+/g, ' '))
     if (line.startsWith('tile ')) console.log(run(`node "$WORKSHOP_TILE" ${line.slice(5)} 2>&1`, {}).replace(/\s+/g, ' '))
     if (line.startsWith('doc ')) console.log(run(`node "$WORKSHOP_DOC" ${line.slice(4)} 2>&1`, {}).replace(/\s+/g, ' '))
+    if (line.startsWith('bash ')) console.log(`BASH ${bash(line.slice(5)).replace(/\s+/g, ' ')}`)
     run(settings.statusLine.command, { session_id: sid, rate_limits: { five_hour: { used_percentage: 42, resets_at: Math.floor(Date.now() / 1000) + 3600 } }, cost: { total_cost_usd: 1.23 }, context_window: { used_percentage: 17 } })
     if (line === 'spoof') {
       for (const group of settings.hooks.Stop || []) for (const h of group.hooks) run(h.command, { session_id: '00000000-0000-0000-0000-000000000000', hook_event_name: 'Stop' })

@@ -5,16 +5,19 @@
 // list core hands this program (`sessions()`), so a page can never point git at a path of its
 // choosing. The Worktrees tab's ops name a project by the root core gave a session, and a
 // worktree by the path git lists for that root; anything else is refused (lib/worktrees.mjs).
+// The History tab's names a project the same way, and a commit by its full sha.
 
 import { homedir } from 'node:os'
 import { changes, diff, worktreeTop } from './lib/git.mjs'
 import { group } from './lib/parse.mjs'
 import { diffAgainstBase, listWorktrees, merge, readProject, rebase, remove } from './lib/worktrees.mjs'
+import { projectHistory, showCommit } from './lib/history.mjs'
+import { isSha, logLimit } from './lib/log.mjs'
 
 /** A folder's worktree top is asked of git once a minute at most (it changes only if the worktree is removed). */
 const TOP_MS = 60_000
 
-export default function ({ handle, sessions }) {
+export default function ({ handle, sessions, commits, onCommits, emit }) {
   const tops = new Map()
   async function topOf(folder) {
     const hit = tops.get(folder)
@@ -123,6 +126,51 @@ export default function ({ handle, sessions }) {
       tops.clear()
     }
   }
+  // Which session made which commit, as core recorded it: sha → { session, name }. Rebuilt when
+  // core sends a new list, which also tells the page to look again (a commit just landed).
+  let records = new Map()
+  const setRecords = (list) => {
+    records = new Map(list.map((c) => [c.sha, { session: c.session, name: c.name }]))
+  }
+  setRecords(commits())
+  onCommits((list) => {
+    setRecords(list)
+    emit('commits', { count: list.length })
+  })
+
+  // { sessions: [id…], limit? } → { projects: [{ root, name, commits: [{ sha, parents, author, at, ct, refs, subject, by }], more, error? }], at }
+  // `by` is { kind: 'exact' | 'probable', ids, names } or null (lib/log.mjs). Every session core
+  // knows in a project counts for the guesses, parked ones included; the page names the projects
+  // by naming open sessions.
+  handle('history', async (body) => {
+    const list = known(body?.sessions)
+    const limit = logLimit(body?.limit)
+    const roots = [...new Set(list.map((s) => s.root))]
+    const all = sessions()
+    const now = Date.now()
+    const projects = await Promise.all(
+      roots.map(async (root) => {
+        const name = root.replace(/\/+$/, '').split('/').pop() || root
+        try {
+          const h = await once(`history ${root} ${limit}`, () => projectHistory(root, { limit, sessions: all.filter((s) => s.root === root), topOf, records, now }))
+          return { root, name, ...h }
+        } catch (e) {
+          return { root, name, commits: [], more: false, error: e.message }
+        }
+      })
+    )
+    projects.sort((a, b) => a.name.localeCompare(b.name) || a.root.localeCompare(b.root))
+    return { projects, at: now }
+  })
+
+  // { root, sha } → { files, cut }: one commit's diff against its first parent (read-only).
+  handle('commit', async (body) => {
+    const root = body?.root
+    if (typeof root !== 'string' || !sessions().some((s) => s.root === root)) throw new Error('no session works in that project')
+    if (!isSha(body?.sha)) throw new Error('which commit: its full sha')
+    return once(`commit ${root} ${body.sha}`, () => showCommit(root, body.sha))
+  })
+
   // { root, path, expect: { head, base } } → { done, nothing?, conflict?, stuck?, files?, said }
   handle('rebase', write(rebase))
   handle('merge', write(merge))

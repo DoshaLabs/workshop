@@ -196,6 +196,9 @@ const backends = new Backends({
   onStatus: (id, st) => {
     for (const g of instancesOf(id)) g.wc.send(CH.backendStatusChanged, st)
   },
+  onEvent: (id, name, data) => {
+    for (const g of instancesOf(id)) g.wc.send(CH.backendEvent, { name, data })
+  },
   delays: SMOKE ? [100, 200, 300] : undefined
 })
 
@@ -458,7 +461,8 @@ function pushSessions(s: SessionsState): void {
     await roots.ready(latest.sessions)
     const list = tileSessions(latest)
     // A backend hears of every session, whatever its tile's permissions: folders, never tokens.
-    backends.setSessions(list.map((v) => ({ id: v.id, name: v.name, folder: v.project, root: v.root, status: v.status })))
+    const views = new Map(latest.sessions.map((v) => [v.id, v]))
+    backends.setSessions(list.map((v) => ({ id: v.id, name: v.name, folder: v.project, root: v.root, status: v.status, started: views.get(v.id)?.createdAt ?? 0, active: views.get(v.id)?.activeAt ?? null })))
     for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
   })()
 }
@@ -819,8 +823,11 @@ app.whenReady().then(async () => {
     pathFirst: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getAppPath(), 'test/fixtures/fake-claude') : undefined,
     claudeConfigDir: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getPath('userData'), 'claude-config') : undefined,
     onState: pushSessions,
-    onUsage: pushUsage
+    onUsage: pushUsage,
+    // Which session made a commit (main/commits.ts): to the backends, whose History tab tags with it.
+    onCommits: (all) => backends.setCommits(all)
   })
+  backends.setCommits(core.commits.store.all())
   // The backends start with the sessions they will be told about already listed.
   pushSessions(core.sessions.getState())
   syncBackends()

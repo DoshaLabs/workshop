@@ -19,6 +19,7 @@ if (hello) {
   const sessionSubs = new Set<(list: unknown) => void>()
   const usageSubs = new Set<(u: unknown) => void>()
   const backendSubs = new Set<(s: unknown) => void>()
+  const backendEventSubs = new Set<(e: unknown) => void>()
   const doorHandlers = new Map<string, (args: string[], caller: string, from: { session: string | null }) => unknown>()
   const perms = hello.permissions
 
@@ -89,6 +90,9 @@ if (hello) {
   ipcRenderer.on(CH.backendStatusChanged, (_e, st: unknown) => {
     for (const fn of backendSubs) call(() => fn(st))
   })
+  ipcRenderer.on(CH.backendEvent, (_e, ev: unknown) => {
+    for (const fn of backendEventSubs) call(() => fn(ev))
+  })
   const musicSubs = new Set<(s: unknown) => void>()
   ipcRenderer.on(CH.musicChanged, (_e, s: unknown) => {
     for (const fn of musicSubs) call(() => fn(s))
@@ -116,7 +120,9 @@ if (hello) {
             backendOps.includes(op) ? ipcRenderer.invoke(CH.backendCall, op, body === undefined ? null : body) : Promise.reject(new Error(`"${op}" is not in backend.ops in tile.json`)),
           /** { state: 'starting' | 'running' | 'restarting' | 'failed' | 'stopped', error? } */
           status: (): Promise<unknown> => ipcRenderer.invoke(CH.backendStatus),
-          onStatus: (fn: (s: unknown) => void) => sub(backendSubs, fn)
+          onStatus: (fn: (s: unknown) => void) => sub(backendSubs, fn),
+          /** Something the backend told its pages (`kit.emit(name, data)`): fn({ name, data }). */
+          onEvent: (fn: (e: unknown) => void) => sub(backendEventSubs, fn)
         }
       }
     : {}

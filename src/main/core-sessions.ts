@@ -19,6 +19,7 @@ import { TranscriptWatcher } from './transcript'
 import { UsageTracker } from './usage'
 import { startPreview } from './preview'
 import { keepImage } from './drops'
+import { CommitRecorder, CommitStore, type CommitRecord } from './commits'
 
 export interface CoreSessions {
   sessions: SessionManager
@@ -26,6 +27,8 @@ export interface CoreSessions {
   tmux: Tmux
   settings: SessionSettings
   transcripts: TranscriptWatcher
+  /** Which session made which commit, as far as core saw (main/commits.ts). */
+  commits: CommitRecorder
   /** Route a /hook/<name> call (the door's server hands them here). */
   hook(name: string, token: string, payload: unknown): void
   /** A /core/<name> call from a session (the preview pane's `doc`); answered. Sessions only. */
@@ -51,6 +54,8 @@ export interface Options {
   /** State changed: the window gets it here; core also tells tiles. */
   onState: (s: SessionsState) => void
   onUsage: (u: Usage) => void
+  /** Core recorded a commit a session made: the whole list of records. */
+  onCommits?: (all: CommitRecord[]) => void
 }
 
 export async function startSessions(o: Options): Promise<CoreSessions> {
@@ -96,6 +101,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     o.onUsage(u)
   })
   await sessions.init()
+  const commits = new CommitRecorder(new CommitStore(join(o.home, 'commits.json')), (all) => o.onCommits?.(all))
 
   const fleet = new Fleet(env, (entries) => sessions.onFleet(entries))
   if (o.poll) fleet.start()
@@ -145,12 +151,18 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     tmux,
     settings,
     transcripts,
+    commits,
     hook(name, token, payload) {
       const rec = sessions.byToken(token)
       if (!rec) return // a call from outside any session: hooks are only for sessions
       if (name === 'status') return usage.onStatus(rec.id, payload)
-      const event = HOOK_ROUTES[name]
       const p = (payload ?? {}) as { session_id?: string }
+      // A Bash call ended (PostToolUse): if it made commits, they are recorded as this session's.
+      if (name === 'tool') {
+        if (p.session_id === rec.claudeSessionId) void commits.onTool({ id: rec.id, name: rec.name }, payload).catch((err) => console.warn('[workshop] commits:', err))
+        return
+      }
+      const event = HOOK_ROUTES[name]
       // A session reports for itself only: the payload must name the session its token belongs to.
       if (event && p.session_id === rec.claudeSessionId) sessions.onHook(event, p)
     },

@@ -4,8 +4,10 @@
 //
 // core → backend   { type: 'call', id, op, body }        one request; `id` is core's, answered once
 //                  { type: 'sessions', sessions }         on start, and on every change
+//                  { type: 'commits', commits }           on start, and when core records a commit (main/commits.ts)
 // backend → core   { type: 'ready', ops }                 the tile's module has loaded and registered `ops`
 //                  { type: 'reply', id, ok: true, result } | { type: 'reply', id, ok: false, error }
+//                  { type: 'event', name, data }          for the tile's pages (`workshop.backend.onEvent`)
 //                  { type: 'fatal', error }               it could not start; it exits next
 //
 // Bodies and results are plain JSON. The backend is never sent a session's token, the door's port
@@ -25,14 +27,36 @@ export interface BackendSession {
    * `unknown`. A backend that writes (the Git tile's rebase and merge) waits for quiet with it.
    */
   status: string
+  /** When core started it (ms). */
+  started: number
+  /** When it last did something core heard of (a hook; ms), or null. */
+  active: number | null
 }
 
-export type ToBackend = { type: 'call'; id: number; op: string; body: unknown } | { type: 'sessions'; sessions: BackendSession[] }
+/**
+ * A commit core saw a session make: its sha, the session's id and name, and when (ms). Recorded
+ * from the session's PostToolUse hook (main/commits.ts); never the command or the folder.
+ */
+export interface BackendCommit {
+  sha: string
+  session: string
+  name: string
+  at: number
+}
+
+export type ToBackend =
+  | { type: 'call'; id: number; op: string; body: unknown }
+  | { type: 'sessions'; sessions: BackendSession[] }
+  | { type: 'commits'; commits: BackendCommit[] }
 export type FromBackend =
   | { type: 'ready'; ops: string[] }
   | { type: 'reply'; id: number; ok: true; result: unknown }
   | { type: 'reply'; id: number; ok: false; error: string }
+  | { type: 'event'; name: string; data: unknown }
   | { type: 'fatal'; error: string }
+
+/** The most an event to the pages may carry: a nudge to look again, not a channel for results. */
+export const EVENT_MAX = 64 * 1024
 
 /** The most a page may send in one call. */
 export const BODY_MAX = 1024 * 1024
@@ -61,6 +85,13 @@ export function readFromBackend(m: unknown): FromBackend | null {
   if (!m || typeof m !== 'object') return null
   const r = m as Record<string, unknown>
   if (r.type === 'ready') return { type: 'ready', ops: Array.isArray(r.ops) ? r.ops.filter((o): o is string => typeof o === 'string') : [] }
+  if (r.type === 'event' && typeof r.name === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(r.name)) {
+    try {
+      return { type: 'event', name: r.name, data: plainJson(r.data, EVENT_MAX, 'an event') }
+    } catch {
+      return null
+    }
+  }
   if (r.type === 'fatal') return { type: 'fatal', error: String(r.error ?? 'failed').slice(0, ERROR_MAX) }
   if (r.type === 'reply' && typeof r.id === 'number') {
     return r.ok === true ? { type: 'reply', id: r.id, ok: true, result: r.result } : { type: 'reply', id: r.id, ok: false, error: String(r.error ?? 'failed').slice(0, ERROR_MAX) }
@@ -107,6 +138,12 @@ export interface BackendKit {
   sessions(): BackendSession[]
   /** Called with every new list. Returns a function that stops it. */
   onSessions(fn: (list: BackendSession[]) => void): () => void
+  /** The commits core saw sessions make (empty until the first list arrives). */
+  commits(): BackendCommit[]
+  /** Called with every new list of commits. Returns a function that stops it. */
+  onCommits(fn: (list: BackendCommit[]) => void): () => void
+  /** Tells the tile's pages something (`workshop.backend.onEvent(fn)` gets `{ name, data }`): `name` is 1–32 of a-z, 0-9, -; `data` plain JSON, 64 KB at most. */
+  emit(name: string, data?: unknown): void
 }
 
 /**
@@ -116,7 +153,9 @@ export interface BackendKit {
 export function createKit(post: (m: FromBackend) => void): { kit: BackendKit; receive(m: unknown): Promise<void>; ready(): void } {
   const handlers = new Map<string, (body: unknown) => unknown>()
   const subs = new Set<(list: BackendSession[]) => void>()
+  const commitSubs = new Set<(list: BackendCommit[]) => void>()
   let list: BackendSession[] = []
+  let commits: BackendCommit[] = []
   const kit: BackendKit = {
     handle(op, fn) {
       if (typeof op !== 'string' || !op) throw new TypeError('handle(op, fn): op is a string')
@@ -127,6 +166,15 @@ export function createKit(post: (m: FromBackend) => void): { kit: BackendKit; re
     onSessions(fn) {
       subs.add(fn)
       return () => void subs.delete(fn)
+    },
+    commits: () => commits.map((c) => ({ ...c })),
+    onCommits(fn) {
+      commitSubs.add(fn)
+      return () => void commitSubs.delete(fn)
+    },
+    emit(name, data) {
+      if (typeof name !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(name)) throw new TypeError('emit(name, data): name is 1 to 32 of a-z, 0-9 and -')
+      post({ type: 'event', name, data: plainJson(data, EVENT_MAX, 'emit: the data') })
     }
   }
   return {
@@ -142,6 +190,17 @@ export function createKit(post: (m: FromBackend) => void): { kit: BackendKit; re
             fn(kit.sessions())
           } catch (err) {
             console.error('[backend] onSessions:', err)
+          }
+        }
+        return
+      }
+      if (msg.type === 'commits' && Array.isArray(msg.commits)) {
+        commits = msg.commits as BackendCommit[]
+        for (const fn of commitSubs) {
+          try {
+            fn(kit.commits())
+          } catch (err) {
+            console.error('[backend] onCommits:', err)
           }
         }
         return

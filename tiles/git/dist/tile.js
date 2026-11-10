@@ -1,14 +1,15 @@
-// The Git tile: what every open session has changed, and every worktree of their projects. Plain
+// The Git tile: what every open session has changed, every worktree of their projects, and their
+// history, each commit tagged with the session that made it (exactly, or as a guess). Plain
 // JavaScript, no build. The rules are in model.js; the git work is the backend's (../backend.mjs,
 // the trusted tier), which this page reaches through `workshop.backend` naming sessions by id and
 // worktrees by the paths the backend itself listed.
 //
 // What it uses of the contract: backend (changes, diff, worktrees, diffmain, rebase, merge,
-// remove), sessions launch (which sessions are open, when one goes quiet, and the new-session form
+// remove, history, commit, and its `commits` event when core records one), sessions launch (which sessions are open, when one goes quiet, and the new-session form
 // filled in for "open a session here" and "new chat in a worktree"), view (poll only while the
 // page can be seen; the pane gives diffs room), head (the count of changed files), door (`show`).
 
-import { ARM_MS, LETTER, STALE_WORDS, actionsFor, branchLabel, dirtyLabel, filesLabel, filtered, isArmed, names, num, numbered, openIds, press, projectOverlaps, sessionsKey, signature, totals, versusBase, worktreeOfSession, worktreesOf } from './model.js'
+import { ARM_MS, LETTER, STALE_WORDS, ago, badgeOf, shown, byLabel, byTitle, groupCount, refsShown, todayBySession, actionsFor, branchLabel, dirtyLabel, filesLabel, filtered, isArmed, names, num, numbered, openIds, press, projectOverlaps, sessionsKey, signature, totals, versusBase, worktreeOfSession, worktreesOf } from './model.js'
 
 const ws = window.workshop
 const $ = (id) => document.getElementById(id)
@@ -20,6 +21,10 @@ const problemBox = $('problem')
 const POLL_MS = 4000
 /** The Worktrees tab reads more per worktree (status, ahead / behind, the files its commits touch), so it asks a little less often. */
 const WT_POLL_MS = 6000
+/** The History tab: a log changes only when someone commits, and core says so when a session does; the poll catches the rest. */
+const HIST_POLL_MS = 8000
+/** Commits per project at first, and how many more "Show more" adds (the backend caps it at 3,000). */
+const HIST_PAGE = 300
 const TABS = [
   ['changes', 'Changes'],
   ['worktrees', 'Worktrees'],
@@ -27,7 +32,6 @@ const TABS = [
   ['prs', 'PRs']
 ]
 const COMING = {
-  history: 'The commit log across branches, each commit tagged with the session that made it, and a “what did Claude do today” filter.',
   prs: 'Your open pull requests and whether their checks pass, through the gh CLI.'
 }
 
@@ -53,6 +57,13 @@ const results = new Map()
 const mainDiffs = new Map()
 /** The write running now (its button's key), so a row says so and nothing else is pressed meanwhile. */
 let acting = ''
+/** The History tab: the last answer, its filter, how many commits to ask for, commits unfolded and their diffs by sha. */
+let hist = null
+let histError = ''
+let histFilter = load('histFilter', 'all')
+let histLimit = HIST_PAGE
+const openCommits = new Set()
+const commitDiffs = new Map()
 /** The last answer drawn, to tell a poll that changed nothing. */
 let drawn = ''
 
@@ -174,11 +185,13 @@ function schedule() {
   if (!canSee() || backendState === 'failed') return
   if (tab === 'changes') timer = setInterval(() => void refresh(), POLL_MS)
   else if (tab === 'worktrees') timer = setInterval(() => void refreshWorktrees(), WT_POLL_MS)
+  else if (tab === 'history') timer = setInterval(() => void refreshHistory(), HIST_POLL_MS)
 }
 /** Asks again for the tab that is up. */
 function refreshTab() {
   if (tab === 'changes') return refresh()
   if (tab === 'worktrees') return refreshWorktrees()
+  if (tab === 'history') return refreshHistory()
 }
 document.addEventListener('visibilitychange', () => {
   schedule()
@@ -198,6 +211,7 @@ function onSessions(list) {
   soon = setTimeout(() => {
     if (!canSee()) return
     if (tab === 'worktrees') return void refreshWorktrees()
+    if (tab === 'history') return void refreshHistory()
     if (tab !== 'changes') return
     // Counts can stay the same while the lines change: a session's turn ending refetches the diffs.
     for (const d of diffs.values()) d.sig = ''
@@ -211,11 +225,15 @@ function render() {
   drawBar()
   document.body.classList.toggle('pane', ws.view !== 'tile')
   const t = totals(projects)
-  void ws.head.set({ badge: t.files ? String(t.files) : '' }).catch(() => {})
+  void ws.head.set({ badge: badgeOf(t.files) }).catch(() => {})
   if (backendState === 'failed') problem('The git helper stopped. Turn the tile off and on again to restart it.')
   else problem(error ? `Could not read git: ${error}` : '')
   if (tab === 'worktrees') {
     drawWorktreesTab()
+    return
+  }
+  if (tab === 'history') {
+    drawHistoryTab()
     return
   }
   if (tab !== 'changes') {
@@ -234,7 +252,8 @@ function render() {
 }
 
 function drawBar() {
-  bar.replaceChildren(
+  // replaceChildren draws a null as the word "null": what a condition left out is dropped first (model.js shown).
+  const parts = [
     el(
       'nav',
       { class: 'tabs' },
@@ -282,8 +301,36 @@ function drawBar() {
           )
         )
       : null,
-    (tab === 'changes' && at) || (tab === 'worktrees' && wt) ? el('span', { class: 'muted when', title: new Date(tab === 'changes' ? at : wt.at).toLocaleTimeString() }, 'live') : null
-  )
+    tab === 'history'
+      ? el(
+          'span',
+          { class: 'filter' },
+          [
+            ['all', 'All'],
+            ['today', 'Today, by session']
+          ].map(([id, label]) =>
+            el(
+              'button',
+              {
+                class: histFilter === id ? 'on' : undefined,
+                'data-hfilter': id,
+                title: id === 'today' ? 'The last 24 hours of commits in every project, grouped by the session that made them' : undefined,
+                onclick: () => {
+                  histFilter = id
+                  save('histFilter', histFilter)
+                  render()
+                }
+              },
+              label
+            )
+          )
+        )
+      : null,
+    (tab === 'changes' && at) || (tab === 'worktrees' && wt) || (tab === 'history' && hist)
+      ? el('span', { class: 'muted when', title: new Date(tab === 'changes' ? at : tab === 'worktrees' ? wt.at : hist.at).toLocaleTimeString() }, 'live')
+      : null
+  ]
+  bar.replaceChildren(...shown(parts))
 }
 
 function drawProject(p) {
@@ -674,6 +721,170 @@ function drawMainDiff(w, d) {
 }
 
 
+// ---- the History tab
+
+let histAsking = null
+let histAgain = false
+/** Asks for the log of every open session's project; a call made while one is out runs once more after it. */
+async function refreshHistory() {
+  if (histAsking) {
+    histAgain = true
+    return histAsking
+  }
+  histAsking = (async () => {
+    try {
+      const ids = openIds(sessions)
+      const r = ids.length ? await ws.backend.call('history', { sessions: ids, limit: histLimit }) : { projects: [], at: Date.now() }
+      const changed = JSON.stringify(r.projects) !== JSON.stringify(hist?.projects)
+      const hadError = !!histError
+      hist = r
+      histError = ''
+      if (tab === 'history' && (changed || hadError)) render()
+    } catch (e) {
+      histError = e.message
+      if (tab === 'history') render()
+    }
+  })()
+  try {
+    await histAsking
+  } finally {
+    histAsking = null
+    if (histAgain) {
+      histAgain = false
+      void refreshHistory()
+    }
+  }
+}
+
+/** A commit's diff is fetched once: a commit never changes. */
+async function toggleCommit(root, c) {
+  if (openCommits.has(c.sha)) {
+    openCommits.delete(c.sha)
+    render()
+    return
+  }
+  openCommits.add(c.sha)
+  if (!commitDiffs.has(c.sha) || commitDiffs.get(c.sha).error) {
+    commitDiffs.set(c.sha, { loading: true, files: [] })
+    render()
+    try {
+      commitDiffs.set(c.sha, await ws.backend.call('commit', { root, sha: c.sha }))
+    } catch (e) {
+      commitDiffs.set(c.sha, { files: [], error: e.message })
+    }
+  }
+  render()
+}
+
+function drawHistoryTab() {
+  if (histError && !hist) {
+    body.replaceChildren(el('p', { class: 'err empty' }, `Could not read the history: ${histError}`))
+    return
+  }
+  if (!hist) {
+    body.replaceChildren(el('p', { class: 'muted empty' }, 'Reading…'))
+    return
+  }
+  if (!hist.projects.length) {
+    body.replaceChildren(el('p', { class: 'muted empty' }, 'No sessions open. The history of each session’s project shows here.'))
+    return
+  }
+  if (histFilter === 'today') {
+    const groups = todayBySession(hist.projects)
+    const many = hist.projects.length > 1
+    body.replaceChildren(
+      ...(groups.length
+        ? groups.map((g) =>
+            el(
+              'section',
+              { class: `project hgroup ${g.kind}`, 'data-group': g.key },
+              el(
+                'div',
+                { class: 'project-head' },
+                g.kind === 'session' ? statusDot(g.key.slice(2)) : null,
+                el('span', { class: g.kind === 'session' ? 'project-name' : 'project-name muted' }, g.label),
+                many || g.kind !== 'session' ? el('span', { class: 'muted' }, g.project) : null,
+                el('span', { class: 'spacer' }),
+                el('span', { class: 'muted count' }, groupCount(g))
+              ),
+              g.commits.map((c) => drawCommit(g.root, c, { inGroup: g.kind === 'session' }))
+            )
+          )
+        : [el('p', { class: 'muted empty' }, 'No commits in the last 24 hours.')])
+    )
+    return
+  }
+  body.replaceChildren(
+    ...hist.projects.map((p) =>
+      el(
+        'section',
+        { class: 'project hproject', 'data-root': p.root },
+        el('div', { class: 'project-head', title: p.root }, el('span', { class: 'project-name' }, p.name), el('span', { class: 'muted path' }, `\u200e${p.root}`)),
+        p.error ? el('p', { class: 'err note' }, p.error) : null,
+        !p.error && !p.commits.length ? el('p', { class: 'muted note' }, 'No commits yet.') : null,
+        p.commits.map((c) => drawCommit(p.root, c)),
+        p.more
+          ? el(
+              'button',
+              {
+                class: 'act more',
+                'data-act': 'more',
+                disabled: histLimit >= 3000,
+                onclick: () => {
+                  histLimit += HIST_PAGE
+                  void refreshHistory()
+                }
+              },
+              histLimit >= 3000 ? 'Showing the newest 3,000' : `Show ${HIST_PAGE} more`
+            )
+          : null
+      )
+    )
+  )
+}
+
+/** One commit: its subject, short sha and when; its refs; and who made it. A click unfolds its diff. */
+function drawCommit(root, c, { inGroup = false } = {}) {
+  const open = openCommits.has(c.sha)
+  // Inside its own session's group an exact tag would only repeat the group's name; a guess still says so.
+  const tag = c.by && !(inGroup && c.by.kind === 'exact') ? el('span', { class: `by ${c.by.kind}`, title: byTitle(c.by) }, byLabel(c.by)) : null
+  const when = new Date(c.ct)
+  return el(
+    'div',
+    { class: 'commit', 'data-sha': c.sha },
+    el(
+      'button',
+      { class: `line${open ? ' open' : ''}`, 'aria-expanded': String(open), onclick: () => void toggleCommit(root, c) },
+      el(
+        'span',
+        { class: 'row1' },
+        el('span', { class: 'caret' }, open ? '▾' : '▸'),
+        el('span', { class: 'subject' }, c.subject || '(no message)'),
+        el('span', { class: 'spacer' }),
+        el('span', { class: 'muted sha' }, c.sha.slice(0, 7))
+      ),
+      el(
+        'span',
+        { class: 'row2' },
+        tag,
+        c.parents.length > 1 ? el('span', { class: 'muted tag' }, 'merge') : null,
+        refsShown(c.refs).map((r) => el('span', { class: `ref ${r.kind}` }, r.kind === 'tag' ? `tag ${r.name}` : r.name)),
+        el('span', { class: 'spacer' }),
+        el('span', { class: 'muted ago', title: `${when.toLocaleString()} · ${c.author}` }, ago(c.ct))
+      )
+    ),
+    open ? drawCommitDiff(c) : null
+  )
+}
+
+function drawCommitDiff(c) {
+  const d = commitDiffs.get(c.sha)
+  if (!d || d.loading) return el('p', { class: 'muted note' }, 'Reading the diff…')
+  if (d.error) return el('p', { class: 'err note' }, d.error)
+  if (!d.files.length) return el('p', { class: 'muted note' }, c.parents.length > 1 ? 'This merge brought no changes of its own.' : 'No changes to files.')
+  return el('div', { class: 'diffs' }, d.files.map((f) => drawFile(`commit ${c.sha}`, f)), d.cut ? el('p', { class: 'muted note' }, 'The diff was too long to read whole; the rest is not shown.') : null)
+}
+
 // ---- the door: a session asks for its changes to be shown
 
 ws.door?.handle('show', async (_args, caller, { session }) => {
@@ -698,6 +909,10 @@ ws.onViewChange(() => {
   render()
   void refreshTab()
 })
+// Core recorded a commit a session made: the History tab looks again at once.
+ws.backend.onEvent?.((e) => {
+  if (e?.name === 'commits' && tab === 'history' && canSee()) void refreshHistory()
+})
 ws.backend.onStatus((s) => {
   const was = backendState
   backendState = s?.state ?? 'starting'
@@ -713,4 +928,5 @@ render()
 schedule()
 await refresh()
 if (tab === 'worktrees') await refreshWorktrees()
+if (tab === 'history') await refreshHistory()
 window.gitReady = true
