@@ -147,6 +147,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
 
     await devTiles(check, liveByTile, door.port, addDevTile)
     await files(check, ctx)
+    await themes(check, ctx)
     await instances(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
@@ -287,4 +288,26 @@ async function files(check: (name: string, ok: boolean, detail?: string) => void
     noOtherTilesGrant: await fetch('tile://wikipedia/~files/${handle}/gb/a.gb').then((x) => !x.ok, () => true)
   }))()`)) as Record<string, boolean>
   for (const [k, ok] of Object.entries(w)) check(`files, tile without the permission: ${k}`, ok === true)
+}
+
+/** The theme picker's choice reaches every tile at once, is saved, and Deep Space puts up its sky. */
+async function themes(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile, userData }: Ctx): Promise<void> {
+  const panel = (): Promise<unknown> => liveByTile.get('probe')!.wc.executeJavaScript(`getComputedStyle(document.documentElement).getPropertyValue('--ws-panel').trim()`)
+  await liveByTile.get('probe')!.wc.executeJavaScript(`window.themeSeen = null; workshop.theme.onChange((v) => { window.themeSeen = v['--ws-panel'] }); true`)
+  check('themes: Deep Space is the default, with its sky', (await win.webContents.executeJavaScript(`!!document.querySelector('.cosmos-wall') && document.documentElement.dataset.wall === 'true'`)) === true)
+  await win.webContents.executeJavaScript(`window.core.setSettings({ theme: 'gruvbox', appearance: 'light' }).then(() => true)`)
+  await sleep(200)
+  check('themes: a tile is repainted', (await panel()) === '#fbf1c7', String(await panel()))
+  check('themes: a tile hears onChange', (await liveByTile.get('probe')!.wc.executeJavaScript('window.themeSeen')) === '#fbf1c7')
+  check('themes: workshop.theme.vars is live', (await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.theme.vars['--ws-panel']`)) === '#fbf1c7')
+  check('themes: the sky comes down', (await win.webContents.executeJavaScript(`!document.querySelector('.cosmos-wall')`)) === true)
+  const saved = JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8')) as Record<string, string>
+  check('themes: saved', saved.theme === 'gruvbox' && saved.appearance === 'light')
+  await win.webContents.executeJavaScript(`window.core.setSettings({ theme: 'no-such-theme' }).then(() => true)`)
+  check('themes: an unknown theme is ignored', (await panel()) === '#fbf1c7')
+  await win.webContents.executeJavaScript(`window.core.setSettings({ theme: 'cosmos', appearance: 'system' }).then(() => true)`)
+  await sleep(200)
+  check('themes: back to Deep Space', (await win.webContents.executeJavaScript(`!!document.querySelector('.cosmos-wall')`)) === true)
+  const bridged = (await liveByTile.get('probe')!.wc.executeJavaScript(`typeof window.core`)) as string
+  check('themes: a tile cannot reach core\'s settings', bridged === 'undefined')
 }

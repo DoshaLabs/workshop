@@ -5,7 +5,9 @@
 // `multiple: true` may have more, keyed `<id>.<n>` (n up to 4), each its own page and partition.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { TileHead, TileInfo, TileProblem } from '@shared/ipc'
+import type { ThemeState, TileHead, TileInfo, TileProblem } from '@shared/ipc'
+import { syncCosmos } from './cosmos'
+import { ThemePicker } from './ThemePicker'
 import { TileLayer, type Instance } from './TileLayer'
 
 const OFF_KEY = 'workshop.off'
@@ -29,8 +31,14 @@ function writeList(key: string, list: string[]): void {
   }
 }
 
-function applyVars(vars: Record<string, string>): void {
-  for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v)
+/** Paints the window: the variables, and the attributes the stylesheet keys the wall and dark mode on. */
+function applyTheme(t: ThemeState): void {
+  const root = document.documentElement
+  for (const [k, v] of Object.entries(t.vars)) root.style.setProperty(k, v)
+  root.dataset.theme = t.theme
+  root.dataset.wall = String(t.wall)
+  root.dataset.dark = String(t.dark)
+  syncCosmos(t.theme)
 }
 
 const instanceN = (key: string): number => Number(/\.(\d)$/.exec(key)?.[1] ?? 1)
@@ -46,18 +54,23 @@ export function App() {
   const [pane, setPane] = useState<string | null>(null)
   const [heads, setHeads] = useState<Record<string, TileHead>>({})
   const [chips, setChips] = useState<Record<string, string>>({})
+  const [theme, setTheme] = useState<ThemeState | null>(null)
 
   useEffect(() => {
     const load = () =>
       void window.core.listTiles().then((r) => {
         setTiles(r.tiles)
         setProblems(r.problems)
-        applyVars(r.vars)
+        applyTheme(r.theme)
+        setTheme(r.theme)
       })
     load()
     const offs = [
       window.core.onTilesChanged(load),
-      window.core.onTheme(applyVars),
+      window.core.onTheme((t) => {
+        applyTheme(t)
+        setTheme(t)
+      }),
       window.core.onTileHead((key, head) => setHeads((h) => ({ ...h, [key]: head }))),
       window.core.onTilePane((key, open) => setPane((p) => (open ? key : p === key ? null : p))),
       window.core.onTileNotify((key, text) => {
@@ -117,6 +130,7 @@ export function App() {
 
   return (
     <div className="app">
+      <div className="topbar">{theme && <ThemePicker theme={theme} />}</div>
       <aside className="col sessions">
         <div className="col-title">Sessions</div>
         <p className="empty">Sessions arrive with the core extraction (roadmap step 3).</p>

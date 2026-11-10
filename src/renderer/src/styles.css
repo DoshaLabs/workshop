@@ -31,7 +31,7 @@ button {
 }
 .col {
   min-height: 0;
-  background: var(--ws-panel);
+  background: var(--ws-surface, var(--ws-panel));
   border: 1px solid var(--ws-line);
   border-radius: 10px;
   overflow: hidden;
@@ -91,7 +91,7 @@ button {
   gap: 8px;
 }
 .tile {
-  background: var(--ws-panel);
+  background: var(--ws-surface, var(--ws-panel));
   border: 1px solid var(--ws-line);
   border-radius: 10px;
   overflow: hidden;
@@ -194,4 +194,133 @@ button {
   width: 100%;
   height: 100%;
   display: flex;
+}
+
+/* ---- the top bar: the window's drag strip, with the theme picker on the right */
+.topbar {
+  position: fixed;
+  top: 6px;
+  right: 10px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+  -webkit-app-region: no-drag;
+}
+.ghost.small {
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 1px solid var(--ws-line);
+}
+.theme-picker {
+  position: relative;
+}
+.popover {
+  position: absolute;
+  right: 0;
+  top: 32px;
+  width: 220px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--ws-overlay, var(--ws-panel));
+  border: 1px solid var(--ws-line);
+  box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.segmented {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  margin-bottom: 4px;
+  border-radius: 7px;
+  background: var(--ws-bg);
+}
+.segmented button {
+  flex: 1;
+  border: none;
+  border-radius: 5px;
+  padding: 3px 0;
+  background: transparent;
+  color: var(--ws-muted);
+  cursor: pointer;
+}
+.segmented button.on {
+  background: var(--ws-line);
+  color: var(--ws-ink);
+}
+.segmented button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.theme-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.theme-row:hover {
+  background: var(--ws-line);
+}
+.theme-row.on {
+  color: var(--ws-accent);
+  font-weight: 600;
+}
+.swatch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 5px;
+  border: 1px solid;
+}
+.swatch i {
+  width: 6px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* ---- Deep Space (cosmos.ts): a sky behind the window, every core pane a see-through sheet over
+   it. Tiles' own pages keep a solid face for now (CLAUDE.md §5, "see-through tiles"). */
+:root[data-wall='true'] {
+  --ws-surface: color-mix(in srgb, var(--ws-panel) 46%, transparent);
+  --ws-overlay: color-mix(in srgb, var(--ws-panel) 82%, transparent);
+}
+:root[data-wall='true'],
+:root[data-wall='true'] body,
+:root[data-wall='true'] #root {
+  background: transparent;
+}
+:root[data-wall='true'] .col,
+:root[data-wall='true'] .tile {
+  border-color: color-mix(in srgb, var(--ws-ink) 16%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #c8d4ff 16%, transparent),
+    0 8px 24px -12px rgba(0, 0, 0, 0.55);
+}
+:root[data-wall='true'] .tiles {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.cosmos-wall {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: #020309;
+}
+.cosmos-wall > canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }

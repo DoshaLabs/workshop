@@ -6,9 +6,10 @@ import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protoco
 import { mkdtempSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { CH, type DoorCall, type TileHead, type TileHello, type TileView } from '@shared/ipc'
+import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
 import { BRIDGE_VERSION } from '@shared/manifest'
-import { DEFAULT_THEME, resolveVariant, themeVars } from '@shared/themes'
+import { COSMOS_ID, forcesDark, resolveVariant, seeThrough, themeVars } from '@shared/themes'
+import { SettingsStore, type Settings } from './settings'
 import { Door } from './door'
 import { TileGrants } from './files'
 import { TileStore } from './storage'
@@ -55,7 +56,27 @@ const lastNotify = new Map<string, number>()
 const lastExternal = new Map<string, number>()
 
 const tileDataDir = (): string => join(app.getPath('userData'), 'tile-data')
-const vars = (): Record<string, string> => themeVars(resolveVariant(DEFAULT_THEME, 'system', nativeTheme.shouldUseDarkColors))
+let settings: SettingsStore
+const isDark = (s: Settings): boolean => forcesDark(s.theme) || s.appearance === 'dark' || (s.appearance === 'system' && nativeTheme.shouldUseDarkColors)
+const variant = () => {
+  const s = settings.get()
+  return resolveVariant(s.theme, s.appearance, nativeTheme.shouldUseDarkColors)
+}
+const vars = (): Record<string, string> => themeVars(variant())
+/** What core's window needs to paint itself: the settings, the live variables, and whether there is a wall. */
+const themeState = (): ThemeState => {
+  const s = settings.get()
+  // Glass's wall is Wikipedia's picture of the day in deck; until it comes over, Glass is solid here.
+  return { ...s, dark: isDark(s), wall: seeThrough(s.theme) && s.theme === COSMOS_ID, vars: vars() }
+}
+
+/** The theme changed (settings or the OS): repaint the window and every tile. */
+function pushTheme(): void {
+  const v = vars()
+  win?.setBackgroundColor(v['--ws-bg'])
+  win?.webContents.send(CH.themeChanged, themeState())
+  for (const g of liveByTile.values()) g.wc.send(CH.theme, v)
+}
 
 const door = new Door({
   manifest: (id) => registry.tiles.get(id)?.manifest,
@@ -331,7 +352,13 @@ function bridge(): void {
   // Core's own window.
   ipcMain.handle(CH.listTiles, (e) => {
     if (e.sender !== win?.webContents) throw new Error('core only')
-    return { tiles: [...registry.tiles.values()].map(tileInfo), problems: registry.problems, vars: vars() }
+    return { tiles: [...registry.tiles.values()].map(tileInfo), problems: registry.problems, theme: themeState() }
+  })
+  ipcMain.handle(CH.setSettings, async (e, patch: Partial<Settings>) => {
+    if (e.sender !== win?.webContents) throw new Error('core only')
+    await settings.patch(patch && typeof patch === 'object' ? patch : {})
+    pushTheme()
+    return themeState()
   })
   ipcMain.handle(CH.setView, (e, key: string, view: TileView) => {
     if (e.sender !== win?.webContents || (view !== 'tile' && view !== 'pane')) return
@@ -381,6 +408,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
   registry = await loadTiles([
     { dir: join(app.getAppPath(), 'tiles'), source: 'core' },
     { dir: join(app.getPath('userData'), 'tiles'), source: 'installed' }
@@ -401,11 +429,7 @@ app.whenReady().then(async () => {
   bridge()
   createWindow()
 
-  nativeTheme.on('updated', () => {
-    const v = vars()
-    win?.webContents.send(CH.themeChanged, v)
-    for (const g of liveByTile.values()) g.wc.send(CH.theme, v)
-  })
+  nativeTheme.on('updated', pushTheme)
 
   if (SMOKE) {
     const code = await runSmoke({ win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened, addDevTile })

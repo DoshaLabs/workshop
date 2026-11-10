@@ -30,8 +30,11 @@ drives the door; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture
 - `tiles/wikipedia/`: the reference tile, plain JS with no build step.
 - `bin/workshop.mjs tile dev <folder>`: loads a tile under development (reload on change, or a
   dev-server `entry`); hands the folder to the app if it is already running.
+- Themes: deck's whole catalog (`src/shared/themes.ts`), saved by main (`src/main/settings.ts`),
+  picked from the top bar, pushed to every tile as `--ws-*`. Deep Space's sky is
+  `src/renderer/src/cosmos.ts`. Glass is solid until its picture wall comes over from deck.
 - Not yet: sessions, `sessions`/`usage`/`transcripts` (accepted in manifests, not yet in the
-  bridge), the trusted tier, theme picker.
+  bridge), the trusted tier.
 
 Terms used throughout:
 
@@ -337,9 +340,9 @@ This generalizes what deck does by hand for each tile (`/deck:mol`, `/deck:remin
 ### Left out of version 1
 
 - The phone.
-- See-through tiles. Under Glass and Deep Space, core's own panes are tinted sheets over the
-  wall. Whether a webview can be transparent the same way is unverified, so third-party tiles
-  may get a solid face at first.
+- See-through tiles as a feature. A webview IS transparent: a tile page with no background of its
+  own shows Deep Space's sky (seen 10 Nov 2026). What is missing is a contract for it (a
+  `--ws-surface` variable for tiles, and readable text over the sky).
 - Tile-to-tile messaging. The reader-to-vocabulary link was the only case and the reader is held.
 
 ### The contract checked against the launch tiles
@@ -609,7 +612,6 @@ screen points at Foxtrot's download (section 8). The commissioned fox replaces t
 - **The bridge's name.** This document uses `window.workshop`, `"workshop": "^1"` and
   `workshop tile dev`. Not confirmed; follows the public name.
 - **The dead-session pose** until the commissioned sheet has one.
-- **Can a tile's webview be see-through** under Glass and Deep Space?
 - **Does the tile index work as a Claude Code plugin marketplace** as is?
 - **Permission prompts in a tile**: confirm the PreToolUse route can carry an approve / deny.
 - **When to open the trusted tier** to outside authors, and what its review looks like.

@@ -5,6 +5,16 @@ import type { Manifest } from './manifest'
 
 export type TileView = 'tile' | 'pane'
 
+/** The theme as core's window paints it. */
+export interface ThemeState {
+  theme: string
+  appearance: 'system' | 'light' | 'dark'
+  dark: boolean
+  /** A wall of its own behind see-through panes (Deep Space's sky, Glass). */
+  wall: boolean
+  vars: Record<string, string>
+}
+
 /** What core's window knows about a registered tile. */
 export interface TileInfo {
   manifest: Manifest
@@ -78,5 +88,6 @@ export const CH = {
   tileHead: 'ws:core:tile-head',
   tilePane: 'ws:core:tile-pane',
   tileNotify: 'ws:core:tile-notify',
-  themeChanged: 'ws:core:theme'
+  themeChanged: 'ws:core:theme',
+  setSettings: 'ws:core:set-settings'
 } as const
