@@ -97,13 +97,19 @@ await workshop.storage.get(key)             // any JSON value, or null
 await workshop.storage.set(key, value)      // null removes it. 5 MB for the whole tile.
 workshop.storage.watch(key, (value) => {})  // also fires for your own writes
 
-await workshop.sessions.list()              // [{ id, name, project, status, focused, open }]
+await workshop.sessions.list()              // [{ id, name, project, root, status, focused, open }]
+                                            // project: the folder the session started in
+                                            // root: the project it belongs to: its git repository's root
+                                            //   (every worktree of one repo shares it), else the start folder.
+                                            //   File things by root.
 workshop.sessions.watch((list) => {})
 await workshop.sessions.paste(id, text)     // "write" only: types into a session and submits
 
 await workshop.usage.get(); workshop.usage.watch((u) => {})   // rate-limit windows, per-session cost and context %
 
 await workshop.notify({ text })             // a chip on the tile's head and a macOS notification; one per 3 s
+await workshop.notify({ text, attention: true })   // also makes a session's status mark jump once:
+                                            // the session that last called this tile's door (10 min), else the focused one
 
 workshop.door.handle('add', async (args, caller, { session }) => result)
 // args: string[] exactly as typed. caller: the session's name, or 'outside'.

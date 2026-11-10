@@ -1,7 +1,7 @@
 // The Reminders tile's rules, run against the file the tile ships (tiles/reminders/dist/model.js).
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error plain JavaScript, as a tile's page is
-import { apply, clean, empty, parseCall, projectsOf, resolveProject, sweep } from '../tiles/reminders/dist/model.js'
+import { apply, clean, empty, parseCall, projectsOf, resolveProject, sessionProject, sweep } from '../tiles/reminders/dist/model.js'
 
 const DAY = 24 * 3600 * 1000
 const NOON = new Date(2026, 10, 10, 12).getTime()
@@ -21,6 +21,19 @@ describe('reminders model', () => {
     expect(() => run(empty(), 'add', ['x', '--project', '~/site'])).toThrow(/no project called/)
     expect(() => resolveProject('app', ['/a/app', '/b/app'])).toThrow(/2 projects/)
     expect(() => run(empty(), 'add', ['x'], { here: '' })).toThrow(/which project/)
+  })
+
+  it('files a session by its repository, so worktrees of one repo land together', () => {
+    const main = { id: 'a', project: '/code/app', root: '/code/app' }
+    const wt = { id: 'b', project: '/code/app/.claude/worktrees/fix', root: '/code/app' }
+    expect(sessionProject(main)).toBe('/code/app')
+    expect(sessionProject(wt)).toBe('/code/app')
+    // An older workshop reported only the start folder.
+    expect(sessionProject({ id: 'c', project: '/code/site' })).toBe('/code/site')
+    expect(sessionProject(undefined)).toBe('')
+    const r = run(empty(), 'add', ['from the worktree'], { by: 'fix', here: sessionProject(wt) })
+    expect(r.result.reminder.project).toBe('/code/app')
+    expect(projectsOf(r.state, [main, wt].map(sessionProject))).toEqual(['/code/app'])
   })
 
   it('refuses what it does not know', () => {

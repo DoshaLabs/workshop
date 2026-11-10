@@ -4,6 +4,7 @@
 
 import type { BrowserWindow, WebContents } from 'electron'
 import { mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -21,6 +22,8 @@ interface Ctx {
   opened: string[]
   addDevTile: (folder: string) => Promise<string>
   core: import('./core-sessions').CoreSessions
+  /** The profile's name (its tmux socket), for a second core started on it. */
+  profile?: string
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -186,8 +189,13 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await files(check, ctx)
     await themes(check, ctx)
     await mascot(check, ctx)
+    await projects(check, ctx)
+    await sideDoors(check, ctx)
     await instances(check, ctx)
     await installs(check, ctx)
+    await knotClock(check, ctx)
+    // Last: it stops this core's sessions.
+    await restart(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
   }
@@ -771,9 +779,9 @@ async function realClaude(check: (name: string, ok: boolean, detail?: string) =>
 
 /**
  * The status mark (CLAUDE.md §8). With no sprite pack a session shows the Knot, whose mode follows
- * its status; a bark (a tile's notify, a turn finishing) flares it. A synthetic sprite pack (plain
+ * its status; a call for attention (a tile's notify, a turn finishing) flares it. A synthetic sprite pack (plain
  * coloured frames drawn here, never a real sheet) replaces it with a sprite whose pose follows the
- * status and which leaps on a bark; removing the pack brings the Knot back.
+ * status and which leaps on a call for attention; removing the pack brings the Knot back.
  *
  * WORKSHOP_SHOT_MASCOT=<folder>: pictures of the heads and the top-left mark in three themes, and
  * of the setup screen. WORKSHOP_SMOKE_SHEET=<png>: a sheet to try in the setup screen and install,
@@ -805,7 +813,7 @@ async function mascot(check: (name: string, ok: boolean, detail?: string) => voi
 
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'hello\\r'); true`)
   check('mark: a finished turn needs you (needs)', await modeIs('needs'))
-  check('mark: and flares once, a bark', (await waitFor('a flare', async () => (await flare()) === '1', 2000).then(() => true, () => false)))
+  check('mark: and flares once, a call for attention', (await waitFor('a flare', async () => (await flare()) === '1', 2000).then(() => true, () => false)))
   await js(`window.core.ptyInput(${JSON.stringify(id)}, ' '); true`)
   check('mark: looked at, it rests (small, slow)', await modeIs('rest'))
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'spoof\\r'); true`)
@@ -818,12 +826,18 @@ async function mascot(check: (name: string, ok: boolean, detail?: string) => voi
   }
   await js(`window.core.setSettings({ theme: 'cosmos', appearance: 'system' }).then(() => true)`)
 
-  // A tile's bark goes to the session in focus (this one: no live session has called the probe lately).
+  // A tile's call for attention goes to the session in focus (this one: no live session has called the probe lately).
   await sleep(3200)
+  // The contract's old word is gone, not kept as an alias: notify still shows, but nothing flares.
   await js(`(${row}).querySelector('canvas.knot').dataset.flare = ''; true`)
-  const barked = await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.notify({ text: 'bark', bark: true })`)
+  const old = await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.notify({ text: 'old word', bark: true })`)
+  await sleep(1500)
+  check('mark: notify({ bark: true }) is only a notification now', old === true && (await flare()) !== '1', `${old} ${await flare()}`)
+  await sleep(2000)
+  await js(`(${row}).querySelector('canvas.knot').dataset.flare = ''; true`)
+  const called = await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.notify({ text: 'attention', attention: true })`)
   const flared = await waitFor('the flare', async () => (await flare()) === '1', 3000).then(() => true, () => false)
-  check('mark: notify({ bark: true }) flares the session’s Knot', barked === true && flared, String(barked))
+  check('mark: notify({ attention: true }) flares the session’s Knot', called === true && flared, String(called))
 
   // A synthetic pack: 4 × 3 frames of 16 px, a colour per row, drawn on a canvas here.
   const pack = { format: 1, name: 'Blocky', image: 'sheet.png', sheet: { w: 64, h: 48 }, frame: { w: 16, h: 16 }, box: { x: 2, y: 4, w: 12, h: 10 }, states: { run: { row: 0, from: 0, frames: 4, ms: 60 }, leap: { row: 1, from: 0, frames: 3, ms: 80 }, sleep: { row: 2, from: 0, frames: 2, ms: 300 } } }
@@ -838,11 +852,11 @@ async function mascot(check: (name: string, ok: boolean, detail?: string) => voi
   check('pack: a synthetic pack saves', saved === 'blocky', String(saved))
   const sprite = await waitFor('the sprite', async () => (await mark('.sprite')) !== null, 3000).then(() => true, () => false)
   check('pack: it replaces the Knot on the session', sprite && (await mark('canvas.knot')) === null)
-  // (The tile's bark a moment ago may still be playing its leap.)
+  // (The tile's call a moment ago may still be playing its leap.)
   const running = await waitFor('the run pose', async () => (await mark('.sprite')) === 'run', 2000).then(() => true, () => false)
   check('pack: the pose follows the status (working: run)', running, String(await mark('.sprite')))
   check('pack: drawn crisp', (await js(`getComputedStyle((${row}).querySelector('.sprite')).imageRendering`)) === 'pixelated')
-  await sleep(3200) // past the last bark, which a new one this soon would be taken for
+  await sleep(3200) // past the last call, which a new one this soon would be taken for
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'again\\r'); true`)
   const leapt = await waitFor('the leap', async () => (await mark('.sprite')) === 'leap', 4000).then(() => true, () => false)
   check('pack: a turn finishing plays Leap once', leapt)
@@ -929,4 +943,241 @@ async function measureCpu({ win, core }: { win: BrowserWindow; core: Ctx['core']
   await sleep(1000)
   await sample('10 sessions working, every Knot off screen')
   for (const id of ids) await core.sessions.kill(id)
+}
+
+// ── Track F ──────────────────────────────────────────────────────────────────
+
+/**
+ * A session's project is its repository's root (project.ts): a session started in a worktree
+ * reports the main repo as `root` beside its own start folder as `project`, and Reminders files
+ * what it adds under the repo.
+ */
+async function projects(check: (name: string, ok: boolean, detail?: string) => void, { win, door, liveByTile, core }: Ctx): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  const git = (cwd: string, ...args: string[]): void => void execFileSync('git', ['-c', 'user.name=smoke', '-c', 'user.email=smoke@example.com', ...args], { cwd, stdio: 'ignore' })
+  const repo = await realpath(await mkdtemp(join(tmpdir(), 'ws-repo-')))
+  git(repo, 'init', '-q')
+  await writeFile(join(repo, 'a.txt'), 'a')
+  git(repo, 'add', '.')
+  git(repo, 'commit', '-q', '-m', 'one')
+  const wt = join(repo, '.claude', 'worktrees', 'smoke')
+  git(repo, 'worktree', 'add', '-q', wt, '-b', 'smoke')
+  const made = await js(`window.core.newSession({ cwd: ${JSON.stringify(wt)}, name: 'in-a-worktree' })`)
+  const id = String(made.id)
+  const plainDir = await realpath(await mkdtemp(join(tmpdir(), 'ws-plain-')))
+  const other = String((await js(`window.core.newSession({ cwd: ${JSON.stringify(plainDir)}, name: 'no-repo' })`)).id)
+  await waitFor('the worktree session to start', async () => (await screen(id)).includes('FAKE CLAUDE READY'))
+  const list = (await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.sessions.list()`)) as { id: string; project: string; root: string }[]
+  const me = list.find((s) => s.id === id)
+  check('projects: a worktree session reports its start folder and its repo’s root', me?.project === wt && me?.root === repo, JSON.stringify(me))
+  const plain = list.find((s) => s.id === other)
+  check('projects: a session outside any repo is its own project', plain?.project === plainDir && plain?.root === plainDir, JSON.stringify(plain))
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'tile reminders add "From the worktree"\\r'); true`)
+  await waitFor('the reminder from the worktree', async () => (await screen(id)).includes('DONE tile reminders add'))
+  const all = await post(door.port, '/tile/reminders', { op: 'list', args: ['--all'] }, { Authorization: `Bearer ${door.token}` })
+  const r = (all.json.result?.reminders ?? []).find((x: { text: string }) => x.text === 'From the worktree')
+  check('projects: Reminders files a worktree session’s reminder under the repo', r?.project === repo, JSON.stringify(r))
+  if (r) await post(door.port, '/tile/reminders', { op: 'rm', args: [r.id] }, { Authorization: `Bearer ${door.token}` })
+  await core.sessions.kill(id)
+  await core.sessions.kill(other)
+}
+
+/**
+ * The two side doors a request filter cannot see, tried from inside the probe's page. Each is
+ * tried from core's own window too, which has no such guard, as the control: a door that is shut
+ * for the tile but open for the control is shut by the sandbox, not by the network the smoke ran on.
+ *
+ * WebRTC: a STUN request for a server-reflexive candidate is UDP leaving the machine (and the
+ * public address coming back). DNS: a prefetch or preconnect to a host the tile did not declare,
+ * looked for in Chromium's own net log of the tile's session.
+ */
+async function sideDoors(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile, userData }: Ctx): Promise<void> {
+  const probe = liveByTile.get('probe')!.wc
+  const STUN = `(async () => {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }] })
+    const seen = []
+    pc.onicecandidate = (e) => { if (e.candidate && e.candidate.candidate) seen.push(e.candidate.type + '/' + e.candidate.protocol + ' ' + e.candidate.address) }
+    pc.createDataChannel('x')
+    await pc.setLocalDescription(await pc.createOffer())
+    await new Promise((r) => { const t = setTimeout(r, 6000); pc.onicegatheringstatechange = () => { if (pc.iceGatheringState === 'complete') { clearTimeout(t); r() } } })
+    pc.close()
+    return seen
+  })()`
+  const [tile, control] = (await Promise.all([probe.executeJavaScript(STUN), win.webContents.executeJavaScript(STUN)])) as string[][]
+  const reflexive = (xs: string[]): boolean => xs.some((x) => x.startsWith('srflx') || x.startsWith('relay'))
+  check('side doors: WebRTC from a tile reaches no STUN server', !reflexive(tile), JSON.stringify(tile))
+  check('side doors: (control) core’s own window does reach one, so the check can see a leak', reflexive(control), JSON.stringify(control))
+  check('side doors: WebRTC from a tile shows no local address', !tile.some((x) => /\d+\.\d+\.\d+\.\d+/.test(x) && !x.endsWith('.local')), JSON.stringify(tile))
+
+  const tag = Math.random().toString(36).slice(2, 10)
+  // A page that tries to turn prefetching back on first, then hints from itself and from a srcdoc frame.
+  const hint = (who: string): string => `(() => {
+    const m = document.createElement('meta'); m.httpEquiv = 'x-dns-prefetch-control'; m.content = 'on'; document.head.appendChild(m)
+    for (const rel of ['dns-prefetch', 'preconnect']) { const l = document.createElement('link'); l.rel = rel; l.href = 'https://ws-' + rel + '-${who}-${tag}.example.com/'; document.head.appendChild(l) }
+    const f = document.createElement('iframe'); f.style.display = 'none'
+    f.srcdoc = '<meta http-equiv="x-dns-prefetch-control" content="on"><link rel="dns-prefetch" href="https://ws-frame-${who}-${tag}.example.com/">'
+    document.body.appendChild(f)
+    return true
+  })()`
+  const logged = async (wc: WebContents, who: string): Promise<string> => {
+    const file = join(process.env.WORKSHOP_NETLOG_DIR ?? userData, `netlog-${who}.json`)
+    await wc.session.netLog.startLogging(file)
+    await wc.executeJavaScript(hint(who))
+    await sleep(2500)
+    await wc.session.netLog.stopLogging()
+    return readFile(file, 'utf8')
+  }
+  const tileLog = await logged(probe, 'tile')
+  const controlLog = await logged(win.webContents, 'core')
+  // A name was looked up when the resolver took a request for it or a DNS query asked for it.
+  const looked = (log: string, who: string): string[] =>
+    ['dns-prefetch', 'preconnect', 'frame'].filter((rel) => new RegExp(`"(host|hostname|qname)":"[^"]*ws-${rel}-${who}-${tag}\\.example\\.com`).test(log))
+  // The dead proxy does not stop <link rel=dns-prefetch>, nor does an X-DNS-Prefetch-Control
+  // header or a default-src 'self' CSP (core's window has one, and still looks names up). Tile
+  // pages are started with Blink's DNS prefetching off (index.ts, will-attach-webview).
+  const leaked = looked(tileLog, 'tile')
+  check('side doors: a tile’s DNS prefetch, preconnect and a srcdoc frame’s prefetch look nothing up', leaked.length === 0, leaked.join(', '))
+  check('side doors: (control) the net log shows core’s window looking a prefetched name up', looked(controlLog, 'core').includes('dns-prefetch'), looked(controlLog, 'core').join(', '))
+}
+
+/**
+ * The Knots' one clock (Knot.tsx): under reduced motion each knot draws one still frame and the
+ * clock stops; in a hidden window it does not wake at all. Reduced motion is the system setting
+ * emulated through the devtools protocol, which fires the same media-query change. The hidden
+ * window is real: the smoke window (never shown) is shown at zero opacity, without focus, then hidden.
+ */
+async function knotClock(check: (name: string, ok: boolean, detail?: string) => void, { win }: Ctx): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const counts = (): Promise<{ draws: number; wakes: number }> => js(`({ ...window.knotCounts })`)
+  const over = async (ms: number): Promise<{ draws: number; wakes: number }> => {
+    const a = await counts()
+    await sleep(ms)
+    const b = await counts()
+    return { draws: b.draws - a.draws, wakes: b.wakes - a.wakes }
+  }
+  const knots = (await js(`document.querySelectorAll('canvas.knot').length`)) as number
+  const moving = await over(2000)
+  check('knot clock: it runs (the app mark rests at 6 frames a second; a busy machine gets fewer)', knots > 0 && moving.draws >= 3, `${knots} knots, ${JSON.stringify(moving)}`)
+
+  const cdp = win.webContents.debugger
+  cdp.attach('1.3')
+  try {
+    const before = await counts()
+    await cdp.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
+    await sleep(400)
+    const after = await counts()
+    const still = await over(2000)
+    check('knot clock: reduced motion draws one still frame per knot', (await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) === true && after.draws - before.draws === knots, `${after.draws - before.draws} frames for ${knots} knots`)
+    check('knot clock: then nothing more under reduced motion', still.draws === 0 && still.wakes === 0, JSON.stringify(still))
+    await cdp.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
+    await sleep(300)
+    check('knot clock: and moves again without it', (await over(2000)).draws >= 3)
+  } finally {
+    cdp.detach()
+  }
+
+  const neverShown = (await js(`document.visibilityState`)) as string
+  // Smoke turns background throttling off, and with it Electron keeps the page "visible" when hidden;
+  // the app runs with it on, so it is on for this check.
+  win.webContents.setBackgroundThrottling(true)
+  win.setOpacity(0)
+  win.showInactive()
+  await waitFor('the window to be visible', async () => (await js(`document.visibilityState`)) === 'visible', 5000).catch(() => undefined)
+  const shown = await over(1500)
+  win.hide()
+  await waitFor('the window to be hidden', async () => (await js(`document.hidden`)) === true, 5000).catch(() => undefined)
+  const hidden = (await js(`document.hidden`)) as boolean
+  const asleep = await over(2500)
+  check('knot clock: a hidden window wakes it not once', hidden && shown.draws > 0 && asleep.wakes === 0 && asleep.draws === 0, `never shown: ${neverShown}; shown ${JSON.stringify(shown)}; hidden ${hidden} ${JSON.stringify(asleep)}`)
+  win.webContents.setBackgroundThrottling(false)
+  win.setOpacity(1)
+}
+
+/**
+ * Sessions outlive core. This core quits the way the app does (sessions parked in tmux, the door
+ * closed), and a second core is started on the same profile (`--smoke-restarted`, runRestarted
+ * below), which must find the session, reattach it and hear its hooks. Then the tmux server is
+ * killed, as a reboot would, and a third core must show the session closed and resume it with
+ * `--resume` into the same conversation. Their checks are reported here as this run's.
+ */
+async function restart(check: (name: string, ok: boolean, detail?: string) => void, ctx: Ctx): Promise<void> {
+  const { win, door, core, userData } = ctx
+  const { app } = await import('electron')
+  const { spawn } = await import('node:child_process')
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'ws-survivor-')))
+  const id = String((await js(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, name: 'survivor' })`)).id)
+  await waitFor('the survivor to start', async () => (await screen(id)).includes('FAKE CLAUDE READY'))
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'before the restart\\r'); true`)
+  await waitFor('its turn', async () => (await screen(id)).includes('DONE before the restart'))
+  await waitFor('its transcript', () => (core.transcripts.get(id)?.blocks.length ?? 0) > 0)
+
+  core.stop()
+  door.stop()
+  const second = (mode: 'restart' | 'reboot'): Promise<string> =>
+    new Promise((done) => {
+      const env = { ...process.env, WORKSHOP_SMOKE_HOME: userData, WORKSHOP_SMOKE_PROFILE: ctx.profile ?? '', WORKSHOP_SMOKE_RESTART: mode, WORKSHOP_SMOKE_SURVIVOR: id }
+      const p = spawn(process.execPath, [app.getAppPath(), '--smoke-restarted'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      p.stdout.on('data', (d) => (out += d))
+      p.stderr.on('data', () => {})
+      const kill = setTimeout(() => p.kill(), 60_000)
+      p.on('exit', () => {
+        clearTimeout(kill)
+        done(out)
+      })
+    })
+  const report = (mode: string, out: string): void => {
+    const lines = out.split('\n').filter((l) => /^(ok {4}|FAIL {2})/.test(l))
+    for (const l of lines) check(`${mode}: ${l.slice(6).replace(/ {2}\(.*\)$/, '')}`, l.startsWith('ok'), l.slice(6))
+    if (!lines.length) check(`${mode}: the second core ran its checks`, false, out.slice(-400))
+  }
+  report('restart', await second('restart'))
+  // A reboot takes the tmux server with it.
+  await core.tmux.killServer()
+  report('reboot', await second('reboot'))
+}
+
+/** The second core's half of `restart` (index.ts starts it with --smoke-restarted). */
+export async function runRestarted(ctx: Ctx): Promise<number> {
+  const { win, core } = ctx
+  const results: [string, boolean, string?][] = []
+  const check = (name: string, ok: boolean, detail?: string): void => void results.push([name, ok, detail])
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  const id = process.env.WORKSHOP_SMOKE_SURVIVOR ?? ''
+  const view = () => core.sessions.getState().sessions.find((s) => s.id === id)
+  const userTexts = (): string[] => (core.transcripts.get(id)?.blocks ?? []).flatMap((b) => (b.kind === 'user' ? [b.text] : []))
+  try {
+    await waitFor('the window', async () => (await js(`!!document.querySelector('.app')`)) === true)
+    if (process.env.WORKSHOP_SMOKE_RESTART === 'restart') {
+      const v = view()
+      check('the session is still there, open, its tmux session alive', !!v && v.open && v.tmuxAlive, JSON.stringify(v && { open: v.open, tmuxAlive: v.tmuxAlive }))
+      check('it is reattached', await waitFor('the pty', () => !!view()?.attached, 5000).then(() => true, () => false))
+      check('its conversation is read again', await waitFor('the transcript', () => userTexts().includes('before the restart'), 5000).then(() => true, () => false), JSON.stringify(userTexts()))
+      check('its tile is drawn', await waitFor('the tile', async () => (await js(`!!document.querySelector('[data-session="${id}"]')`)) === true, 5000).then(() => true, () => false))
+      await js(`window.core.ptyInput(${JSON.stringify(id)}, 'after the restart\\r'); true`)
+      const typed = await waitFor('the turn', async () => (await screen(id)).includes('DONE after the restart'), 10_000).then(() => true, () => false)
+      // The hooks find the new core through <profile>/port, with the token kept on disk.
+      const heard = await waitFor('its hooks', () => view()?.status === 'idle' && view()?.attention === true, 5000).then(() => true, () => false)
+      check('a new prompt runs, and its hooks reach the new core', typed && heard, JSON.stringify(view() && { status: view()!.status, attention: view()!.attention }))
+    } else {
+      const v = view()
+      check('the session is listed, closed, its tmux session gone', !!v && !v.open && !v.tmuxAlive, JSON.stringify(v && { open: v.open, tmuxAlive: v.tmuxAlive }))
+      await js(`window.core.resume(${JSON.stringify(id)}).then(() => true)`)
+      const back = await waitFor('the resumed session', async () => (await screen(id)).includes('FAKE CLAUDE READY'), 10_000).then(() => true, () => false)
+      const started = JSON.parse(await readFile(join(ctx.userData, `fake-${id}.json`), 'utf8')) as { args: string[] }
+      const rec = core.sessions.find(id)
+      check('it resumes with --resume and its own conversation id', back && started.args.join(' ').includes(`--resume ${rec?.claudeSessionId}`), started.args.join(' '))
+      await js(`window.core.ptyInput(${JSON.stringify(id)}, 'after the reboot\\r'); true`)
+      await waitFor('the turn', async () => (await screen(id)).includes('DONE after the reboot'), 10_000).catch(() => undefined)
+      const both = await waitFor('the whole conversation', () => ['before the restart', 'after the restart', 'after the reboot'].every((t) => userTexts().includes(t)), 5000).then(() => true, () => false)
+      check('the conversation goes on in the same transcript', both, JSON.stringify(userTexts()))
+    }
+  } catch (err) {
+    check('ran to the end', false, (err as Error).message)
+  }
+  return finish(results, ctx)
 }

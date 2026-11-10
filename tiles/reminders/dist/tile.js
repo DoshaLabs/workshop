@@ -2,11 +2,11 @@
 // build. The data and every rule about it are in model.js; this file is the page: it keeps the
 // one state in `workshop.storage`, draws it, and answers a Claude session's door calls.
 //
-// What it uses of the contract: storage (the state), sessions (the focused session's folder is
+// What it uses of the contract: storage (the state), sessions (the focused session's project is
 // where a new item goes; a door call's session id says which project the caller means), door
 // (ten ops), notify (a session added a reminder), head (the open count), view (tile or pane).
 
-import { OPS, apply, baseName, byDue, byNewest, byPriority, clean, dayOf, empty, parseCall, projectsOf, sweep } from './model.js'
+import { OPS, apply, baseName, byDue, byNewest, byPriority, clean, dayOf, empty, parseCall, projectsOf, sessionProject, sweep } from './model.js'
 
 const ws = window.workshop
 const $ = (id) => document.getElementById(id)
@@ -88,8 +88,8 @@ function commit(next) {
   render()
 }
 
-const here = () => sessions.find((s) => s.focused)?.project ?? ''
-const projects = () => projectsOf(state, [here(), picked, view.project, ...sessions.map((s) => s.project)])
+const here = () => sessionProject(sessions.find((s) => s.focused))
+const projects = () => projectsOf(state, [here(), picked, view.project, ...sessions.map(sessionProject)])
 
 /** What the user does in the tile. A refusal is shown, not thrown. */
 function act(op) {
@@ -108,7 +108,7 @@ function act(op) {
 function fromDoor(op, args, caller, from) {
   const now = Date.now()
   const session = sessions.find((s) => s.id === from.session)
-  const r = apply(state, parseCall(op, args, now), { by: caller, now, here: session?.project ?? '', known: projects() })
+  const r = apply(state, parseCall(op, args, now), { by: caller, now, here: sessionProject(session), known: projects() })
   commit(r.state)
   if (op === 'add') void ws.notify({ text: `${caller}: ${r.result.reminder.text}` }).catch(() => {})
   return r.result

@@ -1912,3 +1912,15 @@ a.md-path:hover {
   color: var(--ws-blocked);
   font-size: 11px;
 }
+
+/* ── Track F: visual fixes ─────────────────────────────────────────────────── */
+
+/* The setup screen's pose rows: the row picker (the launcher's select, 7 px padding) stood taller
+   than the number fields beside it (5 px), so its label sat higher. One height for all four. */
+.mascot-setup .mascot-state select,
+.mascot-setup .mascot-state input[type='number'] {
+  box-sizing: border-box;
+  height: 30px;
+  padding-top: 0;
+  padding-bottom: 0;
+}

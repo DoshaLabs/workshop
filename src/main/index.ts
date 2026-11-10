@@ -17,15 +17,18 @@ import { Door } from './door'
 import { TileGrants } from './files'
 import { TileStore } from './storage'
 import { MAX_INSTANCES, TILE_SCHEME, armSession, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
-import { runSmoke } from './smoke'
+import { runRestarted, runSmoke } from './smoke'
 import { scaffoldTile } from './scaffold'
 import { startSessions, type CoreSessions } from './core-sessions'
 import { MascotStore } from './mascot'
 import { startTileMenu } from './tile-menu'
+import { ProjectRoots } from './project'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 
-const SMOKE = process.argv.includes('--smoke')
+/** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
+const RESTARTED = process.argv.includes('--smoke-restarted')
+const SMOKE = process.argv.includes('--smoke') || RESTARTED
 const devTilesIn = (argv: string[], cwd = process.cwd()): string[] =>
   argv.filter((a) => a.startsWith('--dev-tile=')).map((a) => resolve(cwd, a.slice('--dev-tile='.length)))
 const devTiles = devTilesIn(process.argv)
@@ -36,9 +39,9 @@ const devTiles = devTilesIn(process.argv)
  * build inside the installed one. A smoke run gets a throwaway one.
  */
 const DEV = !!process.env.ELECTRON_RENDERER_URL
-const PROFILE = SMOKE ? `workshop-smoke-${process.pid}` : DEV ? 'workshop-dev' : 'workshop'
+const PROFILE = RESTARTED ? process.env.WORKSHOP_SMOKE_PROFILE! : SMOKE ? `workshop-smoke-${process.pid}` : DEV ? 'workshop-dev' : 'workshop'
 if (SMOKE) {
-  app.setPath('userData', mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
+  app.setPath('userData', RESTARTED ? process.env.WORKSHOP_SMOKE_HOME! : mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
 } else if (DEV) app.setPath('userData', `${app.getPath('userData')}-dev`)
 
@@ -75,9 +78,9 @@ const views = new Map<string, TileView>()
 const stores = new Map<string, TileStore>()
 const lastNotify = new Map<string, number>()
 const lastExternal = new Map<string, number>()
-/** The session that last called each tile through the door: a tile's bark goes to that session's mascot. */
+/** The session that last called each tile through the door: a tile's call for attention goes to that session's mascot. */
 const lastCaller = new Map<string, { session: string; at: number }>()
-/** A call older than this no longer makes a session the one a tile's bark is about. */
+/** A call older than this no longer makes a session the one a tile's call for attention is about. */
 const CALLER_MS = 10 * 60_000
 let mascots: MascotStore
 /** The instance whose page is over the whole window, if any. Only one at a time. */
@@ -236,6 +239,9 @@ function guardWebviews(w: BrowserWindow): void {
     prefs.allowRunningInsecureContent = false
     prefs.experimentalFeatures = false
     delete prefs.enableBlinkFeatures
+    // DNS prefetch goes around the dead proxy and the request filter: a page's <link
+    // rel=dns-prefetch> would send any name it likes to the resolver (smoke's sideDoors).
+    prefs.additionalArguments = ['--blink-settings=dnsPrefetchingEnabled=false']
     prefs.backgroundThrottling = !SMOKE
   })
   w.webContents.on('did-attach-webview', (_e, wc) => {
@@ -372,24 +378,38 @@ async function createTile(name: string, idea: string): Promise<{ id: string; fol
   return { id: made.id, folder: made.folder }
 }
 
-/** What a tile with "sessions" sees of them: no ids it could not use, no titles (they quote the conversation). */
-function tileSessions(s: SessionsState): { id: string; name: string; project: string; status: string; focused: boolean; open: boolean }[] {
-  return s.sessions.map((v) => ({ id: v.id, name: v.name, project: v.cwd, status: v.status, focused: v.id === s.focus, open: v.open }))
+/**
+ * What a tile with "sessions" sees of them: no ids it could not use, no titles (they quote the
+ * conversation). `project` is the folder the session started in; `root` the project it belongs
+ * to (the repository's root, shared by its worktrees: project.ts).
+ */
+function tileSessions(s: SessionsState): { id: string; name: string; project: string; root: string; status: string; focused: boolean; open: boolean }[] {
+  return s.sessions.map((v) => ({ id: v.id, name: v.name, project: v.cwd, root: roots.get(v.id, v.cwd), status: v.status, focused: v.id === s.focus, open: v.open }))
 }
 const lastPaste = new Map<string, number>()
+const roots = new ProjectRoots()
 
+/** Every session's root is resolved before a tile hears of it; then the latest state goes out. */
 function pushSessions(s: SessionsState): void {
-  const list = tileSessions(s)
-  for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
+  void (async () => {
+    await roots.ready(s.sessions)
+    // A session may have started while git answered: resolve it too (nothing to wait for otherwise).
+    const latest = core?.sessions.getState() ?? s
+    await roots.ready(latest.sessions)
+    const list = tileSessions(latest)
+    for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
+  })()
 }
 function pushUsage(u: Usage): void {
   for (const g of liveByTile.values()) if (g.tile.manifest.permissions.usage) g.wc.send(CH.tileUsageChanged, u)
 }
 
 function bridge(): void {
-  ipcMain.handle(CH.tileSessionsList, (e) => {
+  ipcMain.handle(CH.tileSessionsList, async (e) => {
     need(e, 'sessions')
-    return core ? tileSessions(core.sessions.getState()) : []
+    if (!core) return []
+    await roots.ready(core.sessions.getState().sessions)
+    return tileSessions(core.sessions.getState())
   })
   ipcMain.handle(CH.tileSessionsPaste, (e, id: string, text: string) => {
     const { tile } = need(e, 'sessions')
@@ -462,7 +482,7 @@ function bridge(): void {
     for (const g of instancesOf(id)) g.wc.send(CH.storageChanged, key, value ?? null)
   })
 
-  ipcMain.handle(CH.notify, (e, n: { text?: unknown; bark?: unknown }) => {
+  ipcMain.handle(CH.notify, (e, n: { text?: unknown; attention?: unknown }) => {
     const g = need(e, 'notify')
     const t = g.tile
     const text = typeof n?.text === 'string' ? n.text.slice(0, 200) : ''
@@ -471,13 +491,13 @@ function bridge(): void {
     if (now - (lastNotify.get(t.manifest.id) ?? 0) < 3000) return false
     lastNotify.set(t.manifest.id, now)
     win?.webContents.send(CH.tileNotify, g.key, text)
-    if (n?.bark === true) {
+    if (n?.attention === true) {
       // The relevant mascot: the session that last called this tile through the door, else the one in focus.
       const c = lastCaller.get(t.manifest.id)
       const state = core?.sessions.getState()
       const live = (id: string | null | undefined): boolean => !!id && !!state?.sessions.some((s) => s.id === id && s.open)
       const target = c && now - c.at < CALLER_MS && live(c.session) ? c.session : live(state?.focus) ? state!.focus : null
-      if (target) win?.webContents.send(CH.mascotBark, target)
+      if (target) win?.webContents.send(CH.attention, target)
     }
     if (!SMOKE && Notification.isSupported()) new Notification({ title: t.manifest.name, body: text, silent: true }).show()
     return true
@@ -696,9 +716,11 @@ app.whenReady().then(async () => {
   nativeTheme.on('updated', pushTheme)
 
   if (SMOKE) {
-    const code = await runSmoke({ win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core! })
+    const ctx = { win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core!, profile: PROFILE }
+    const code = RESTARTED ? await runRestarted(ctx) : await runSmoke(ctx)
     core?.stop()
-    await core?.tmux.killServer()
+    // The run that started this one cleans up the tmux server it still needs.
+    if (!RESTARTED) await core?.tmux.killServer()
     door.stop()
     app.exit(code)
   }

@@ -64,8 +64,8 @@ const core = {
   /** Deletes the active pack: back to the plain status dot. */
   removeMascot: (): Promise<void> => ipcRenderer.invoke(CH.mascotRemove),
   onMascot: (fn: (m: ActiveMascot | null) => void) => on(CH.mascotChanged, fn),
-  /** A session's mascot should leap once (a tile's `notify({ bark: true })`). */
-  onBark: (fn: (sessionId: string) => void) => on(CH.mascotBark, fn),
+  /** A session's mascot should leap once (a tile's `notify({ attention: true })`). */
+  onAttention: (fn: (sessionId: string) => void) => on(CH.attention, fn),
   /** The + menu: installed tiles, the index, install / update / remove, load a folder (main/tile-menu.ts). */
   menu: {
     state: (): Promise<{ installed: InstallRecord[]; index: IndexState }> => ipcRenderer.invoke(MENU.state),

@@ -12,12 +12,15 @@
 import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
-import { applyLine, emptyTranscript, trimTranscript, type Transcript } from '@shared/transcript'
+import { TRANSCRIPT_KEEP, applyLine, emptyTranscript, trimTranscript, type Transcript } from '@shared/transcript'
 
 const POLL_MS = 400
 /** How often a session whose file has not appeared is looked for (a readdir of every project). */
 const LOOK_MS = 2000
 const CHUNK = 1 << 16
+/** A transcript longer than this is read from its end on first sight (firstRead). */
+const TAIL_BYTES = 4 << 20
+const TITLE_CHUNK = 1 << 20
 
 interface Tail {
   id: string
@@ -111,21 +114,31 @@ export class TranscriptWatcher {
     if (size === t.offset) return
     const fd = openSync(t.path, 'r')
     try {
-      const buf = Buffer.alloc(CHUNK)
-      while (t.offset < size) {
-        const n = readSync(fd, buf, 0, CHUNK, t.offset)
-        if (n <= 0) break
-        t.offset += n
-        t.rest += t.decoder.write(buf.subarray(0, n))
-        const lines = t.rest.split('\n')
-        // The last piece may be a line the CLI is still writing: kept for the next read.
-        t.rest = lines.pop() ?? ''
-        for (const line of lines) if (applyLine(t.transcript, line)) t.dirty = true
-      }
+      if (t.offset === 0 && size > TAIL_BYTES) this.firstRead(t, fd, size)
+      else consume(t, fd, size)
     } finally {
       closeSync(fd)
     }
     if (trimTranscript(t.transcript)) t.dirty = true
+  }
+
+  /**
+   * The first sight of a long transcript (real ones pass 250 MB). A tile shows the last
+   * TRANSCRIPT_KEEP blocks, so only the file's end is read, the window doubling until it holds
+   * that many or is the whole file; reading it all held the main process for seconds. The title is
+   * usually written near the start, so when the end has none, the rest is searched for it as
+   * bytes (titleBefore) and only the lines that name it are parsed.
+   */
+  private firstRead(t: Tail, fd: number, size: number): void {
+    for (let span = TAIL_BYTES; ; span *= 2) {
+      const from = Math.max(0, size - span)
+      const tail: Tail = { ...t, offset: from, rest: '', decoder: new StringDecoder('utf8'), transcript: { ...emptyTranscript(t.id), found: true } }
+      consume(tail, fd, size, from > 0)
+      if (from > 0 && tail.transcript.blocks.length < TRANSCRIPT_KEEP) continue
+      if (from > 0 && tail.transcript.title === null) tail.transcript.title = titleBefore(fd, from)
+      Object.assign(t, { offset: tail.offset, rest: tail.rest, decoder: tail.decoder, transcript: tail.transcript, dirty: true })
+      return
+    }
   }
 
   private locate(sessionId: string): string | null {
@@ -141,4 +154,83 @@ export class TranscriptWatcher {
     }
     return null
   }
+}
+
+/**
+ * Reads from `t.offset` to `end`, folding in every whole line. `partialStart`: the read begins in
+ * the middle of a line, whose end is dropped unread.
+ */
+function consume(t: Tail, fd: number, end: number, partialStart = false): void {
+  const buf = Buffer.alloc(CHUNK)
+  let skip = partialStart
+  while (t.offset < end) {
+    const n = readSync(fd, buf, 0, Math.min(CHUNK, end - t.offset), t.offset)
+    if (n <= 0) break
+    t.offset += n
+    t.rest += t.decoder.write(buf.subarray(0, n))
+    const lines = t.rest.split('\n')
+    // The last piece may be a line the CLI is still writing: kept for the next read.
+    t.rest = lines.pop() ?? ''
+    if (skip && lines.length) {
+      lines.shift()
+      skip = false
+    }
+    for (const line of lines) if (applyLine(t.transcript, line)) t.dirty = true
+    // Trimmed as it goes, not once at the end, so a tool result's search for its call stays short.
+    trimTranscript(t.transcript)
+  }
+}
+
+/**
+ * The latest title in the first `end` bytes. Searched for as bytes, backwards from `end`, so the
+ * search usually stops within a few lines (the CLI writes the title again as it goes), and only
+ * lines that contain the word are parsed.
+ */
+function titleBefore(fd: number, end: number): string | null {
+  const needle = Buffer.from('"ai-title"')
+  const buf = Buffer.alloc(TITLE_CHUNK + needle.length)
+  for (let pos = end; pos > 0; ) {
+    const start = Math.max(0, pos - TITLE_CHUNK)
+    // Overlapping the chunk after by a needle's length, so one cut in two is still found.
+    const n = readSync(fd, buf, 0, Math.min(end, pos + needle.length - 1) - start, start)
+    const data = buf.subarray(0, n)
+    for (let i = data.lastIndexOf(needle); i >= 0; i = i > 0 ? data.lastIndexOf(needle, i - 1) : -1) {
+      // The bytes may be inside some other line (a file Claude read): only a real title line has one.
+      const scratch = emptyTranscript('')
+      applyLine(scratch, lineAround(fd, start + i, end))
+      if (scratch.title) return scratch.title
+    }
+    pos = start
+  }
+  return null
+}
+
+/** The whole line holding byte `at`, read from the file a piece at a time in each direction. */
+function lineAround(fd: number, at: number, end: number): string {
+  const buf = Buffer.alloc(CHUNK)
+  let from = at
+  while (from > 0) {
+    const start = Math.max(0, from - CHUNK)
+    const n = readSync(fd, buf, 0, from - start, start)
+    const nl = buf.subarray(0, n).lastIndexOf(10)
+    if (nl >= 0) {
+      from = start + nl + 1
+      break
+    }
+    from = start
+  }
+  let to = at
+  while (to < end) {
+    const n = readSync(fd, buf, 0, Math.min(CHUNK, end - to), to)
+    if (n <= 0) break
+    const nl = buf.subarray(0, n).indexOf(10)
+    if (nl >= 0) {
+      to += nl
+      break
+    }
+    to += n
+  }
+  const line = Buffer.alloc(to - from)
+  readSync(fd, line, 0, to - from, from)
+  return line.toString('utf8')
 }

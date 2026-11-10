@@ -1,5 +1,5 @@
 // The mascot in core's window: the active sprite pack, one clock for every sprite on screen, and
-// the barks (a Leap played once). Kept out of the components so a session drawn in two places
+// calls for attention (a Leap played once). Kept out of the components so a session drawn in two places
 // (its row and the focus pane's head) leaps in both, and so the clock stops when nothing is
 // animating or the window is hidden.
 
@@ -90,19 +90,19 @@ export function animate(draw: Drawer): () => void {
 }
 export const reducedMotion = (): boolean => reduced.matches
 
-// ── Barks ────────────────────────────────────────────────────────────────────
+// ── Calls for attention ───────────────────────────────────────────────────────────────
 
 /** When each session's mascot last started a leap (performance.now()). */
 const leaps = new Map<string, number>()
-const barkSubs = new Set<(id: string) => void>()
-/** Two signals this close together (a hook, then the poll agreeing) are one bark. */
-const REBARK_MS = 3000
+const attentionSubs = new Set<(id: string) => void>()
+/** Two signals this close together (a hook, then the poll agreeing) are one call. */
+const REPEAT_CALL_MS = 3000
 
-export function bark(id: string): void {
+export function callAttention(id: string): void {
   const now = performance.now()
-  if (now - (leaps.get(id) ?? -Infinity) < REBARK_MS) return
+  if (now - (leaps.get(id) ?? -Infinity) < REPEAT_CALL_MS) return
   leaps.set(id, now)
-  for (const f of barkSubs) f(id)
+  for (const f of attentionSubs) f(id)
 }
 
 /** When this session's mascot started its current leap, or null if it is not leaping. */
@@ -113,16 +113,16 @@ export function leapingSince(id: string | undefined, now: number): number | null
   return at !== undefined && leap && now - at < runMs(leap) ? at : null
 }
 
-export function useBarks(fn: (id: string) => void): void {
+export function useAttentionCalls(fn: (id: string) => void): void {
   useEffect(() => {
-    barkSubs.add(fn)
-    return () => void barkSubs.delete(fn)
+    attentionSubs.add(fn)
+    return () => void attentionSubs.delete(fn)
   }, [fn])
 }
 
 /**
  * The edge detector (deck's useBark): a session leaps the moment it starts needing you, or the
- * moment a turn finishes (busy → idle). Steady states never bark, and nor does the first state
+ * moment a turn finishes (busy → idle). Steady states never call, and nor does the first state
  * the window sees, so a window opening on a column of waiting sessions is quiet.
  */
 const seen = new Map<string, { status: SessionStatus; needs: boolean }>()
@@ -133,7 +133,7 @@ function watchSessions(s: SessionsState): void {
     const p = seen.get(v.id)
     seen.set(v.id, { status: v.status, needs })
     if (!primed || !p) continue
-    if ((needs && !p.needs) || (p.status === 'busy' && v.status === 'idle')) bark(v.id)
+    if ((needs && !p.needs) || (p.status === 'busy' && v.status === 'idle')) callAttention(v.id)
   }
   primed = true
 }
@@ -143,6 +143,6 @@ void window.core.mascot().then((m) => {
   if (m) setActive(m)
 })
 window.core.onMascot(setActive)
-window.core.onBark(bark)
+window.core.onAttention(callAttention)
 void window.core.sessions().then(watchSessions)
 window.core.onSessions(watchSessions)

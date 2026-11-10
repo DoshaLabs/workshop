@@ -156,7 +156,7 @@ if (hello) {
       forget: (handle: string): Promise<boolean> => gate('files', () => ipcRenderer.invoke(CH.filesForget, handle))
     },
     sessions: {
-      /** The sessions: [{ id, name, project, status, focused, open }]. Needs "sessions": "read" or "write". */
+      /** The sessions: [{ id, name, project (the start folder), root (its repo root), status, focused, open }]. Needs "sessions": "read" or "write". */
       list: (): Promise<unknown> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsList)),
       watch: (fn: (list: unknown) => void): (() => void) => {
         needs('sessions')
@@ -173,7 +173,7 @@ if (hello) {
         return sub(usageSubs, fn)
       }
     },
-    notify: (n: { text: string; bark?: boolean }): Promise<boolean> => gate('notify', () => ipcRenderer.invoke(CH.notify, { text: n?.text, bark: n?.bark === true })),
+    notify: (n: { text: string; attention?: boolean }): Promise<boolean> => gate('notify', () => ipcRenderer.invoke(CH.notify, { text: n?.text, attention: n?.attention === true })),
     door: {
       /**
        * Answer `op` when a Claude session calls it: `fn(args, caller, { session })`. `caller` is the

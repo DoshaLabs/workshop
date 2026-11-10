@@ -49,7 +49,7 @@ export function knotMode(status: SessionStatus, attention: boolean): KnotMode {
   return 'rest'
 }
 
-/** How long a bark's flare lasts, in ms: the pulse spreads and brightens, and the knot swells a little, once. */
+/** How long a call for attention's flare lasts, in ms: the pulse spreads and brightens, and the knot swells a little, once. */
 export const FLARE_MS = 900
 
 // ── The curve ────────────────────────────────────────────────────────────────
@@ -221,7 +221,7 @@ export interface KnotDraw {
   palette: KnotPalette
   /** Radius as a share of full size (MODES[..].size, eased). */
   size: number
-  /** 0 to 1: a bark's flare, fading. */
+  /** 0 to 1: a call for attention's flare, fading. */
   flare?: number
   /** Segments of the strand: far fewer than a big glyph needs at this size. */
   segs?: number
