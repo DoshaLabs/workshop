@@ -320,3 +320,114 @@ export function group(sessions, places, changes) {
   for (const p of list) p.worktrees.sort((a, b) => Number(b.main) - Number(a.main) || a.top.localeCompare(b.top))
   return list.sort((a, b) => a.name.localeCompare(b.name) || a.root.localeCompare(b.root))
 }
+
+// ---- the Worktrees tab
+
+/**
+ * `git worktree list --porcelain -z`, whole: one record per worktree (the main one first, as git
+ * lists it), records ending in an empty field. `branch` is the short name (refs/heads/ dropped),
+ * null when detached; `locked` and `prunable` are git's reason, '' when it gave none, or null.
+ */
+export function parseWorktreeList(z) {
+  const out = []
+  let w = null
+  for (const f of z.split('\0')) {
+    if (f === '') {
+      if (w) out.push(w)
+      w = null
+      continue
+    }
+    const sp = f.indexOf(' ')
+    const key = sp < 0 ? f : f.slice(0, sp)
+    const val = sp < 0 ? '' : f.slice(sp + 1)
+    if (key === 'worktree') {
+      if (w) out.push(w)
+      w = { path: val, head: null, branch: null, detached: false, bare: false, locked: null, prunable: null }
+      continue
+    }
+    if (!w) continue
+    if (key === 'HEAD') w.head = /^0+$/.test(val) ? null : val
+    else if (key === 'branch') w.branch = val.startsWith('refs/heads/') ? val.slice(11) : val
+    else if (key === 'detached') w.detached = true
+    else if (key === 'bare') w.bare = true
+    else if (key === 'locked') w.locked = val
+    else if (key === 'prunable') w.prunable = val
+  }
+  if (w) out.push(w)
+  return out
+}
+
+/**
+ * Which branch "main" is, and how that was decided: origin's HEAD when the repository has one
+ * (`refs/remotes/origin/HEAD` → origin/<name>), compared as the local branch of that name when
+ * there is one, else as origin/<name>; with no origin HEAD, a local `main`, then a local `master`.
+ * `originHead` is what `git symbolic-ref` printed (or null); `locals` the local branch names that
+ * exist among the candidates. Null when none of these is there.
+ */
+export function pickBase(originHead, locals) {
+  const have = new Set(locals)
+  const m = /^refs\/remotes\/origin\/(.+)$/.exec(originHead ?? '')
+  if (m) {
+    const name = m[1]
+    return have.has(name)
+      ? { name, ref: `refs/heads/${name}`, how: `origin/HEAD names ${name}` }
+      : { name, ref: `refs/remotes/origin/${name}`, how: `origin/HEAD names ${name}; there is no local ${name}, so origin/${name}`, remote: true }
+  }
+  for (const name of ['main', 'master']) if (have.has(name)) return { name, ref: `refs/heads/${name}`, how: `no origin/HEAD; the local ${name}` }
+  return null
+}
+
+/** How long a worktree with no session in it may go untouched before the stale filter shows it. */
+export const STALE_DAYS = 14
+
+/**
+ * Why a worktree is stale, or null. Never the main worktree, the one main is checked out in, or one
+ * a session is in. Otherwise: `gone` (its folder is missing: git lists it as prunable), `merged`
+ * (on a branch, clean, and nothing on it main does not have: ahead 0), or `untouched` (its last
+ * commit and its index both older than STALE_DAYS).
+ */
+export function staleness(w, now = Date.now(), days = STALE_DAYS) {
+  if (w.main || w.isBase || w.bare || w.sessions?.length) return null
+  if (w.prunable !== null && w.prunable !== undefined) return 'gone'
+  if (w.branch && w.ahead === 0 && w.dirty === 0) return 'merged'
+  if (w.touched && now - w.touched > days * 86_400_000) return 'untouched'
+  return null
+}
+
+/** Files named per overlap; the count says how many in all. */
+export const OVERLAP_FILES = 20
+
+/**
+ * Pairs of worktrees that touch the same file: each one's `changed` paths (uncommitted, and its
+ * commits since the merge base with main) compared with every other's in the same repository.
+ * Returns [{ a, b, files (the first OVERLAP_FILES, sorted), count }].
+ */
+export function overlaps(worktrees) {
+  const out = []
+  const sets = worktrees.map((w) => ({ path: w.path, set: new Set(w.changed ?? []) }))
+  for (let i = 0; i < sets.length; i++) {
+    for (let j = i + 1; j < sets.length; j++) {
+      const [small, big] = sets[i].set.size <= sets[j].set.size ? [sets[i].set, sets[j].set] : [sets[j].set, sets[i].set]
+      const both = [...small].filter((f) => big.has(f)).sort()
+      if (both.length) out.push({ a: sets[i].path, b: sets[j].path, files: both.slice(0, OVERLAP_FILES), count: both.length })
+    }
+  }
+  return out
+}
+
+/**
+ * A worktree's folder made short enough to read: relative to the project's root when inside it
+ * (".claude/worktrees/side"), "~/…" under the home folder, else as it is. The root itself is its name.
+ */
+export function shortPath(path, root, home) {
+  const p = path.replace(/\/+$/, '')
+  const r = root.replace(/\/+$/, '')
+  if (p === r) return base(r)
+  if (p.startsWith(`${r}/`)) return p.slice(r.length + 1)
+  const h = (home ?? '').replace(/\/+$/, '')
+  if (h && p.startsWith(`${h}/`)) return `~/${p.slice(h.length + 1)}`
+  return p
+}
+
+/** Session statuses a write waits out: a turn running, a question or permission prompt open, or the CLI still starting. */
+export const NOT_QUIET = { busy: 'is busy', blocked: 'needs you', starting: 'is still starting' }

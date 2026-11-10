@@ -12,6 +12,7 @@ import { CH } from '@shared/ipc'
 import type { Door } from './door'
 import { installs } from './smoke-install'
 import { gitSmoke } from './smoke-git'
+import { worktreesSmoke } from './smoke-worktrees'
 import { backendSmoke } from './smoke-backend'
 import type { Backends } from './backend'
 import { previewSmoke, reorderSmoke } from './smoke-preview'
@@ -37,6 +38,8 @@ interface Ctx {
   music?: MusicHost
   /** The screen recorder (main/recorder.ts). */
   recorder?: Recorder
+  /** What tiles filled the launcher with (workshop.sessions.launch). */
+  launches?: { cwd: string; worktree?: boolean; branch?: string; nonce: number }[]
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -208,6 +211,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await installs(check, ctx)
     await backendSmoke(check, ctx)
     await gitSmoke(check, ctx)
+    await worktreesSmoke(check, ctx)
     await musicSmoke(check, ctx)
     await knotClock(check, ctx)
     await recorderSmoke(check, ctx)

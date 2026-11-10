@@ -1,7 +1,7 @@
 // Core's own window's bridge (not a tile's: that is tile.ts).
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { NewSessionOpts, SessionsState } from '../shared/sessions'
+import type { LaunchPrefill, NewSessionOpts, SessionsState } from '../shared/sessions'
 import type { Usage } from '../shared/usage'
 import type { Transcript } from '../shared/transcript'
 import type { Shortcut } from '../shared/shortcuts'
@@ -35,6 +35,8 @@ const core = {
   // sessions
   sessions: (): Promise<SessionsState> => ipcRenderer.invoke(CH.sessionsGet),
   onSessions: (fn: (s: SessionsState) => void) => on(CH.sessionsState, fn),
+  /** A tile asked for the launcher, filled in (workshop.sessions.launch). */
+  onLaunch: (fn: (p: LaunchPrefill) => void) => on(CH.sessionsLaunch, fn),
   newSession: (opts: NewSessionOpts): Promise<unknown> => ipcRenderer.invoke(CH.sessionNew, opts),
   resume: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionResume, id),
   park: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionPark, id),

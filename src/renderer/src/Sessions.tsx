@@ -3,7 +3,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MODELS, PERMISSION_MODES } from '@shared/models'
-import type { SessionView } from '@shared/sessions'
+import type { LaunchPrefill, SessionView } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import { fit, focusTerminal, mount, unmount } from './terminals'
 import { SessionUsage } from './UsageMeter'
@@ -13,7 +13,7 @@ import { KnotCanvas } from './Knot'
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
 
-export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: () => void }) {
+export function Launcher({ recent, prefill, onStarted }: { recent: string[]; prefill?: LaunchPrefill; onStarted: () => void }) {
   const [cwd, setCwd] = useState(recent[0] ?? '')
   const [worktree, setWorktree] = useState(false)
   const [model, setModel] = useState('')
@@ -23,17 +23,32 @@ export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: (
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [typing, setTyping] = useState(recent.length === 0)
+  /** The worktree's name a tile asked for (workshop.sessions.launch); cleared when the box is unticked. */
+  const [branch, setBranch] = useState('')
+  const startButton = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     if (!cwd && recent[0]) setCwd(recent[0])
   }, [recent, cwd])
+
+  // A tile filled the form in: its folder and worktree, and Start focused for the user to press.
+  useEffect(() => {
+    if (!prefill) return
+    setCwd(prefill.cwd)
+    setWorktree(!!prefill.worktree)
+    setBranch(prefill.worktree ? (prefill.branch ?? '') : '')
+    // The worktree's name is shown as the session's name, which the user can still change.
+    if (prefill.worktree && prefill.branch) setName(prefill.branch)
+    setError('')
+    startButton.current?.focus()
+  }, [prefill?.nonce])
 
   const start = async (): Promise<void> => {
     if (!cwd || busy) return
     setBusy(true)
     setError('')
     try {
-      await window.core.newSession({ cwd, worktree, model, permissionMode: mode, name, prompt })
+      await window.core.newSession({ cwd, worktree, ...(worktree && branch ? { worktreeName: branch } : {}), model, permissionMode: mode, name, prompt })
       setPrompt('')
       setName('')
       onStarted()
@@ -71,7 +86,7 @@ export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: (
           <span className="launch-where" title={cwd || undefined}>
             {cwd ? <>in <b>{base(cwd)}</b></> : 'Pick a folder below'}
           </span>
-          <button className="launch-go" disabled={!cwd || busy} onClick={() => void start()}>
+          <button ref={startButton} className="launch-go" disabled={!cwd || busy} onClick={() => void start()}>
             {busy ? 'Starting…' : 'Start session'}
             <kbd>⌘↩</kbd>
           </button>
@@ -139,7 +154,7 @@ export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: (
 
       <div className="launch-section launch-extras">
         <label className="launch-switch">
-          <input type="checkbox" role="switch" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
+          <input type="checkbox" role="switch" checked={worktree} onChange={(e) => { setWorktree(e.target.checked); if (!e.target.checked) setBranch('') }} />
           <span className="track" aria-hidden="true" />
           <span>
             <b>Its own worktree</b>

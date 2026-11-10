@@ -50,7 +50,7 @@ describe('checkManifest', () => {
   it('says which bridge an overlay tile needs', () => {
     expect(checkManifest({ ...base, workshop: '^1.1', permissions: { overlay: true } }).ok).toBe(true)
     expect(checkManifest({ ...base, workshop: '^1.2' }).ok).toBe(true)
-    expect(errs({ ...base, workshop: '^1.4' })[0]).toMatch(/does not accept/)
+    expect(errs({ ...base, workshop: '^1.5' })[0]).toMatch(/does not accept/)
   })
 
   it('takes music as a permission (bridge 1.3): true or false, never a typo of it', () => {

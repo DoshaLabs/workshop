@@ -19,6 +19,12 @@ export interface BackendSession {
   folder: string
   /** The project it belongs to: the repository's root, shared by its worktrees (main/project.ts). */
   root: string
+  /**
+   * What it is doing, as core's sessions say it (shared/sessions.ts SessionStatus): `busy` (a
+   * turn running), `blocked` (a question or permission prompt open), `starting`, `idle`, `dead`,
+   * `unknown`. A backend that writes (the Git tile's rebase and merge) waits for quiet with it.
+   */
+  status: string
 }
 
 export type ToBackend = { type: 'call'; id: number; op: string; body: unknown } | { type: 'sessions'; sessions: BackendSession[] }

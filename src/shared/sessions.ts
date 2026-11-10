@@ -46,6 +46,8 @@ export interface SessionsState {
 export interface NewSessionOpts {
   cwd: string
   worktree?: boolean
+  /** The new worktree's name (`claude --worktree <name>`, whose branch is `worktree-<name>`); the CLI picks one when absent. */
+  worktreeName?: string
   model?: string
   permissionMode?: string
   name?: string
@@ -72,4 +74,47 @@ export function shortcutOrder(s: SessionsState | null, manual?: string[]): strin
 /** The open sessions as the column draws them: most recently active first, or the user's order. */
 export function columnOrder(s: SessionsState | null, manual?: string[]): string[] {
   return manual ? shortcutOrder(s, manual) : (s?.sessions ?? []).filter((x) => x.open).map((x) => x.id)
+}
+
+/**
+ * What a tile may fill the launcher with (workshop.sessions.launch, "sessions": "launch"): a folder,
+ * and a new worktree, optionally named. The user still presses Start; `nonce` tells one request
+ * from the next for the same folder.
+ */
+export interface LaunchPrefill {
+  cwd: string
+  worktree?: boolean
+  branch?: string
+  nonce: number
+}
+
+/**
+ * A worktree name the CLI and git both take: `claude --worktree <name>` makes the folder
+ * `.claude/worktrees/<name>` and the branch `worktree-<name>`. Lowercase letters, digits, dots,
+ * dashes and underscores, 1 to 60, starting with a letter or digit; null for anything else.
+ */
+export function worktreeName(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const s = v.trim()
+  return /^[a-z0-9][a-z0-9._-]{0,59}$/.test(s) && !s.includes('..') && !s.endsWith('.lock') && !s.endsWith('.') ? s : null
+}
+
+/**
+ * A tile's `sessions.launch(opts)` checked for shape (core then checks the folder is there): an
+ * absolute folder, and `worktree` absent, `true`, or `{ branch? }` with a name `worktreeName`
+ * takes. Throws with what was wrong.
+ */
+export function launchRequest(v: unknown): { folder: string; worktree: boolean; branch?: string } {
+  const o = v && typeof v === 'object' ? (v as Record<string, unknown>) : null
+  const folder = o?.folder
+  if (typeof folder !== 'string' || !folder.startsWith('/') || folder.length > 1024 || folder.includes('\0')) throw new Error('sessions.launch: { folder } is an absolute path')
+  const w = o!.worktree
+  if (w === undefined || w === false || w === null) return { folder, worktree: false }
+  if (w === true) return { folder, worktree: true }
+  if (typeof w !== 'object' || Array.isArray(w)) throw new Error('sessions.launch: worktree is true or { branch }')
+  const b = (w as Record<string, unknown>).branch
+  if (b === undefined || b === '') return { folder, worktree: true }
+  const name = worktreeName(b)
+  if (!name) throw new Error('sessions.launch: worktree.branch is lowercase letters, digits, dots, dashes and underscores (1 to 60)')
+  return { folder, worktree: true, branch: name }
 }

@@ -3,7 +3,7 @@
 // (main/core-sessions.ts).
 
 import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protocol, shell, utilityProcess, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import { existsSync, mkdtempSync, readFileSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
@@ -31,7 +31,7 @@ import { fetchSpotifyArt, osascriptRunner } from './music'
 import { smokeMusicIo } from './smoke-music'
 import { Recorder } from './recorder'
 import { REC, REC_DEFAULTS } from '@shared/recorder'
-import type { SessionsState } from '@shared/sessions'
+import { launchRequest, type LaunchPrefill, type SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
@@ -262,6 +262,8 @@ const isHttp = (url: string): boolean => /^https?:\/\//i.test(url)
 
 /** URLs a smoke run would have opened in the browser (it never opens one). */
 export const smokeOpened: string[] = []
+/** What tiles asked the launcher to be filled with in a smoke run. */
+export const smokeLaunches: LaunchPrefill[] = []
 
 /**
  * The one way a tile's URL reaches the browser: openExternal, a popup, or a link that leaves the
@@ -456,7 +458,7 @@ function pushSessions(s: SessionsState): void {
     await roots.ready(latest.sessions)
     const list = tileSessions(latest)
     // A backend hears of every session, whatever its tile's permissions: folders, never tokens.
-    backends.setSessions(list.map((v) => ({ id: v.id, name: v.name, folder: v.project, root: v.root })))
+    backends.setSessions(list.map((v) => ({ id: v.id, name: v.name, folder: v.project, root: v.root, status: v.status })))
     for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
   })()
 }
@@ -473,7 +475,7 @@ function bridge(): void {
   })
   ipcMain.handle(CH.tileSessionsPaste, (e, id: string, text: string) => {
     const { tile } = need(e, 'sessions')
-    if (tile.manifest.permissions.sessions !== 'write') throw new Error('this tile asked for "sessions": "read"; pasting needs "write"')
+    if (tile.manifest.permissions.sessions !== 'write') throw new Error(`this tile asked for "sessions": "${tile.manifest.permissions.sessions}"; pasting needs "write"`)
     if (typeof text !== 'string' || !text.trim() || text.length > 10_000) throw new Error('sessions.paste: text of 1 to 10,000 characters')
     const rec = core?.sessions.find(String(id))
     if (!rec || !rec.open) throw new Error('sessions.paste: no such open session')
@@ -481,6 +483,27 @@ function bridge(): void {
     if (now - (lastPaste.get(tile.manifest.id) ?? 0) < 2000) throw new Error('sessions.paste: one every two seconds')
     lastPaste.set(tile.manifest.id, now)
     core!.sessions.paste(rec.id, text)
+  })
+  // The new-session form, filled in: the user presses Start. A tile can never start a session or
+  // write its first prompt, and it may open the form only in answer to a click or key in its page
+  // (the overlay's rule), so it cannot take the center on a timer.
+  ipcMain.handle(CH.tileSessionsLaunch, (e, opts: unknown) => {
+    const g = need(e, 'sessions')
+    const level = g.tile.manifest.permissions.sessions
+    if (level !== 'launch' && level !== 'write') throw new Error(`this tile asked for "sessions": "${level}"; launching needs "launch"`)
+    const req = launchRequest(opts)
+    if (Date.now() - g.gestureAt > GESTURE_MS) throw new Error('sessions.launch: only in answer to a click or key in the tile')
+    let dir = false
+    try {
+      dir = statSync(req.folder).isDirectory()
+    } catch {
+      // not there
+    }
+    if (!dir) throw new Error('sessions.launch: no such folder')
+    g.gestureAt = 0
+    const prefill: LaunchPrefill = { cwd: resolve(req.folder), worktree: req.worktree, ...(req.branch ? { branch: req.branch } : {}), nonce: Date.now() }
+    if (SMOKE) smokeLaunches.push(prefill)
+    win?.webContents.send(CH.sessionsLaunch, prefill)
   })
   ipcMain.handle(CH.tileUsageGet, (e) => {
     need(e, 'usage')
@@ -806,7 +829,7 @@ app.whenReady().then(async () => {
   nativeTheme.on('updated', pushTheme)
 
   if (SMOKE) {
-    const ctx = { win: win!, door, liveByTile, backends, music: music.host, recorder: recorder!, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core!, profile: PROFILE }
+    const ctx = { win: win!, door, liveByTile, backends, music: music.host, recorder: recorder!, userData: app.getPath('userData'), opened: smokeOpened, launches: smokeLaunches, addDevTile, core: core!, profile: PROFILE }
     const code = RESTARTED ? await runRestarted(ctx) : await runSmoke(ctx)
     core?.stop()
     backends.stopAll()

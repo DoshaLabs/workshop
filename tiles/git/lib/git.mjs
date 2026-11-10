@@ -1,5 +1,5 @@
-// The Git tile's backend, the part that runs git. Read-only: nothing here stages, commits or
-// writes a file, and every call is made so it can never get in a session's way:
+// The Git tile's backend, the part that runs git. Reads are made so they can never get in a
+// session's way (the writes, in worktrees.mjs, ask for `write` and take the locks as git does):
 //
 // - GIT_OPTIONAL_LOCKS=0 (and --no-optional-locks): `git status` would otherwise refresh the index
 //   and take its lock, which a session's own `git commit` would then fail on.
@@ -25,6 +25,18 @@ const ENV = {
   GIT_PAGER: 'cat',
   LC_ALL: 'C'
 }
+/**
+ * A write (rebase, merge, worktree remove, branch -d) takes the index lock as git normally does, so
+ * it fails cleanly while a session holds it rather than racing it; and it never opens an editor
+ * (a merge's message is git's own), so it cannot wait on a terminal nobody sees.
+ */
+const WRITE_ENV = {
+  ...Object.fromEntries(Object.entries(ENV).filter(([k]) => k !== 'GIT_OPTIONAL_LOCKS')),
+  GIT_EDITOR: 'true',
+  GIT_SEQUENCE_EDITOR: 'true',
+  GIT_MERGE_AUTOEDIT: 'no'
+}
+const WRITE_BASE = BASE.filter((a) => a !== '--no-optional-locks')
 
 export const TIMEOUT_MS = 8000
 /** git status past this many bytes (a huge untracked tree) is cut, and says so. */
@@ -41,12 +53,12 @@ const SHOW_BYTES = 256 << 10
 /** Files listed per worktree in the summary; the rest are counted. */
 export const LIST_FILES = 300
 
-/** Runs git in `cwd`: { code, out (Buffer), cut, timedOut, err }. Never throws. */
-export function git(cwd, args, { cap = STATUS_BYTES, timeout = TIMEOUT_MS } = {}) {
+/** Runs git in `cwd`: { code, out (Buffer), cut, timedOut, err }. Never throws. `write` drops the read-only guards (see WRITE_ENV). */
+export function git(cwd, args, { cap = STATUS_BYTES, timeout = TIMEOUT_MS, write = false } = {}) {
   return new Promise((resolve) => {
     let child
     try {
-      child = spawn('git', [...BASE, '-C', cwd, ...args], { env: ENV, stdio: ['ignore', 'pipe', 'pipe'] })
+      child = spawn('git', [...(write ? WRITE_BASE : BASE), '-C', cwd, ...args], { env: write ? WRITE_ENV : ENV, stdio: ['ignore', 'pipe', 'pipe'] })
     } catch (e) {
       resolve({ code: -1, out: Buffer.alloc(0), cut: false, timedOut: false, err: e.message })
       return
@@ -85,8 +97,8 @@ export function git(cwd, args, { cap = STATUS_BYTES, timeout = TIMEOUT_MS } = {}
   })
 }
 
-function failure(r, what) {
-  if (r.timedOut) return `${what} took longer than ${TIMEOUT_MS / 1000} s`
+export function failure(r, what, timeout = TIMEOUT_MS) {
+  if (r.timedOut) return `${what} took longer than ${timeout / 1000} s`
   return r.err.split('\n')[0] || `${what} failed`
 }
 
@@ -121,7 +133,8 @@ async function head(top, path, max) {
   }
 }
 
-async function status(top) {
+/** A worktree's `git status`, parsed, with nested worktrees of the same repository left out. */
+export async function status(top) {
   const r = await git(top, ['status', '--porcelain=v2', '-z', '--branch', '--untracked-files=all'])
   if (r.code !== 0 && !r.cut) throw new Error(failure(r, 'git status'))
   const st = parseStatus(r.out.toString('utf8'), r.cut)

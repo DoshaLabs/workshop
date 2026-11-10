@@ -1,12 +1,15 @@
 // The Git tile's backend (the trusted tier: a program of its own, beside the page, with full
-// access to this Mac; only tiles that ship with workshop may have one). Read-only for now.
+// access to this Mac; only tiles that ship with workshop may have one).
 //
 // The page names sessions by id and nothing else: the folder each one works in comes from the
 // list core hands this program (`sessions()`), so a page can never point git at a path of its
-// choosing.
+// choosing. The Worktrees tab's ops name a project by the root core gave a session, and a
+// worktree by the path git lists for that root; anything else is refused (lib/worktrees.mjs).
 
+import { homedir } from 'node:os'
 import { changes, diff, worktreeTop } from './lib/git.mjs'
 import { group } from './lib/parse.mjs'
+import { diffAgainstBase, listWorktrees, merge, readProject, rebase, remove } from './lib/worktrees.mjs'
 
 /** A folder's worktree top is asked of git once a minute at most (it changes only if the worktree is removed). */
 const TOP_MS = 60_000
@@ -66,4 +69,62 @@ export default function ({ handle, sessions }) {
     if (!top) throw new Error(`${s.name} is not working in a git repository`)
     return { top, ...(await once(`diff ${top}`, () => diff(top))) }
   })
+
+  // { sessions: [id…] } → { projects: [{ root, name, base, worktrees: [...] }], at }: every worktree
+  // of each of those sessions' projects, the sessions open in each, and where two touch one file.
+  handle('worktrees', async (body) => {
+    const list = known(body?.sessions)
+    const places = new Map()
+    await Promise.all(list.map(async (s) => places.set(s.id, await topOf(s.folder))))
+    const roots = [...new Set(list.map((s) => s.root))]
+    const home = homedir()
+    const projects = await Promise.all(
+      roots.map(async (root) => {
+        const sessionsAt = (path) => list.filter((s) => places.get(s.id) === path).map((s) => ({ id: s.id, name: s.name, status: s.status }))
+        try {
+          return { name: root.replace(/\/+$/, '').split('/').pop() || root, ...(await once(`worktrees ${root}`, () => readProject(root, { sessionsAt, home }))) }
+        } catch (e) {
+          return { root, name: root.split('/').pop() || root, base: null, worktrees: [], error: e.message }
+        }
+      })
+    )
+    projects.sort((a, b) => a.name.localeCompare(b.name) || a.root.localeCompare(b.root))
+    return { projects, at: Date.now() }
+  })
+
+  /** A worktree the page names: { root, path }, where root is a session's project and path one of git's worktrees of it. */
+  async function named(body) {
+    const root = body?.root
+    const path = body?.path
+    if (typeof root !== 'string' || typeof path !== 'string') throw new Error('which worktree: { root, path }')
+    if (!sessions().some((s) => s.root === root)) throw new Error('no session works in that project')
+    if (!(await listWorktrees(root)).some((w) => w.path === path)) throw new Error('that worktree is gone')
+    return { root, path }
+  }
+
+  // { root, path } → { base, files, cut }: what the worktree would bring to main (read-only).
+  handle('diffmain', async (body) => {
+    const { root, path } = await named(body)
+    return diffAgainstBase(root, path)
+  })
+
+  // The writes, one at a time: a second asked while one runs is refused, never queued behind it
+  // (it would act on what the first left, which the page has not seen).
+  let writing = false
+  const write = (fn) => async (body) => {
+    if (writing) throw new Error('another git action is still running')
+    writing = true
+    try {
+      const all = sessions()
+      return await fn({ root: body?.root, path: body?.path, expect: body?.expect }, { sessions: all, topOf })
+    } finally {
+      writing = false
+      // What git is now is read again on the next poll, not from the minute-long cache of tops.
+      tops.clear()
+    }
+  }
+  // { root, path, expect: { head, base } } → { done, nothing?, conflict?, stuck?, files?, said }
+  handle('rebase', write(rebase))
+  handle('merge', write(merge))
+  handle('remove', write(remove))
 }

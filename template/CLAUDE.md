@@ -50,7 +50,7 @@ user is shown the list.
 |---|---|
 | `"storage": true` | `workshop.storage` |
 | `"net": ["api.example.com", "*.example.org"]` | https / wss to exactly these hosts. No IPs, no `localhost`, no bare `*`. `*.x.com` does not include `x.com`. |
-| `"sessions": "read"` or `"write"` | `workshop.sessions` (`write` adds `paste`) |
+| `"sessions": "read"`, `"launch"` or `"write"` | `workshop.sessions`. Each takes the one before: `launch` adds `launch` (core's new-session form, filled in; needs `"workshop": "^1.4"`), `write` adds `paste` |
 | `"usage": true` | `workshop.usage` |
 | `"notify": true` | `workshop.notify` |
 | `"door": { "ops": ["add", "list"], "timeoutMs": 10000 }` | `workshop.door`: Claude sessions can call these ops |
@@ -105,6 +105,12 @@ await workshop.sessions.list()              // [{ id, name, project, root, statu
                                             //   File things by root.
 workshop.sessions.watch((list) => {})
 await workshop.sessions.paste(id, text)     // "write" only: types into a session and submits
+await workshop.sessions.launch({ folder, worktree })  // "launch" or "write" (bridge 1.4); absent without it.
+                                            // Opens core's new-session form with `folder` filled in and
+                                            // `worktree: {}` (or `{ branch: 'fix-auth' }`, a new worktree of
+                                            // that name, whose branch the CLI calls worktree-fix-auth) ticked.
+                                            // The user presses Start: a tile never starts a session or
+                                            // writes its first prompt. Only from a click or key in the tile.
 
 await workshop.usage.get(); workshop.usage.watch((u) => {})   // rate-limit windows, per-session cost and context %
 

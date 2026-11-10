@@ -116,6 +116,8 @@ export const CH = {
   // sessions: core window ⇄ main
   sessionsGet: 'ws:core:sessions-get',
   sessionsState: 'ws:core:sessions-state', // main → window
+  /** A tile asked for the launcher, filled in (workshop.sessions.launch): main → window. */
+  sessionsLaunch: 'ws:core:sessions-launch',
   sessionNew: 'ws:core:session-new',
   sessionResume: 'ws:core:session-resume',
   sessionPark: 'ws:core:session-park',
@@ -135,6 +137,7 @@ export const CH = {
   tileSessionsList: 'ws:tile:sessions-list',
   tileSessionsChanged: 'ws:tile:sessions-changed', // main → tile
   tileSessionsPaste: 'ws:tile:sessions-paste',
+  tileSessionsLaunch: 'ws:tile:sessions-launch',
   tileUsageGet: 'ws:tile:usage-get',
   tileUsageChanged: 'ws:tile:usage-changed', // main → tile
   // session tiles: the conversation, tailed by main (main/transcript.ts)

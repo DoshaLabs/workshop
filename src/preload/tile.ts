@@ -212,14 +212,25 @@ if (hello) {
       forget: (handle: string): Promise<boolean> => gate('files', () => ipcRenderer.invoke(CH.filesForget, handle))
     },
     sessions: {
-      /** The sessions: [{ id, name, project (the start folder), root (its repo root), status, focused, open }]. Needs "sessions": "read" or "write". */
+      /** The sessions: [{ id, name, project (the start folder), root (its repo root), status, focused, open }]. Needs "sessions": "read", "launch" or "write". */
       list: (): Promise<unknown> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsList)),
       watch: (fn: (list: unknown) => void): (() => void) => {
         needs('sessions')
         return sub(sessionSubs, fn)
       },
       /** Types `text` into an open session and submits it. Needs "sessions": "write". */
-      paste: (id: string, text: string): Promise<void> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsPaste, id, text))
+      paste: (id: string, text: string): Promise<void> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsPaste, id, text)),
+      // Only there with "sessions": "launch" or "write" (bridge 1.4): a tile without it has no such method.
+      ...(perms.sessions === 'launch' || perms.sessions === 'write'
+        ? {
+            /**
+             * Opens core's new-session form, filled in with `folder` (and a new worktree, named after
+             * `worktree.branch`, when asked), for the user to start. It never starts a session. Only in
+             * answer to a click or key in the tile.
+             */
+            launch: (opts: { folder: string; worktree?: { branch?: string } }): Promise<void> => ipcRenderer.invoke(CH.tileSessionsLaunch, opts)
+          }
+        : {})
     },
     usage: {
       /** The account's 5-hour and weekly windows, and each session's context % and cost. Needs "usage". */

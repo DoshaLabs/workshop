@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writ
 import { homedir, hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 import { cleanModel, cleanPermissionMode } from '@shared/models'
-import type { NewSessionOpts, SessionRecord, SessionStatus, SessionView, SessionsState } from '@shared/sessions'
+import { worktreeName, type NewSessionOpts, type SessionRecord, type SessionStatus, type SessionView, type SessionsState } from '@shared/sessions'
 import type { FleetEntry } from './fleet'
 import type { HookEvent, HookPayload } from './hooks'
 import { Tmux, shq } from './tmux'
@@ -138,14 +138,19 @@ export class SessionManager {
       worktree: !!opts.worktree,
       model,
       ...(permissionMode ? { permissionMode } : {}),
-      name: name || (opts.worktree ? 'new worktree' : 'new session'),
+      name: name || (opts.worktree ? (worktreeName(opts.worktreeName) ?? 'new worktree') : 'new session'),
       createdAt: Date.now(),
       activeAt: Date.now(),
       open: true,
       token: randomBytes(24).toString('hex')
     }
-    const args = ['--session-id', rec.claudeSessionId]
-    if (rec.worktree) args.push('--worktree')
+    // `--worktree` takes an optional name, so it never stands where the next word could be read as
+    // one (a first prompt with no other flag after it would become the worktree's name): bare, it
+    // goes before --session-id; named, it is one word.
+    const wtName = rec.worktree ? worktreeName(opts.worktreeName) : null
+    if (rec.worktree && opts.worktreeName !== undefined && opts.worktreeName !== '' && !wtName) throw new Error(`Not a worktree name: ${String(opts.worktreeName).slice(0, 80)}`)
+    const args = rec.worktree ? (wtName ? [`--worktree=${wtName}`] : ['--worktree']) : []
+    args.push('--session-id', rec.claudeSessionId)
     if (model) args.push('--model', model)
     if (name) args.push('--name', name)
     if (permissionMode) args.push('--permission-mode', permissionMode)
