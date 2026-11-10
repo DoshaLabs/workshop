@@ -626,7 +626,8 @@ it. The commissioned fox is no longer needed for launch.
 
 ### The Knot (built)
 
-A (3,4) torus knot turning in 3D on a small 2D canvas, strands back to front, a bright pulse
+A (2,5) torus knot, the cinquefoil (Colin chose it on 10 Nov 2026 over the first (3,4), from a
+gallery of fourteen curves), turning in 3D on a small 2D canvas, strands back to front, a bright pulse
 riding the strand: workshop's own version of the "AlgoGlyph" in Colin's Cura app (a (3,5) knot
 there; no code is shared). `src/shared/knot.ts` holds the curve, the status language and the
 colour maths (pure, tested); `src/renderer/src/Knot.tsx` runs it. It sits in every session's head
@@ -652,8 +653,8 @@ part of the way and never below a pixel, so a small knot stays a line. A call fo
   background and moved toward the ink until it reaches 3:1; far strands are pulled toward the
   panel, never made see-through (that washed out on light themes). `test/knot.test.ts` checks
   every variant, every mode, at rest and full size, in both boxes, with and without a flare.
-- **The curve closes after P = 3 loops** (the spin turns a third of the way per loop; the knot
-  matches itself every quarter turn), so each knot's clock wraps at 3 loops and never jumps. A
+- **The curve closes after P = 2 loops** (the spin turns half way per loop; the knot matches
+  itself every fifth of a turn), so each knot's clock wraps at 2 loops and never jumps. A
   speed change keeps the phase: the clock advances by dt / loop.
 - **Cost.** One shared clock that wakes only when some visible knot is due (a timer, then one
   rAF), nothing drawn off screen (IntersectionObserver) or while the window is hidden, one still

@@ -1,5 +1,5 @@
 // The Knot: workshop's default status mark and the app's own mark (CLAUDE.md §8, Colin, 10 Nov
-// 2026). A (3,4) torus knot turning in 3D, drawn on a small 2D canvas with its strands sorted back
+// 2026). A (2,5) torus knot, the cinquefoil (Colin's choice, 10 Nov 2026, over the first (3,4)), turning in 3D, drawn on a small 2D canvas with its strands sorted back
 // to front and a bright pulse riding the strand. Workshop's own version of the "AlgoGlyph" in
 // Colin's Cura app (there a (3,5) knot); nothing here is shared with Cura.
 //
@@ -10,9 +10,9 @@
 import type { SessionStatus } from './sessions'
 
 export const TAU = Math.PI * 2
-/** Turns of the tube round the torus, and of the knot round its axis: the (3,4) torus knot, one strand (gcd 1). */
-export const P = 3
-export const Q = 4
+/** Turns of the tube round the torus, and of the knot round its axis: the (2,5) torus knot, one strand (gcd 1). */
+export const P = 2
+export const Q = 5
 
 // ── The status language ──────────────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ function rot(x: number, y: number, z: number, ay: number, ax: number): [number, 
 /**
  * The knot at phase `ph` as `segs + 1` points in its own units (x, y on screen, z toward the
  * viewer; the radius is at most about 2). The tilt, colours and pulse repeat every loop (2π), but
- * the spin (`ph / P`) turns only a third of the way round in one, and the knot matches itself
+ * the spin (`ph / P`) turns only half way round in one, and the knot matches itself
  * only every Qth of a turn, so a single loop does not close. P loops do: the spin has then made
  * one whole turn, the tilt and pulse P whole loops. A Knot's clock therefore wraps at P loops,
  * which `wrapClock` does, and never jumps.
