@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>workshop</title>
+    <meta name="description" content="Claude Code sessions side by side in one Mac window, and a column of small apps beside them that anyone can write and share. Open source, MIT." />
+    <meta name="theme-color" content="#04050d" />
+    <link rel="icon" href="../docs/assets/knot-icon.svg" type="image/svg+xml" />
+    <script type="module" src="./main.ts"></script>
+  </head>
+  <body>
+    <a class="skip" href="#window">Skip to the page</a>
+
+    <header class="hero">
+      <canvas id="hero-knot" class="hero-knot" aria-hidden="true"></canvas>
+      <div class="hero-words">
+        <h1>workshop</h1>
+        <p class="lede">Claude Code sessions side by side in one Mac window, and a column of small apps beside them that anyone can write and share.</p>
+        <p class="actions">
+          <a class="button primary" href="https://github.com/DoshaLabs/workshop">Source on GitHub</a>
+          <a class="button" href="#tiles">Build a tile</a>
+        </p>
+        <p class="fine">macOS and Claude Code first. Open source under MIT. It runs from source today; there is no installer yet.</p>
+      </div>
+    </header>
+
+    <main>
+      <section id="window" class="sheet wide">
+        <h2>One window</h2>
+        <p>Every session is the real <code>claude</code> command, unchanged, in its own terminal. Workshop puts them in a column, shows each conversation as it happens, and keeps them running after you quit. The session you are on fills the middle. On the right is a column of tiles.</p>
+        <figure>
+          <img src="../docs/assets/app.png" width="1200" height="760" alt="The workshop window in Deep Space: a session's conversation on the left, the new-session form in the middle, and the Git, Reminders and Wikipedia tiles on the right." />
+          <figcaption>From the test run, in Deep Space. Wikipedia's picture of the day: Andreas F. Borchert, Wikimedia Commons.</figcaption>
+        </figure>
+        <ul class="columns">
+          <li><strong>Sessions</strong> on the left, most recent first: what each said, its context and cost, and the Knot showing whether it is working or waiting for you.</li>
+          <li><strong>The middle</strong> is the session you are on, a terminal. A tile can open there at reading size, or you can start a new session in a folder or a fresh worktree.</li>
+          <li><strong>Tiles</strong> on the right: Git, Reminders, Wikipedia with the weather, and whatever you build or install.</li>
+        </ul>
+      </section>
+
+      <section id="tiles" class="sheet">
+        <h2>Tiles anyone can write</h2>
+        <p class="prose">A tile is a folder: a manifest and a web page. Drop the folder in and it runs, the way World of Warcraft add-ons work, or Raycast extensions. Write one with any web stack, share it from your own repository, and anyone can load it. No build step ever runs on the user's machine.</p>
+        <div class="split">
+          <pre class="code" aria-label="A tile's manifest, tile.json"><code>{
+  "id": "focus-timer",
+  "name": "Focus timer",
+  "version": "0.1.0",
+  "workshop": "^1",
+  "author": "you",
+  "hint": "Twenty-five minutes, then a break",
+  "icon": "icon.svg",
+  "entry": "dist/index.html",
+  "permissions": {
+    "storage": true,
+    "notify": true
+  }
+}</code></pre>
+          <div>
+            <p class="prose">The fastest way in: press <strong>+</strong> at the foot of the tile column, open <strong>Yours</strong>, and fill in <strong>Build a new tile</strong>. Workshop copies a working starter into a new folder and starts a session there to build it with you. The tile reloads every time a file changes.</p>
+            <p class="prose">Or from the shell, with a folder of your own:</p>
+            <pre class="code"><code>node bin/workshop.mjs tile dev ./focus-timer
+node bin/workshop.mjs tile check ./focus-timer</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="sheet">
+        <h2>Nothing a stranger wrote gets your Mac</h2>
+        <p class="prose">Each tile runs in its own sandboxed page, on its own origin, with no Node, no files and no network. It reaches workshop through one object, <code>window.workshop</code>, and only for what its manifest asks. You see the list before it runs.</p>
+        <dl class="perms">
+          <div><dt>storage</dt><dd>Its own saved data, 5 MB</dd></div>
+          <div><dt>net</dt><dd>https to the hosts it names, and nowhere else</dd></div>
+          <div><dt>sessions</dt><dd>See your sessions; open the new-session form; type into one</dd></div>
+          <div><dt>door</dt><dd>Let a Claude session call it from the shell</dd></div>
+          <div><dt>usage</dt><dd>Your rate-limit windows and what each session costs</dd></div>
+          <div><dt>notify</dt><dd>A badge, a Mac notification, a nudge on the Knot</dd></div>
+          <div><dt>files</dt><dd>Read only the folder or file you pick for it</dd></div>
+          <div><dt>camera, microphone</dt><dd>Passed to the macOS prompt</dd></div>
+          <div><dt>overlay</dt><dd>Cover the window for a moment, after a click</dd></div>
+          <div><dt>music</dt><dd>What Spotify or Music is playing, and the controls</dd></div>
+        </dl>
+        <p class="prose">A second, trusted tier adds a Node program with full access to the Mac. Only tiles that ship with workshop may use it (Git does, to run <code>git</code>); any other tile that asks is refused.</p>
+      </section>
+
+      <section class="sheet">
+        <h2>The Knot</h2>
+        <p class="prose">Workshop's mark is a cinquefoil, the (2,5) torus knot, drawn live. On each session its size, speed and colour say what that session is doing, so a glance down the column tells you who needs you. Press one to see it call for attention.</p>
+        <div class="modes">
+          <button type="button" data-mode="work"><canvas aria-hidden="true"></canvas><span>Working</span></button>
+          <button type="button" data-mode="needs"><canvas aria-hidden="true"></canvas><span>Needs you</span></button>
+          <button type="button" data-mode="start"><canvas aria-hidden="true"></canvas><span>Starting</span></button>
+          <button type="button" data-mode="rest"><canvas aria-hidden="true"></canvas><span>Idle</span></button>
+          <button type="button" data-mode="dead"><canvas aria-hidden="true"></canvas><span>Ended</span></button>
+        </div>
+        <p class="prose">Prefer a fox? Any pixel-art sprite sheet can stand in for the Knot. The setup screen recommends <a href="https://elthen.itch.io/2d-pixel-art-fox-sprites">Elthen's 2D Pixel Art Fox Sprites</a>, which you download from him yourself; workshop only knows how to lay the sheet out, and never ships his art.</p>
+      </section>
+
+      <section class="sheet">
+        <h2>Run it from source</h2>
+        <p class="prose">You need a Mac, Node 22 or later, tmux, and Claude Code installed and logged in.</p>
+        <ol class="steps">
+          <li><pre class="code"><code>git clone https://github.com/DoshaLabs/workshop
+cd workshop</code></pre></li>
+          <li><pre class="code"><code>npm install</code></pre></li>
+          <li><pre class="code"><code>npm run dev</code></pre></li>
+        </ol>
+      </section>
+
+      <section class="sheet">
+        <h2>Where it is</h2>
+        <div class="status">
+          <div>
+            <h3>Working now</h3>
+            <ul>
+              <li>Sessions: start, park, resume, ⌘1–9</li>
+              <li>The tile sandbox and the whole bridge above</li>
+              <li>Git (Changes and Worktrees), Reminders, Wikipedia</li>
+              <li>Build a tile with Claude, <code>tile dev</code>, <code>tile check</code></li>
+              <li>Install a tile from a git repository at a pinned commit</li>
+              <li>Deep Space and seven other themes; the Knot and sprite packs</li>
+            </ul>
+          </div>
+          <div>
+            <h3>Not yet</h3>
+            <ul>
+              <li>A packaged app and an install script</li>
+              <li>The public index of tiles, and browsing it in the app</li>
+              <li>Answering permission prompts from a session's tile</li>
+              <li>Subagents as tiles; Git's History and PRs tabs</li>
+              <li>Spend, Files and Posture tiles</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>workshop is open source under the MIT licence, by <a href="https://github.com/DoshaLabs">DoshaLabs</a>. Its fonts, Nunito, Source Serif 4 and JetBrains Mono, are under the SIL Open Font License. Claude Code is Anthropic's; workshop runs it unchanged and never touches its credentials.</p>
+      <p><a href="https://github.com/DoshaLabs/workshop">github.com/DoshaLabs/workshop</a></p>
+    </footer>
+  </body>
+</html>

@@ -11,5 +11,5 @@
     "types": ["node"],
     "paths": { "@shared/*": ["./src/shared/*"] }
   },
-  "include": ["electron.vite.config.ts", "vitest.config.ts", "vite.tile-preload.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "test/**/*.ts"]
+  "include": ["electron.vite.config.ts", "vitest.config.ts", "vite.tile-preload.config.ts", "vite.site.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "test/**/*.ts"]
 }

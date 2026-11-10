@@ -16,6 +16,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "smoke": "npm run build && electron . --smoke",
+    "site": "vite build --config vite.site.config.ts",
+    "readme-art": "node scripts/knot-svg.mjs",
     "postinstall": "electron-rebuild -f -w node-pty"
   },
   "dependencies": {
