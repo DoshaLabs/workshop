@@ -4,14 +4,16 @@ A desktop app for people who use Claude Code: several Claude Code sessions in on
 column of small apps ("tiles") beside them that anyone can write, share and install. Open source,
 in the DoshaLabs GitHub org. macOS and Claude Code first.
 
-**Status (10 Nov 2026): the tile host (roadmap step 1), sessions and the status mark (section 8) are built; the rest of this
+**Status (10 Nov 2026): the tile host (roadmap step 1), sessions, the status mark (section 8), the three-tab
+`+` menu with install, and the preview pane are built; the rest of this
 file is still the plan.** Every section says what was decided and why, so that whoever starts building, person or
 Claude session, does not have to re-derive it. When code lands, rewrite the matching section to
 describe what exists and delete the plan wording.
 
 **What exists.** `npm run dev` · `npm test` (unit) · `npm run smoke` (launches the app with a
 throwaway profile and `test/fixtures/probe`, a tile that tries every way out of the sandbox, and
-drives the door; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture of the window).
+drives the door, and ends by restarting core on the same profile, so sessions are seen to survive a restart
+and a reboot; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture of the window).
 Smoke sessions run a stand-in `claude` (`test/fixtures/fake-claude/claude`) that runs our hooks the
 way the CLI does; `WORKSHOP_REAL_CLAUDE=1 npx electron . --smoke` runs one real Haiku turn instead.
 The first build session's notes, open issues and second-pass list: `docs/progress/2026-11-10.md`.
@@ -21,7 +23,8 @@ The first build session's notes, open issues and second-pass list: `docs/progres
 - `src/main/tiles.ts`: finds tiles (`--dev-tile=<folder>`, then `tiles/`, then userData `tiles/`;
   an installed tile can never take a core tile's id), and arms each one's session: files on
   `tile://<id>/` (only the entry's folder), requests filtered, a dead proxy for everything
-  undeclared (closes WebRTC and DNS side doors), media only if declared, no downloads or screen
+  undeclared (closes WebRTC; DNS prefetch is off in tile pages, because it goes around the proxy;
+  both checked against core's window in smoke), media only if declared, no downloads or screen
   capture.
 - `src/main/index.ts`: guards every webview (core's sandboxed preload only) and answers the bridge,
   checking the sender's webview, top frame and origin on every call.
@@ -42,11 +45,22 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   `docs/progress/2026-11-10.md` section 8.
 - Layout: three equal columns, as in deck. The tile column is four rows tall: a tile is one row
   (its manifest's `span`, 1 for every core tile) and ↕ on its head steps it taller.
-- The `+` is the tile column's last cell (`TilePicker.tsx`): turn a tile on, open another
-  instance, or "make one with Claude", which copies the starter in `template/` to
-  `~/workshop-tiles/<id>` (`src/main/scaffold.ts`), loads it as a dev tile and starts a session
-  there. `template/CLAUDE.md` is the tile contract written for the Claude that builds the tile.
-  Dev tile folders are remembered in settings (`devTiles`) and loaded at every start.
+- The `+` is the tile column's last cell (`TilePicker.tsx`), a card in three tabs. Built in:
+  `tiles/`. Yours: dev folders, "make one with Claude" (copies `template/` to
+  `~/workshop-tiles/<id>`, `src/main/scaffold.ts`, loads it as a dev tile, starts a session
+  there), "load a folder", stop loading. Marketplace: installed tiles (update, remove with or
+  without their data), the index's tiles, install from a git repo. Every row: icon, name, hint,
+  permissions in words (`src/shared/permissions.ts`), on or off. `template/CLAUDE.md` is the tile
+  contract written for the Claude that builds the tile. Dev tile folders are remembered in
+  settings (`devTiles`) and loaded at every start.
+- Install (`src/main/install.ts`, wired by `src/main/tile-menu.ts`): one pinned commit fetched with
+  hooks, submodules, LFS and symlinks off, `.git` deleted, checked as an outside tile (no backend,
+  no built-in id, nothing the index did not list), into userData `tiles/<id>` after the prompt in
+  the menu card. An update asks again only if it asks for more. The index format is
+  `src/shared/tile-index.ts`; its address is `settings.index` (or `WORKSHOP_INDEX`).
+- `workshop tile check <folder> [--json]` (`src/main/tile-check.ts`, built into
+  `out/check/tile-check.mjs` by `vite.check.config.ts`): core's own manifest, plugin and folder
+  checks from the shell. Exit 0 if the tile would load.
 - `bin/workshop.mjs tile dev <folder>`: loads a tile under development (reload on change, or a
   dev-server `entry`); hands the folder to the app if it is already running.
 - Fonts (`src/shared/fonts.ts`, files and licences in `assets/fonts/`, all OFL): Nunito for the
@@ -88,11 +102,28 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   settings (`src/shared/column.ts`), migrated once from the window's old localStorage.
 - The status mark (section 8): the Knot (`src/shared/knot.ts`, `Knot.tsx`) on every session and
   at the top left; sprite packs over it (`src/shared/mascot.ts`, `src/main/mascot.ts`,
-  `Mascot.tsx`, `MascotSetup.tsx`, `mascot-store.ts`); `notify({ bark })` flares or leaps it.
+  `Mascot.tsx`, `MascotSetup.tsx`, `mascot-store.ts`); `notify({ attention: true })` flares or leaps it.
   Smoke: `WORKSHOP_SHOT_MASCOT=<dir>` saves pictures, `WORKSHOP_SMOKE_SHEET=<png>` tries a sheet
   in the setup screen (throwaway profile only), `WORKSHOP_MEASURE_CPU=1` prints renderer CPU.
+- Preview pane (`PreviewPane.tsx`, `preview-store.ts`, `src/main/preview.ts`): a file a session
+  points at, in the center. Markdown through the tree with live task boxes (one character
+  written), code and text in mono with line numbers, `edit` and ⌘S; writes locked to the mtime
+  read; the file watched and reloaded unless there are unsaved edits; folders, binaries and
+  files over 2 MB refused with a note. Opened by a click on a path in a conversation
+  (`src/shared/paths.ts`) or `node "$WORKSHOP_DOC" open <path> [--line N]`
+  (`bin/workshop-doc.mjs`, POST /core/doc with the session's token; skill `workshop:doc` in core's
+  own `plugin/`).
+- Drag to reorder (`reorder.ts`, `src/shared/order.ts`): ⠿ on every head, both columns; orders in
+  `settings.column` (`order`, `sessions`). A dragged session column keeps its order and ⌘1–9
+  follow it; "most recent first" goes back. Tile pages let the pointer through during a drag.
+- Pictures in a prompt bar: paste or drop, a chip with a thumbnail, sent as a path
+  (`src/main/drops.ts`, `<profile>/drops/`).
+- A session's project root (`src/main/project.ts`): resolved once through `git rev-parse
+  --git-common-dir`, so worktrees of one repo share it; `workshop.sessions` gives it as `root`
+  beside `project` (the start folder). A store that cannot be parsed is moved aside
+  (`store.json.broken-<time>`), never written over. Long transcripts are read from the end.
 - Not yet: `transcripts` for tiles, the trusted tier, subagent tiles and the wolfpack, the leash
-  and permission prompts in a tile, the preview pane, drag to reorder.
+  and permission prompts in a tile.
 
 Terms used throughout:
 
@@ -363,12 +394,12 @@ Behind a permission:
 
 ```ts
 workshop.storage.get/set/watch     // "storage": one JSON store per tile, written atomically by main
-workshop.sessions.list/watch       // "sessions": "read"  → name, project folder, status, focused
+workshop.sessions.list/watch       // "sessions": "read"  → name, start folder (project), repo root (root), status, focused
 workshop.sessions.transcript(id)   // "transcripts"       → the conversation (see the safeguard)
 workshop.sessions.paste(id, text)  // "sessions": "write" → type into a session
 workshop.usage.get/watch           // "usage"             → costs and rate-limit windows, computed by core
 workshop.door.handle(op, fn)       // "door"              → fn(args, caller, { session }) answers a Claude session
-workshop.notify({ text, bark })    // "notify"            → needs-you chip, macOS notification, mascot bark
+workshop.notify({ text, attention }) // "notify"          → needs-you chip, macOS notification, the mark flares
 workshop.files.pick/list/entries/read/url/forget  // "files" → only what the user picked for this tile
 workshop.media                     // "camera" / "microphone" → passed to the macOS prompt
 workshop.backend.call(op, body)    // trusted tier only
@@ -407,9 +438,9 @@ This generalizes what deck does by hand for each tile (`/deck:mol`, `/deck:remin
 
 ### Install, update, develop
 
-- **Install**: clone the tile's repo at the commit the index pins, show the permissions, enable
-  on yes.
-- **Update**: the index moves the pin. If the permissions changed, the user is asked again.
+- **Install**: fetch the commit the index pins (no hooks, submodules, LFS or symlinks; `.git`
+  deleted), check it, show the permissions, enable on yes.
+- **Update**: the index moves the pin. If the new commit asks for more, the user is asked again.
 - **Develop**: `workshop tile dev ./my-tile` loads a local folder; `entry` may point at a local
   dev server for hot reload.
 - **Remove**: deletes the folder and, on request, the tile's storage.
@@ -498,7 +529,7 @@ the working version.
 - **`--settings` merges** with the user's own settings, so their hooks keep firing. `statusLine`
   is a single object and would replace theirs, so ours posts the status JSON to core and then
   runs the user's own command on the same input.
-- **The columns have jobs.** Left: sessions, ordered by most recently active, nothing else.
+- **The columns have jobs.** Left: sessions, most recently active first until the user drags them, nothing else.
   Right: tiles, draggable, each column its own endless scroll. Center: whatever you are on now.
 - **Profiles.** The profile name is the tmux socket name and the settings folder name, with its
   own hook port, so a dev build never sees the installed app's sessions. A session working ON
@@ -559,7 +590,7 @@ of the traffic lights (`AppMark`), where it is full size and fast while any sess
 | dead | dead | 0.5 | still | 0 | dead → muted; the head dimmed |
 
 Size changes ease over a few hundred ms in the same box. The strand's width follows the box, not
-the radius, so a small knot stays a line. A bark flares the pulse and swells the knot once (0.9 s).
+the radius, so a small knot stays a line. A call for attention flares the pulse and swells the knot once (0.9 s).
 
 - **Colour is the theme's.** Every colour drawn is checked against the panel and the window's
   background and moved toward the ink until it reaches 3:1; far strands are pulled toward the
@@ -584,15 +615,15 @@ validates it; `src/main/mascot.ts` stores it; core's settings name the active on
   "worker": { "swap": [["#d67941", "#e5b843"]] }, "credit": { "by": "Elthen", "url": "https://…" } }
 ```
 
-States: `idle` (starting, default), `look` (needs you), `run` (working), `leap` (a bark, played
+States: `idle` (starting, default), `look` (needs you), `run` (working), `leap` (a call for attention, played
 once), `sleep` (resting; a dead session sleeps, dimmed). One is required; the rest borrow the
 nearest (`FALLBACK`). Unknown fields and states are refused. **There is no "alert, tail up" pose:
 Colin's rule, it reads badly. Do not add one.** `box` crops each frame's empty margins; the art
 is fitted into 22 × 18 at whole-number scales, `image-rendering: pixelated`. `worker` is the
 subagent coat: its own sheet, or colours to swap, else `tintCoat`'s gold (built and tested, not
-drawn yet: there are no subagent tiles). Barks: a tile's `notify({ bark: true })` goes to the
+drawn yet: there are no subagent tiles). Calls for attention: a tile's `notify({ attention: true })` goes to the
 session that last called that tile through the door (10 minutes), else the focused one; a session
-also barks the moment it starts needing you or finishes a turn.
+also calls the moment it starts needing you or finishes a turn.
 
 The setup screen (top bar, "Mascot"; `MascotSetup.tsx`) is "use your own sprite sheet instead of
 the Knot": drop or choose a PNG, the grid is guessed (the smallest frame size whose grid lines

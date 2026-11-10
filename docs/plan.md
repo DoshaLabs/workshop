@@ -14,6 +14,12 @@ design; this file is what is left, in the order to build it. Section numbers (§
 - The status mark: the Knot by default, sprite packs over it, the setup screen, Foxtrot's mapping.
 - The tile column: four rows, ↕, the `+` cell with "make one with Claude", dev tiles remembered.
 - Themes, fonts (Nunito, JetBrains Mono, Source Serif 4), `npm run dev`.
+- Round 3 (10 Nov 2026, three agents; notes in `docs/progress/2026-11-10-track-{a,e,f}.md`):
+  track A (the three-tab menu), D1 (`tile check`), D2 (install, update, remove), the first half
+  of E (preview pane with clickable paths and `$WORKSHOP_DOC`, drag to reorder, image paste) and
+  F's rename (`attention`), storage fix, repo root, and the never-exercised list except camera and
+  microphone. Not verified by hand: install from GitHub over https, "load a folder", a real drag,
+  a Finder drop, a pasted image reaching the real CLI.
 
 ## Track A: the tile menu becomes three tabs (M)
 
@@ -134,13 +140,7 @@ Packaging (electron-builder; `tmux.conf`, the door CLI, `tiles/`, `template/`, `
 
 ## Order
 
-Next round, three agents side by side (they touch different files):
-
-1. **Track A + D1 + D2**: the three-tab menu, `tile check`, install / update / remove.
-2. **Track E, first half**: the preview pane with clickable paths, drag to reorder, image paste.
-3. **Track F**: the loose ends, starting with the rename of "bark" and the storage fix.
-
-Then **B then C** (the trusted tier, then Git, Changes
+Next: **B then C** (the trusted tier, then Git, Changes
 tab first), beside **D3–D5** (the index and the Marketplace tab live). Then the second half of
 E (wolfpack, leash, permission prompts), G's two sandboxed built-ins, and H.
 
