@@ -2,7 +2,7 @@
 // (install.ts) wired into the live registry, and "load a folder" (the macOS chooser, then the same
 // path as `workshop tile dev`). Only core's window may call any of it, never a tile.
 
-import { app, dialog, ipcMain, session, type BrowserWindow } from 'electron'
+import { dialog, ipcMain, session, type BrowserWindow } from 'electron'
 import { readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,7 +10,7 @@ import { CH } from '@shared/ipc'
 import { MENU, type IndexState, type InstallRequest } from '@shared/tile-menu'
 import { INDEX_MAX_BYTES, checkIndex } from '@shared/tile-index'
 import { Installer } from './install'
-import { MAX_INSTANCES, armSession, partitionOf, readTile, sessionsFor, type Registry, type Tile } from './tiles'
+import { MAX_INSTANCES, armSession, coreFile, partitionOf, readTile, sessionsFor, type Registry, type Tile } from './tiles'
 import type { SettingsStore } from './settings'
 
 export interface MenuDeps {
@@ -60,7 +60,7 @@ export async function readIndex(source: string | null, fromEnv = false): Promise
 /** The ids of the tiles that ship with workshop, read from tiles/ itself: no installed tile may take one, even one that failed to load. */
 async function builtinIds(): Promise<Set<string>> {
   const ids = new Set<string>()
-  const dir = join(app.getAppPath(), 'tiles')
+  const dir = coreFile('tiles')
   for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
     if (!e.isDirectory()) continue
     try {

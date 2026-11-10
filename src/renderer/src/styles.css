@@ -1971,6 +1971,46 @@ a.md-path:hover {
   }
 }
 
+/* Install update (UpdateButton.tsx): the record button's size; the accent while there is an
+   update or one is under way, the blocked colour when the build failed. */
+.update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.update-btn-mark,
+.update-btn-mark svg {
+  width: 10px;
+  height: 10px;
+  display: block;
+}
+.update-btn.is-available,
+.update-btn.is-building,
+.update-btn.is-installing {
+  color: var(--ws-accent);
+  border-color: var(--ws-accent);
+}
+.update-btn.is-error {
+  color: var(--ws-blocked);
+  border-color: var(--ws-blocked);
+}
+.update-btn:disabled {
+  cursor: progress;
+}
+.update-btn-spin {
+  animation: update-spin 900ms linear infinite;
+}
+@keyframes update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .update-btn-spin {
+    animation: none;
+  }
+}
+
 /* ==== The launcher: the empty center, the first screen anyone sees (Sessions.tsx).
    The task is the hero: a serif question over the box the first message goes in, Start inside it.
    The choices below are all on show (cards and pills, not drop-downs), each saying in words what

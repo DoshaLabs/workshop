@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Electron under the hardened runtime: V8's JIT, and node-pty's native module loading. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- The screen recorder (main/recorder.ts) records the Mac's sound through BlackHole and, if
+       asked, the microphone; a tile that declares "microphone" may use it too. Under the hardened
+       runtime macOS refuses audio input without this, silently: no prompt. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <!-- A tile that declares "camera" (the planned Posture tile). Refused the same silent way without it. -->
+  <key>com.apple.security.device.camera</key>
+  <true/>
+  <!-- workshop.music (main/music.ts) drives Music and Spotify with Apple Events through osascript. -->
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+</dict>
+</plist>

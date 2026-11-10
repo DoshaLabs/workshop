@@ -167,5 +167,9 @@ export const CH = {
   // the screen recorder (main/recorder.ts): the top bar's button
   recToggle: 'ws:core:rec-toggle',
   recStateGet: 'ws:core:rec-state-get',
-  recState: 'ws:core:rec-state' // main → window
+  recState: 'ws:core:rec-state', // main → window
+  // install update (main/updates.ts): the top bar's button, packaged app only
+  updateGet: 'ws:core:update-get',
+  updateInstall: 'ws:core:update-install',
+  updateState: 'ws:core:update-state' // main → window
 } as const

@@ -21,6 +21,7 @@ import { TileLayer, type Instance } from './TileLayer'
 import { TilePicker } from './TilePicker'
 import { MascotSetup } from './MascotSetup'
 import { RecordButton } from './RecordButton'
+import { UpdateButton } from './UpdateButton'
 import { AppMark } from './Knot'
 import { PreviewPane } from './PreviewPane'
 import { closeDoc, useDoc } from './preview-store'
@@ -290,6 +291,7 @@ export function App() {
       <AppMark working={!!sessions?.sessions.some((s) => s.open && s.status === 'busy')} />
       <div className="topbar">
         <UsageMeter usage={usage} />
+        <UpdateButton />
         <RecordButton />
         <button className="ghost small" title="The mascot: a sprite in every session's head" onClick={() => setMascotSetup((v) => !v)}>
           Mascot
