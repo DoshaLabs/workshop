@@ -165,8 +165,9 @@ export async function loadTiles(sources: { dir: string; source: Tile['source']; 
 /**
  * Dresses a tile's session: its files served on its own origin, every request checked against
  * its `net` list, every permission refused unless declared, no downloads, no screen capture.
- * Traffic to undeclared hosts is also sent to a proxy that does not exist, which closes the side
- * doors a request filter cannot see (WebRTC, DNS prefetch).
+ * Traffic to undeclared hosts is also sent to a proxy that does not exist, which closes WebRTC
+ * (with the page's WebRTC held to proxied UDP, index.ts). It does NOT stop DNS prefetch: tile
+ * pages are started with Blink's prefetching off for that (index.ts, will-attach-webview).
  */
 /** The most instances of one tile (manifest `multiple: true`) open at once. */
 export const MAX_INSTANCES = 4

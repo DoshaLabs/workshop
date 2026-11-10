@@ -237,6 +237,9 @@ function guardWebviews(w: BrowserWindow): void {
     prefs.allowRunningInsecureContent = false
     prefs.experimentalFeatures = false
     delete prefs.enableBlinkFeatures
+    // DNS prefetch goes around the dead proxy and the request filter: a page's <link
+    // rel=dns-prefetch> would send any name it likes to the resolver (smoke's sideDoors).
+    prefs.additionalArguments = ['--blink-settings=dnsPrefetchingEnabled=false']
     prefs.backgroundThrottling = !SMOKE
   })
   w.webContents.on('did-attach-webview', (_e, wc) => {

@@ -983,7 +983,7 @@ async function projects(check: (name: string, ok: boolean, detail?: string) => v
  *
  * WebRTC: a STUN request for a server-reflexive candidate is UDP leaving the machine (and the
  * public address coming back). DNS: a prefetch or preconnect to a host the tile did not declare,
- * looked for in Chromium's own net log of the tile's session. The prefetch is NOT closed (below).
+ * looked for in Chromium's own net log of the tile's session.
  */
 async function sideDoors(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile, userData }: Ctx): Promise<void> {
   const probe = liveByTile.get('probe')!.wc
@@ -1026,13 +1026,12 @@ async function sideDoors(check: (name: string, ok: boolean, detail?: string) => 
   // A name was looked up when the resolver took a request for it or a DNS query asked for it.
   const looked = (log: string, who: string): string[] =>
     ['dns-prefetch', 'preconnect', 'frame'].filter((rel) => new RegExp(`"(host|hostname|qname)":"[^"]*ws-${rel}-${who}-${tag}\\.example\\.com`).test(log))
+  // The dead proxy does not stop <link rel=dns-prefetch>, nor does an X-DNS-Prefetch-Control
+  // header or a default-src 'self' CSP (core's window has one, and still looks names up). Tile
+  // pages are started with Blink's DNS prefetching off (index.ts, will-attach-webview).
   const leaked = looked(tileLog, 'tile')
+  check('side doors: a tile’s DNS prefetch, preconnect and a srcdoc frame’s prefetch look nothing up', leaked.length === 0, leaked.join(', '))
   check('side doors: (control) the net log shows core’s window looking a prefetched name up', looked(controlLog, 'core').includes('dns-prefetch'), looked(controlLog, 'core').join(', '))
-  // NOT closed (Electron 44): <link rel=dns-prefetch>, in the page or in a srcdoc frame, is
-  // resolved whatever the dead proxy, an X-DNS-Prefetch-Control header or a default-src 'self'
-  // CSP say, so a tile can send a name of its choosing to the DNS resolver. Printed, not checked,
-  // so the day it closes is noticed; docs/progress/2026-11-10-track-f.md has what was tried.
-  console.log(`known open: names a tile's page made Chromium look up: ${leaked.join(', ') || 'none (the side door has closed: update the notes)'}`)
 }
 
 /**
