@@ -8,7 +8,9 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'r
 import type { ThemeState, TileHead, TileInfo, TileProblem, TileView } from '@shared/ipc'
 import { syncCosmos } from './cosmos'
 import { ThemePicker } from './ThemePicker'
-import { FocusPane, Launcher, SessionColumn } from './Sessions'
+import { FocusPane, Launcher } from './Sessions'
+import { SessionColumn } from './SessionColumn'
+import { Guard } from './Guard'
 import { setPalette } from './terminals'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
@@ -195,19 +197,21 @@ export function App() {
         <UsageMeter usage={usage} />
         {theme && <ThemePicker theme={theme} />}
       </div>
-      <SessionColumn
-        state={sessions}
-        usage={usage}
-        launcher={launcher || !focused}
-        onNew={() => {
-          setPane(null)
-          setLauncher(true)
-        }}
-        onPick={() => {
-          setPane(null)
-          setLauncher(false)
-        }}
-      />
+      <Guard what="The session column" reset={sessions}>
+        <SessionColumn
+          state={sessions}
+          usage={usage}
+          center={focused && !launcher && !paneInst ? focused.id : null}
+          onNew={() => {
+            setPane(null)
+            setLauncher(true)
+          }}
+          onPick={() => {
+            setPane(null)
+            setLauncher(false)
+          }}
+        />
+      </Guard>
 
       <main className="col center">
         {paneInst ? (

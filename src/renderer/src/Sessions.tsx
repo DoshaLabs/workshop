@@ -1,88 +1,15 @@
-// The left column (sessions, most recently active first, parked ones under them), the launcher
-// (the empty center: start a session) and the focus pane (the focused session's terminal).
+// The launcher (the empty center: start a session) and the focus pane (the focused session's
+// terminal). The session column is SessionColumn.tsx.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MODELS, PERMISSION_MODES } from '@shared/models'
-import type { SessionView, SessionsState } from '@shared/sessions'
+import type { SessionView } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import { fit, focusTerminal, mount, unmount } from './terminals'
 import { SessionUsage } from './UsageMeter'
 
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
-
-export function SessionColumn({ state, usage, onNew, onPick, launcher }: { state: SessionsState | null; usage: Usage | null; onNew: () => void; onPick: () => void; launcher: boolean }) {
-  const [arm, setArm] = useState<string | null>(null)
-  useEffect(() => {
-    if (!arm) return
-    const t = window.setTimeout(() => setArm(null), 3000)
-    return () => window.clearTimeout(t)
-  }, [arm])
-  const sessions = state?.sessions ?? []
-  const open = sessions.filter((s) => s.open)
-  const parked = sessions.filter((s) => !s.open)
-
-  const row = (s: SessionView) => (
-    <div
-      key={s.id}
-      className={`session ${s.id === state?.focus && !launcher ? 'on' : ''} ${s.attention ? 'attention' : ''} ${s.open ? '' : 'parked'}`}
-      title={`${s.title ? `${s.title}\n` : ''}${tilde(s.cwd)}`}
-      onClick={() => {
-        onPick()
-        void (s.open ? window.core.focusSession(s.id) : window.core.resume(s.id))
-      }}
-    >
-      <span className={`dot ${s.status}`} />
-      <span className="session-text">
-        <span className="session-name">{s.name}</span>
-        <span className="session-folder">
-          {base(s.cwd)} <SessionUsage id={s.id} usage={usage} />
-        </span>
-      </span>
-      {s.open ? (
-        <button
-          className="ghost"
-          title="Close (it keeps running in tmux; click it again to come back)"
-          onClick={(e) => {
-            e.stopPropagation()
-            void window.core.park(s.id)
-          }}
-        >
-          ×
-        </button>
-      ) : (
-        <button
-          className={`ghost ${arm === s.id ? 'armed' : ''}`}
-          title={arm === s.id ? 'Click again to end it for good' : 'End this session (the conversation stays in Claude Code’s history)'}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (arm !== s.id) return setArm(s.id)
-            setArm(null)
-            void window.core.kill(s.id)
-          }}
-        >
-          {arm === s.id ? 'end' : '⌫'}
-        </button>
-      )}
-    </div>
-  )
-  return (
-    <aside className="col sessions">
-      <div className="col-title">
-        Sessions
-        <button className="ghost new" title="New session" onClick={onNew}>
-          +
-        </button>
-      </div>
-      <div className="session-list">
-        {open.map(row)}
-        {parked.length > 0 && <div className="col-sub">Closed</div>}
-        {parked.map(row)}
-        {sessions.length === 0 && <p className="empty">No sessions yet. Start one in the middle.</p>}
-      </div>
-    </aside>
-  )
-}
 
 export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: () => void }) {
   const [cwd, setCwd] = useState(recent[0] ?? '')

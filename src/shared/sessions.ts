@@ -49,3 +49,15 @@ export interface NewSessionOpts {
   name?: string
   prompt?: string
 }
+
+/**
+ * The open sessions in the order ⌘1–9 reach them (and ⌘[ ⌘] step through): the order they were
+ * started. The column is ordered by recency, which changes as you work; a number that moved with it
+ * could not be learnt by the fingers, so the number stays put and each tile wears its own.
+ */
+export function shortcutOrder(s: SessionsState | null): string[] {
+  return (s?.sessions ?? [])
+    .filter((x) => x.open)
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+    .map((x) => x.id)
+}

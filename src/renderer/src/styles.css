@@ -818,3 +818,378 @@ button {
   width: 100%;
   height: 100%;
 }
+
+/* ---- the session column (SessionColumn.tsx): tiles of conversations, as deck's left column. Three
+   to a column, so a conversation has room to be read; the rest scroll on. */
+.col.sessions,
+:root[data-wall='true'] .col.sessions {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+.session-scroll {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  container-type: size;
+  scrollbar-width: none;
+}
+.tile.session-tile {
+  height: calc((100cqh - 2 * 8px) / 3);
+  cursor: pointer;
+}
+.tile.session-tile.attention,
+.session-center.attention {
+  border-color: var(--ws-accent);
+}
+.session-tile .head .name,
+.session-center .head .name {
+  flex: 0 1 auto;
+}
+.subname {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+.head .park {
+  margin-left: auto;
+}
+.key {
+  flex: none;
+  font: 10px var(--ws-font-mono);
+  color: var(--ws-muted);
+}
+.session-center,
+.parked {
+  flex: none;
+  background: var(--ws-surface, var(--ws-panel));
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.session-center .head {
+  border-bottom: none;
+}
+.session-center .muted {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tile.tile-plus.session-plus {
+  height: 48px;
+  font-size: 24px;
+}
+.parked {
+  padding-bottom: 4px;
+}
+.parked .head .name {
+  flex: 0 1 auto;
+  color: var(--ws-muted);
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.parked .session {
+  margin: 4px 4px 0;
+  opacity: 0.8;
+}
+.session-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  --tile-prompt-gap: 6px;
+  --tile-prompt-height: 30px;
+}
+.guard-error {
+  padding: 10px 12px;
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+
+/* ---- a session's conversation (ChatView.tsx): prompts in the interface face, Claude's prose in
+   the reading face, tool calls in mono. From deck's styles. */
+.chat {
+  flex: 1;
+  min-height: 0;
+  /* In a tile the wheel belongs to the column; the view stays pinned to the latest. */
+  overflow: hidden;
+  padding: 8px 10px calc(var(--tile-prompt-height) + var(--tile-prompt-gap) * 2 + 4px);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ws-ink);
+  user-select: text;
+}
+.chat-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ws-muted);
+  text-align: center;
+  user-select: none;
+}
+.chat-empty p {
+  margin: 0;
+}
+.chat-user {
+  margin: 10px 0 6px;
+  padding: 5px 9px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--ws-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--ws-accent) 9%, transparent);
+  font-family: var(--ws-font);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.chat-user:first-child {
+  margin-top: 0;
+}
+.chat-tool {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 1px 0;
+  padding-left: 2px;
+  font: 11px/1.45 var(--ws-font-mono);
+  color: var(--ws-muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.chat-tool-mark {
+  flex: none;
+  width: 10px;
+  text-align: center;
+}
+.chat-tool.is-done .chat-tool-mark {
+  color: var(--ws-busy);
+}
+.chat-tool.is-error .chat-tool-mark {
+  color: var(--ws-blocked);
+}
+.chat-tool.is-running .chat-tool-mark {
+  animation: chat-blink 1s steps(2, start) infinite;
+}
+.chat-tool-name {
+  flex: none;
+  color: color-mix(in srgb, var(--ws-ink) 70%, var(--ws-muted));
+}
+.chat-tool-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-text {
+  margin: 6px 0;
+  font-family: var(--ws-font-serif);
+  font-size: 13px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.chat-text > :first-child {
+  margin-top: 0;
+}
+.chat-text > :last-child {
+  margin-bottom: 0;
+}
+.chat-text p,
+.chat-text ul,
+.chat-text ol,
+.chat-text blockquote {
+  margin: 0 0 6px;
+}
+.chat-text ul,
+.chat-text ol {
+  padding-left: 18px;
+}
+.chat-text li {
+  margin: 1px 0;
+}
+.chat-text li > ul,
+.chat-text li > ol {
+  margin: 1px 0 0;
+}
+.chat-text li.md-task {
+  list-style: none;
+  margin-left: -18px;
+}
+.md-task > input {
+  width: 12px;
+  height: 12px;
+  margin: 0 6px 0 0;
+  vertical-align: -2px;
+  accent-color: var(--ws-accent);
+}
+.md-task.done > .md-task-text {
+  color: var(--ws-muted);
+}
+.chat-text h3,
+.chat-text h4,
+.chat-text h5,
+.chat-text h6 {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.chat-text hr {
+  border: 0;
+  border-top: 1px solid var(--ws-line);
+  margin: 8px 0;
+}
+.chat-text blockquote {
+  padding-left: 8px;
+  border-left: 2px solid var(--ws-line);
+  color: var(--ws-muted);
+}
+.chat-text code {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ws-ink) 8%, transparent);
+  font: 11px var(--ws-font-mono);
+}
+.chat-text a {
+  color: var(--ws-accent);
+  text-decoration: none;
+}
+.chat-text a:hover {
+  text-decoration: underline;
+}
+.md-code {
+  margin: 4px 0 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ws-line);
+  background: color-mix(in srgb, var(--ws-ink) 5%, transparent);
+  overflow-x: auto;
+  white-space: pre;
+}
+.md-code code {
+  padding: 0;
+  background: none;
+}
+.md-table {
+  overflow-x: auto;
+  margin: 4px 0 6px;
+}
+.md-table table {
+  border-collapse: collapse;
+  font: 11px var(--ws-font);
+}
+.md-table th,
+.md-table td {
+  padding: 2px 8px 2px 0;
+  border-bottom: 1px solid var(--ws-line);
+  text-align: left;
+  vertical-align: top;
+}
+.chat-busy {
+  display: flex;
+  gap: 4px;
+  margin: 6px 0 2px 2px;
+}
+.chat-busy span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ws-muted);
+  animation: chat-bounce 1.2s ease-in-out infinite;
+}
+.chat-busy span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.chat-busy span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.chat-attn {
+  margin: 8px 0 2px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ws-accent);
+  color: var(--ws-accent);
+  font-size: 11px;
+}
+@keyframes chat-blink {
+  to {
+    visibility: hidden;
+  }
+}
+@keyframes chat-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-busy span,
+  .chat-tool.is-running .chat-tool-mark {
+    animation: none;
+  }
+}
+/* The prompt bar along a session tile's foot; the conversation's bottom padding is its room. */
+.tile-prompt {
+  position: absolute;
+  left: var(--tile-prompt-gap);
+  right: var(--tile-prompt-gap);
+  bottom: var(--tile-prompt-gap);
+  z-index: 2;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 2px 2px 2px 8px;
+  border-radius: 9px;
+  border: 1.5px solid var(--ws-line);
+  background: var(--ws-panel);
+  cursor: text;
+}
+.tile:hover .tile-prompt {
+  border-color: var(--ws-muted);
+}
+.tile-prompt:focus-within {
+  border-color: var(--ws-accent);
+}
+.tile-prompt textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 4.5em;
+  padding: 3px 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: transparent;
+  color: var(--ws-ink);
+  font: 12px/1.35 var(--ws-font);
+  field-sizing: content;
+}
+.tile-prompt textarea::placeholder {
+  color: var(--ws-muted);
+}
+.tile-prompt-send {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ws-muted);
+  cursor: pointer;
+}
+.tile-prompt-send:not(:disabled) {
+  color: var(--ws-accent);
+}
+.tile-prompt-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

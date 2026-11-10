@@ -441,7 +441,78 @@ async function themes(check: (name: string, ok: boolean, detail?: string) => voi
  * hooks and the status line reaching core with the session's own token, the door attributing a
  * call to the session, tiles seeing sessions and usage as their permissions allow, park / resume / kill.
  */
-async function sessions(check: (name: string, ok: boolean, detail?: string) => void, { win, door, liveByTile, userData, core }: Ctx): Promise<void> {
+/**
+ * Session tiles: the conversation, tailed by main from the transcript the stand-in writes the way
+ * the CLI does, drawn in the column (prompts, markdown prose, tool lines; nothing meta or from a
+ * subagent), the terminal only in the center, the prompt bar typing into the session, and parked
+ * sessions at the foot. `id` is a session that has had one turn ("hello") and is focused.
+ */
+async function sessionTiles(check: (name: string, ok: boolean, detail?: string) => void, { win, core, userData }: Ctx, id: string): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const screen = async (): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  const tile = `document.querySelector('.session-tile[data-session="${id}"]')`
+  const terminals = (): Promise<number> => js(`document.querySelectorAll('.term-host .xterm').length`)
+
+  await waitFor('main to find the transcript', () => !!core.transcripts.pathOf(id), 5000).catch(() => undefined)
+  const path = core.transcripts.pathOf(id) ?? ''
+  check('session tiles: main finds the transcript by session id under the CLI\'s config folder', path.startsWith(join(userData, 'claude-config', 'projects')) && path.endsWith('.jsonl'), path)
+
+  // While its terminal is in the center, the focused session is a line in the column, not a tile.
+  check('session tiles: the focused session gives its tile way to the terminal', (await js(`!${tile} && !!document.querySelector('.session-center[data-session="${id}"]')`)) === true && (await terminals()) === 1)
+
+  // The launcher takes the center: the session becomes a tile, and no terminal is mounted at all.
+  await js(`document.querySelector('.session-plus').click(); true`)
+  await waitFor('the session tile', async () => (await js(`!!${tile}?.querySelector('.chat-text')`)) === true, 5000).catch(() => undefined)
+  const seen = (await js(`(() => {
+    const t = ${tile}
+    if (!t) return null
+    const font = (sel) => getComputedStyle(t.querySelector(sel)).fontFamily
+    return {
+      user: t.querySelector('.chat-user')?.textContent,
+      bold: t.querySelector('.chat-text strong')?.textContent,
+      list: t.querySelectorAll('.chat-text li').length,
+      tool: t.querySelector('.chat-tool')?.textContent,
+      done: t.querySelector('.chat-tool')?.className,
+      title: t.querySelector('.subname')?.textContent,
+      dot: !!t.querySelector('.head > span.dot'),
+      badges: [...t.querySelectorAll('.head .badge')].map((b) => b.textContent).join(' '),
+      text: t.innerText,
+      prose: font('.chat-text'), prompt: font('.chat-user'), toolFont: font('.chat-tool')
+    }
+  })()`)) as Record<string, any> | null
+  check('session tiles: the prompt, the prose as markdown and the tool call are drawn', !!seen && seen.user === 'hello' && seen.bold === 'hello' && seen.list === 2 && /Read\s*README\.md/.test(seen.tool) && seen.tool.includes('✓') && seen.done.includes('is-done'), JSON.stringify(seen))
+  check('session tiles: nothing meta or from a subagent is shown', !!seen && !seen.text.includes('NOT SHOWN'), seen?.text)
+  check('session tiles: Claude\'s title, the status dot, model, context and cost on the head', !!seen && seen.title === 'Smoke conversation' && seen.dot && seen.badges.includes('Sonnet') && seen.badges.includes('ctx 17%') && seen.badges.includes('$1.23'), JSON.stringify(seen))
+  check('session tiles: prose in the reading face, prompts and tools in the interface and mono faces', !!seen && seen.prose.includes('Source Serif 4') && seen.prompt.includes('Nunito') && seen.toolFont.includes('JetBrains Mono'), JSON.stringify(seen && [seen.prose, seen.prompt, seen.toolFont]))
+  check('session tiles: no terminal mounted while no session is in the center', (await terminals()) === 0)
+
+  // The prompt bar types into the session without bringing it into focus.
+  await js(`(() => {
+    const ta = ${tile}.querySelector('.tile-prompt textarea')
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, 'from the tile')
+    ta.dispatchEvent(new Event('input', { bubbles: true }))
+    return true
+  })()`)
+  await sleep(50)
+  await js(`${tile}.querySelector('.tile-prompt-send').click(); true`)
+  await waitFor('the turn from the prompt bar', async () => (await screen()).includes('DONE from the tile'), 5000).catch(() => undefined)
+  await waitFor('the tile to show it', async () => String(await js(`[...${tile}?.querySelectorAll('.chat-user') ?? []].map((x) => x.textContent).join('|')`)).includes('from the tile'), 3000).catch(() => undefined)
+  check('session tiles: the prompt bar sends a turn, and the tile shows it', (await screen()).includes('DONE from the tile') && String(await js(`[...${tile}.querySelectorAll('.chat-user')].map((x) => x.textContent).join('|')`)).includes('from the tile'))
+  check('session tiles: still no terminal after typing in a tile', (await terminals()) === 0 && (await js(`!!document.querySelector('.launcher')`)) === true)
+  // WORKSHOP_SHOT_TILES=<file.png>: the window with the session as a tile and the launcher in the center.
+  if (process.env.WORKSHOP_SHOT_TILES) {
+    await sleep(800)
+    await writeFile(process.env.WORKSHOP_SHOT_TILES, (await win.webContents.capturePage()).toPNG())
+  }
+
+  // A click on the tile opens its terminal in the center, and the tile gives way again.
+  await js(`${tile}.querySelector('.chat').click(); true`)
+  await waitFor('the terminal in the center', async () => (await terminals()) === 1, 3000).catch(() => undefined)
+  check('session tiles: a click opens the session\'s terminal in the center', (await terminals()) === 1 && (await js(`!${tile}`)) === true)
+}
+
+async function sessions(check: (name: string, ok: boolean, detail?: string) => void, ctx: Ctx): Promise<void> {
+  const { win, door, liveByTile, userData, core } = ctx
   const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
   const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
   const state = () => core.sessions.getState()
@@ -475,6 +546,7 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   check('usage: the 5-hour meter fills once a session reports', String(await js(`document.querySelector('.topbar .meter').textContent`)).includes('42%'))
   const badges = (await js(`[...document.querySelectorAll('.pane .head .badge')].map((b) => b.textContent).join(' ')`)) as string
   check('usage: the session shows its context and cost', badges.includes('ctx 17%') && badges.includes('$1.23'), badges)
+  await sessionTiles(check, ctx, id)
 
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'door\\r'); true`)
   await waitFor('the door call from the session', async () => (await screen(id)).includes('DONE door'))
@@ -546,12 +618,12 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
 
   // The + at the foot of the tile column: its menu, and "make one with Claude" (a starter tile in a
   // new folder, live at once, and a session in that folder told what to build).
-  await js(`document.querySelector('.tile-plus').click(); true`)
+  await js(`document.querySelector('.tiles .tile-plus').click(); true`)
   await waitFor('the + menu', async () => (await js(`!!document.querySelector('.picker')`)) === true)
   check('plus: the menu offers another instance of a tile that allows it', String(await js(`document.querySelector('.picker').textContent`)).includes('Another Probe'))
   await js(`document.querySelector('.picker .head .ghost').click(); true`)
   await sleep(300)
-  check('plus: closing the menu puts the + back and leaves the window standing', (await js(`!!document.querySelector('.app') && !!document.querySelector('.tile-plus') && !document.querySelector('.picker')`)) === true)
+  check('plus: closing the menu puts the + back and leaves the window standing', (await js(`!!document.querySelector('.app') && !!document.querySelector('.tiles .tile-plus') && !document.querySelector('.picker')`)) === true)
   const newTile = (await js(`window.core.createTile('Smoke Timer', 'Count down 25 minutes')`)) as { id: string; folder: string }
   await waitFor('the new tile to load', () => !!liveByTile.get('smoke-timer'))
   await waitFor('the starter to draw', async () => String(await liveByTile.get('smoke-timer')!.wc.executeJavaScript(`document.body.textContent`).catch(() => '')).includes('Smoke Timer is running'))
@@ -575,6 +647,9 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   await js(`window.core.park(${JSON.stringify(id)})`)
   await waitFor('the session to park', async () => state().sessions.find((s) => s.id === id)?.open === false)
   check('sessions: park keeps tmux', await core.tmux.hasSession(`ws-${id}`))
+  await waitFor('the closed card', async () => (await js(`!!document.querySelector('.parked [data-session="${id}"]')`)) === true, 3000).catch(() => undefined)
+  check('session tiles: a parked session waits in the Closed card, its tile and terminal gone', (await js(`!!document.querySelector('.parked [data-session="${id}"]') && !document.querySelector('.session-tile[data-session="${id}"]') && document.querySelectorAll('.term-host .xterm').length === 0`)) === true)
+  check('session tiles: a parked session is no longer tailed', core.transcripts.get(id) === null)
   await js(`window.core.resume(${JSON.stringify(id)})`)
   await sleep(300)
   check('sessions: resume reattaches', state().sessions.find((s) => s.id === id)?.attached === true && (await screen(id)).includes('DONE pasted by a tile'))
@@ -609,5 +684,13 @@ async function realClaude(check: (name: string, ok: boolean, detail?: string) =>
   check('real CLI: the turn ran and its hooks came back (idle, needs you)', !!v && v.status === 'idle' && v.attention, `${[...seen].join(' → ')}`)
   check('real CLI: the status line reached usage', usage, JSON.stringify(core.usage.get()))
   check('real CLI: it answered', /\bOK\b/.test(text), text.slice(-600))
+  // The real transcript, found by session id and tailed: the prompt, then the answer as prose.
+  await waitFor('the real transcript', () => (core.transcripts.get(made.id)?.blocks ?? []).some((b) => b.kind === 'text' && /\bOK\b/.test(b.text)), 10_000).catch(() => undefined)
+  const t = core.transcripts.get(made.id)
+  check(
+    'real CLI: its transcript is found and tailed (the prompt, then the answer)',
+    !!t && t.found && t.blocks[0]?.kind === 'user' && t.blocks[0].text.includes('Reply with exactly') && t.blocks.some((b) => b.kind === 'text' && /\bOK\b/.test(b.text)),
+    JSON.stringify(t?.blocks.map((b) => b.kind)) + ' ' + (core.transcripts.pathOf(made.id) ?? 'no file')
+  )
   await core.sessions.kill(made.id)
 }

@@ -6,6 +6,9 @@
 // Actions: `door` calls the probe tile through $WORKSHOP_TILE; `tile <id> <op> [args]` calls any
 // tile the same way (as a skill would); `spoof` sends a Stop hook that
 // claims another session's id. It writes what it was started with to $WORKSHOP_HOME/fake-<id>.json.
+// Like the real CLI it appends each turn to $CLAUDE_CONFIG_DIR/projects/<its folder>/<session id>.jsonl
+// (the file appears at the first prompt): the prompt, prose with markdown, a tool call and its
+// result, a subagent's line and a meta line (which a tile must not show), and a title.
 const { execSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -28,6 +31,30 @@ const hook = (event, extra = {}) => {
   for (const group of settings.hooks[event] || []) for (const h of group.hooks) run(h.command, { session_id: sid, hook_event_name: event, ...extra })
 }
 
+// The folder name is the CLI's own encoding of the cwd; core never relies on it (it finds the file by id).
+const transcript = process.env.CLAUDE_CONFIG_DIR ? path.join(process.env.CLAUDE_CONFIG_DIR, 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'), `${sid}.jsonl`) : null
+let titled = false
+const write = (o) => {
+  if (!transcript) return
+  fs.mkdirSync(path.dirname(transcript), { recursive: true })
+  fs.appendFileSync(transcript, JSON.stringify({ sessionId: sid, timestamp: new Date().toISOString(), isSidechain: false, ...o }) + '\n')
+}
+let calls = 0
+const turn = (line) => {
+  write({ type: 'user', origin: { kind: 'human' }, promptSource: 'typed', message: { role: 'user', content: line } })
+  write({ type: 'user', isMeta: true, message: { role: 'user', content: 'META NOT SHOWN' } })
+  write({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `Looking into **${line}**.` }] } })
+  const id = `toolu_${++calls}`
+  write({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: path.join(process.cwd(), 'README.md') } }] } })
+  write({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] } })
+  write({ type: 'assistant', isSidechain: true, message: { role: 'assistant', content: [{ type: 'text', text: 'SIDECHAIN NOT SHOWN' }] } })
+  write({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `Finished \`${line}\`:\n\n- one\n- two` }] } })
+  if (!titled) {
+    titled = true
+    write({ type: 'ai-title', aiTitle: 'Smoke conversation' })
+  }
+}
+
 console.log('FAKE CLAUDE READY')
 let buf = ''
 process.stdin.setEncoding('utf8')
@@ -38,6 +65,7 @@ process.stdin.on('data', (chunk) => {
     const line = buf.slice(0, i).trim()
     buf = buf.slice(i + 1)
     if (!line) continue
+    turn(line)
     hook('UserPromptSubmit', { prompt: line })
     if (line === 'door') console.log(run(`node "$WORKSHOP_TILE" probe echo from-session`, {}).replace(/\s+/g, ' '))
     if (line.startsWith('tile ')) console.log(run(`node "$WORKSHOP_TILE" ${line.slice(5)} 2>&1`, {}).replace(/\s+/g, ' '))

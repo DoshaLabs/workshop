@@ -4,6 +4,7 @@
 
 import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CH } from '@shared/ipc'
 import type { NewSessionOpts, SessionsState } from '@shared/sessions'
@@ -14,6 +15,7 @@ import { Fleet } from './fleet'
 import { HOOK_ROUTES, SessionSettings } from './hooks'
 import { SessionManager } from './sessions'
 import { Tmux } from './tmux'
+import { TranscriptWatcher } from './transcript'
 import { UsageTracker } from './usage'
 
 export interface CoreSessions {
@@ -21,6 +23,7 @@ export interface CoreSessions {
   usage: UsageTracker
   tmux: Tmux
   settings: SessionSettings
+  transcripts: TranscriptWatcher
   /** Route a /hook/<name> call (the door's server hands them here). */
   hook(name: string, token: string, payload: unknown): void
   stop(): void
@@ -39,6 +42,8 @@ export interface Options {
   poll: boolean
   /** A folder put first on the sessions' PATH (the smoke test's stand-in `claude`). */
   pathFirst?: string
+  /** CLAUDE_CONFIG_DIR for the sessions (the smoke test's stand-in writes its transcripts there). */
+  claudeConfigDir?: string
   /** State changed: the window gets it here; core also tells tiles. */
   onState: (s: SessionsState) => void
   onUsage: (u: Usage) => void
@@ -47,6 +52,7 @@ export interface Options {
 export async function startSessions(o: Options): Promise<CoreSessions> {
   const env = { ...shellEnv() }
   if (o.pathFirst) env.PATH = `${o.pathFirst}:${env.PATH ?? ''}`
+  if (o.claudeConfigDir) env.CLAUDE_CONFIG_DIR = o.claudeConfigDir
   const tmux = new Tmux(o.profile, join(o.appPath, 'tmux.conf'), env)
   const settings = new SessionSettings(o.home, join(o.appPath, 'bin', 'workshop-tile.mjs'))
   settings.setDark(o.dark)
@@ -56,6 +62,11 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     const w = o.win()
     if (w && !w.isDestroyed()) w.webContents.send(ch, ...a)
   }
+
+  // Where the CLI the sessions run writes its transcripts: its config folder, as the sessions see it.
+  const projects = join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects')
+  const transcripts = new TranscriptWatcher(projects, (t) => send(CH.transcriptChanged, t))
+  const watchOpen = (s: SessionsState): void => transcripts.sync(s.sessions.filter((x) => x.open).map((x) => ({ id: x.id, claudeSessionId: x.claudeSessionId })))
 
   const sessions = new SessionManager({
     tmux,
@@ -68,6 +79,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     revoke: (t) => o.door.revoke(t),
     events: {
       state: (s) => {
+        watchOpen(s)
         send(CH.sessionsState, s)
         o.onState(s)
       },
@@ -104,6 +116,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   handle(CH.sessionKill, (id: string) => sessions.kill(String(id)))
   handle(CH.sessionFocus, (id: string | null) => sessions.focus(id === null ? null : String(id)))
   handle(CH.usageGet, () => usage.get())
+  handle(CH.transcriptGet, (id: string) => transcripts.get(String(id)))
   handle(CH.openExternal, (url: string) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
@@ -123,6 +136,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     usage,
     tmux,
     settings,
+    transcripts,
     hook(name, token, payload) {
       const rec = sessions.byToken(token)
       if (!rec) return // a call from outside any session: hooks are only for sessions
@@ -134,6 +148,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     },
     stop() {
       fleet.stop()
+      transcripts.stop()
       sessions.detachAll()
     }
   }

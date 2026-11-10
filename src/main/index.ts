@@ -610,6 +610,7 @@ app.whenReady().then(async () => {
     dark: isDark(settings.get()),
     poll: !SMOKE,
     pathFirst: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getAppPath(), 'test/fixtures/fake-claude') : undefined,
+    claudeConfigDir: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getPath('userData'), 'claude-config') : undefined,
     onState: pushSessions,
     onUsage: pushUsage
   })

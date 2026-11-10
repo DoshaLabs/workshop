@@ -127,5 +127,8 @@ export const CH = {
   tileSessionsChanged: 'ws:tile:sessions-changed', // main → tile
   tileSessionsPaste: 'ws:tile:sessions-paste',
   tileUsageGet: 'ws:tile:usage-get',
-  tileUsageChanged: 'ws:tile:usage-changed' // main → tile
+  tileUsageChanged: 'ws:tile:usage-changed', // main → tile
+  // session tiles: the conversation, tailed by main (main/transcript.ts)
+  transcriptGet: 'ws:core:transcript-get',
+  transcriptChanged: 'ws:core:transcript' // main → window
 } as const
