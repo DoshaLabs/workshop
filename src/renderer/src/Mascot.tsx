@@ -1,5 +1,5 @@
 // A session's status mark (CLAUDE.md §8): an installed sprite pack's mascot if there is one (the
-// pose is the status, a bark is a Leap played once), else the Knot (Knot.tsx). Anywhere a status
+// pose is the status, a call for attention is a Leap played once), else the Knot (Knot.tsx). Anywhere a status
 // is drawn can use this in place of `<span className={`dot ${status}`} />`; the dot itself is
 // left only as the Knot's fallback when no 2D canvas can be had.
 //
@@ -31,7 +31,7 @@ export function Mascot({ id, status, attention = false, coat }: { id?: string; s
       pack={m.pack}
       sheet={coat === 'worker' ? 'var(--mascot-sheet-worker)' : 'var(--mascot-sheet)'}
       state={pose}
-      barkId={id}
+      attentionOf={id}
       className={`mascot ${status}`}
       title={`${m.pack.name}: ${LABEL[status]}${needs}`}
     />
@@ -40,10 +40,10 @@ export function Mascot({ id, status, attention = false, coat }: { id?: string; s
 
 /**
  * One animated sprite. `sheet` is a CSS image (a `var(--…)` or `url(…)`); `state` its pose. With
- * `barkId`, it plays the Leap once whenever that session barks. `scale` defaults to fitting the
+ * `attentionOf`, it plays the Leap once whenever that session calls for attention. `scale` defaults to fitting the
  * art into the head's 22 × 18.
  */
-export function Sprite({ pack, sheet, state, barkId, scale, className = '', title }: { pack: MascotPack; sheet: string; state: MascotState; barkId?: string; scale?: number; className?: string; title?: string }) {
+export function Sprite({ pack, sheet, state, attentionOf, scale, className = '', title }: { pack: MascotPack; sheet: string; state: MascotState; attentionOf?: string; scale?: number; className?: string; title?: string }) {
   const el = useRef<HTMLSpanElement>(null)
   const s = scale ?? fitScale(pack)
   const box = pack.box ?? { x: 0, y: 0, w: pack.frame.w, h: pack.frame.h }
@@ -56,7 +56,7 @@ export function Sprite({ pack, sheet, state, barkId, scale, className = '', titl
     const t0 = performance.now()
     let last = ''
     return animate((now) => {
-      const leapAt = leapingSince(barkId, now)
+      const leapAt = leapingSince(attentionOf, now)
       const playing = leapAt !== null && leap ? leap : run
       const i = reducedMotion() && leapAt === null ? 0 : Math.floor((now - (leapAt ?? t0)) / playing.ms)
       const { size, pos } = spriteAt(pack, playing, i, s)
@@ -67,7 +67,7 @@ export function Sprite({ pack, sheet, state, barkId, scale, className = '', titl
       node.style.backgroundPosition = `${pos[0]}px ${pos[1]}px`
       node.dataset.pose = leapAt !== null ? 'leap' : state
     })
-  }, [pack, state, barkId, s])
+  }, [pack, state, attentionOf, s])
 
   const style: CSSProperties = { width: box.w * s, height: box.h * s, backgroundImage: sheet }
   return <span ref={el} className={`sprite ${className}`} style={style} data-pose={state} title={title ?? STATE_LABEL[state]} role="img" aria-label={title ?? STATE_LABEL[state]} />

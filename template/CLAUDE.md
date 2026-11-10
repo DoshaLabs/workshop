@@ -104,6 +104,8 @@ await workshop.sessions.paste(id, text)     // "write" only: types into a sessio
 await workshop.usage.get(); workshop.usage.watch((u) => {})   // rate-limit windows, per-session cost and context %
 
 await workshop.notify({ text })             // a chip on the tile's head and a macOS notification; one per 3 s
+await workshop.notify({ text, attention: true })   // also makes a session's status mark jump once:
+                                            // the session that last called this tile's door (10 min), else the focused one
 
 workshop.door.handle('add', async (args, caller, { session }) => result)
 // args: string[] exactly as typed. caller: the session's name, or 'outside'.

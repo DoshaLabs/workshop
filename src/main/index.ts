@@ -74,9 +74,9 @@ const views = new Map<string, TileView>()
 const stores = new Map<string, TileStore>()
 const lastNotify = new Map<string, number>()
 const lastExternal = new Map<string, number>()
-/** The session that last called each tile through the door: a tile's bark goes to that session's mascot. */
+/** The session that last called each tile through the door: a tile's call for attention goes to that session's mascot. */
 const lastCaller = new Map<string, { session: string; at: number }>()
-/** A call older than this no longer makes a session the one a tile's bark is about. */
+/** A call older than this no longer makes a session the one a tile's call for attention is about. */
 const CALLER_MS = 10 * 60_000
 let mascots: MascotStore
 /** The instance whose page is over the whole window, if any. Only one at a time. */
@@ -460,7 +460,7 @@ function bridge(): void {
     for (const g of instancesOf(id)) g.wc.send(CH.storageChanged, key, value ?? null)
   })
 
-  ipcMain.handle(CH.notify, (e, n: { text?: unknown; bark?: unknown }) => {
+  ipcMain.handle(CH.notify, (e, n: { text?: unknown; attention?: unknown }) => {
     const g = need(e, 'notify')
     const t = g.tile
     const text = typeof n?.text === 'string' ? n.text.slice(0, 200) : ''
@@ -469,13 +469,13 @@ function bridge(): void {
     if (now - (lastNotify.get(t.manifest.id) ?? 0) < 3000) return false
     lastNotify.set(t.manifest.id, now)
     win?.webContents.send(CH.tileNotify, g.key, text)
-    if (n?.bark === true) {
+    if (n?.attention === true) {
       // The relevant mascot: the session that last called this tile through the door, else the one in focus.
       const c = lastCaller.get(t.manifest.id)
       const state = core?.sessions.getState()
       const live = (id: string | null | undefined): boolean => !!id && !!state?.sessions.some((s) => s.id === id && s.open)
       const target = c && now - c.at < CALLER_MS && live(c.session) ? c.session : live(state?.focus) ? state!.focus : null
-      if (target) win?.webContents.send(CH.mascotBark, target)
+      if (target) win?.webContents.send(CH.attention, target)
     }
     if (!SMOKE && Notification.isSupported()) new Notification({ title: t.manifest.name, body: text, silent: true }).show()
     return true

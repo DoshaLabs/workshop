@@ -764,9 +764,9 @@ async function realClaude(check: (name: string, ok: boolean, detail?: string) =>
 
 /**
  * The status mark (CLAUDE.md §8). With no sprite pack a session shows the Knot, whose mode follows
- * its status; a bark (a tile's notify, a turn finishing) flares it. A synthetic sprite pack (plain
+ * its status; a call for attention (a tile's notify, a turn finishing) flares it. A synthetic sprite pack (plain
  * coloured frames drawn here, never a real sheet) replaces it with a sprite whose pose follows the
- * status and which leaps on a bark; removing the pack brings the Knot back.
+ * status and which leaps on a call for attention; removing the pack brings the Knot back.
  *
  * WORKSHOP_SHOT_MASCOT=<folder>: pictures of the heads and the top-left mark in three themes, and
  * of the setup screen. WORKSHOP_SMOKE_SHEET=<png>: a sheet to try in the setup screen and install,
@@ -798,7 +798,7 @@ async function mascot(check: (name: string, ok: boolean, detail?: string) => voi
 
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'hello\\r'); true`)
   check('mark: a finished turn needs you (needs)', await modeIs('needs'))
-  check('mark: and flares once, a bark', (await waitFor('a flare', async () => (await flare()) === '1', 2000).then(() => true, () => false)))
+  check('mark: and flares once, a call for attention', (await waitFor('a flare', async () => (await flare()) === '1', 2000).then(() => true, () => false)))
   await js(`window.core.ptyInput(${JSON.stringify(id)}, ' '); true`)
   check('mark: looked at, it rests (small, slow)', await modeIs('rest'))
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'spoof\\r'); true`)
@@ -811,12 +811,18 @@ async function mascot(check: (name: string, ok: boolean, detail?: string) => voi
   }
   await js(`window.core.setSettings({ theme: 'cosmos', appearance: 'system' }).then(() => true)`)
 
-  // A tile's bark goes to the session in focus (this one: no live session has called the probe lately).
+  // A tile's call for attention goes to the session in focus (this one: no live session has called the probe lately).
   await sleep(3200)
+  // The contract's old word is gone, not kept as an alias: notify still shows, but nothing flares.
   await js(`(${row}).querySelector('canvas.knot').dataset.flare = ''; true`)
-  const barked = await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.notify({ text: 'bark', bark: true })`)
+  const old = await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.notify({ text: 'old word', bark: true })`)
+  await sleep(1500)
+  check('mark: notify({ bark: true }) is only a notification now', old === true && (await flare()) !== '1', `${old} ${await flare()}`)
+  await sleep(2000)
+  await js(`(${row}).querySelector('canvas.knot').dataset.flare = ''; true`)
+  const called = await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.notify({ text: 'attention', attention: true })`)
   const flared = await waitFor('the flare', async () => (await flare()) === '1', 3000).then(() => true, () => false)
-  check('mark: notify({ bark: true }) flares the session’s Knot', barked === true && flared, String(barked))
+  check('mark: notify({ attention: true }) flares the session’s Knot', called === true && flared, String(called))
 
   // A synthetic pack: 4 × 3 frames of 16 px, a colour per row, drawn on a canvas here.
   const pack = { format: 1, name: 'Blocky', image: 'sheet.png', sheet: { w: 64, h: 48 }, frame: { w: 16, h: 16 }, box: { x: 2, y: 4, w: 12, h: 10 }, states: { run: { row: 0, from: 0, frames: 4, ms: 60 }, leap: { row: 1, from: 0, frames: 3, ms: 80 }, sleep: { row: 2, from: 0, frames: 2, ms: 300 } } }
@@ -831,11 +837,11 @@ async function mascot(check: (name: string, ok: boolean, detail?: string) => voi
   check('pack: a synthetic pack saves', saved === 'blocky', String(saved))
   const sprite = await waitFor('the sprite', async () => (await mark('.sprite')) !== null, 3000).then(() => true, () => false)
   check('pack: it replaces the Knot on the session', sprite && (await mark('canvas.knot')) === null)
-  // (The tile's bark a moment ago may still be playing its leap.)
+  // (The tile's call a moment ago may still be playing its leap.)
   const running = await waitFor('the run pose', async () => (await mark('.sprite')) === 'run', 2000).then(() => true, () => false)
   check('pack: the pose follows the status (working: run)', running, String(await mark('.sprite')))
   check('pack: drawn crisp', (await js(`getComputedStyle((${row}).querySelector('.sprite')).imageRendering`)) === 'pixelated')
-  await sleep(3200) // past the last bark, which a new one this soon would be taken for
+  await sleep(3200) // past the last call, which a new one this soon would be taken for
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'again\\r'); true`)
   const leapt = await waitFor('the leap', async () => (await mark('.sprite')) === 'leap', 4000).then(() => true, () => false)
   check('pack: a turn finishing plays Leap once', leapt)

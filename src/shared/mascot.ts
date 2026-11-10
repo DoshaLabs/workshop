@@ -24,7 +24,7 @@ export const STATE_HINT: Record<MascotState, string> = {
   idle: 'starting, and the default pose',
   look: 'the session needs you',
   run: 'Claude is working',
-  leap: 'a bark: something needs you, or a turn finished (plays once)',
+  leap: 'a call for attention: something needs you, or a turn finished (plays once)',
   sleep: 'resting, waiting for you (and a session that died, dimmed)'
 }
 
@@ -114,7 +114,7 @@ export function poseFor(status: SessionStatus, attention: boolean): MascotState 
   return 'idle'
 }
 
-/** How long one play of a run lasts (a bark's leap plays once). */
+/** How long one play of a run lasts (a call for attention's leap plays once). */
 export const runMs = (r: FrameRun): number => r.frames * r.ms
 
 // ── Checking a pack ──────────────────────────────────────────────────────────

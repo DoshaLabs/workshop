@@ -141,5 +141,5 @@ export const CH = {
   mascotSave: 'ws:core:mascot-save',
   mascotRemove: 'ws:core:mascot-remove',
   mascotChanged: 'ws:core:mascot', // main → window: the active pack, or null
-  mascotBark: 'ws:core:mascot-bark' // main → window: a session's mascot leaps once
+  attention: 'ws:core:attention' // main → window: a session's mascot leaps once
 } as const

@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FLARE_MS, MODES, TAU, drawKnot, knotMode, knotPalette, wrapClock, type KnotMode, type KnotPalette, type KnotTheme } from '@shared/knot'
 import type { SessionStatus } from '@shared/sessions'
-import { useBarks } from './mascot-store'
+import { useAttentionCalls } from './mascot-store'
 
 // ── Theme colours ────────────────────────────────────────────────────────────
 
@@ -77,7 +77,7 @@ const easing = (k: Live): boolean => Math.abs(k.size - MODES[k.mode].size) > 0.0
 function dueIn(k: Live, now: number): number {
   if (!k.visible) return Infinity
   if (k.dirty) return 0
-  // Changing size, or flaring after a bark: smooth, about 30 frames a second, until it settles.
+  // Changing size, or flaring after a call for attention: smooth, about 30 frames a second, until it settles.
   if (!reduced.matches && (easing(k) || flaring(k, now) > 0)) return Math.max(0, 33 - (now - k.last))
   if (reduced.matches || MODES[k.mode].loop === 0) return Infinity
   return Math.max(0, 1000 / MODES[k.mode].fps - (now - k.last))
@@ -122,7 +122,7 @@ function draw(k: Live, now: number): void {
   k.ctx.clearRect(0, 0, k.S, k.S)
   // A still knot (dead, or reduced motion) shows a phase where its strands read clearly.
   drawKnot(k.ctx, { S: k.S, ph: (still || look.loop === 0 ? 1.1 : k.clock) * TAU, palette, size: k.size, flare: still ? 0 : flaring(k, now) })
-  // For the smoke checks: a bark's flare was drawn on this canvas.
+  // For the smoke checks: a call for attention's flare was drawn on this canvas.
   if (flaring(k, now) > 0) k.canvas.dataset.flare = '1'
 }
 
@@ -146,10 +146,10 @@ reduced.addEventListener('change', () => {
 // ── Components ───────────────────────────────────────────────────────────────
 
 /**
- * One Knot in a square box of `size` CSS pixels. `barkId`: flare when that session barks; `'*'`
- * flares on any bark (the app's mark). Without a 2D canvas it falls back to the status dot.
+ * One Knot in a square box of `size` CSS pixels. `attentionOf`: flare when that session calls for attention; `'*'`
+ * flares on any call (the app's mark). Without a 2D canvas it falls back to the status dot.
  */
-export function KnotCanvas({ mode, size, barkId, status, className = '', title }: { mode: KnotMode; size: number; barkId?: string; status?: SessionStatus; className?: string; title?: string }) {
+export function KnotCanvas({ mode, size, attentionOf, status, className = '', title }: { mode: KnotMode; size: number; attentionOf?: string; status?: SessionStatus; className?: string; title?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const live = useRef<Live | null>(null)
   const [noCanvas, setNoCanvas] = useState(false)
@@ -185,9 +185,9 @@ export function KnotCanvas({ mode, size, barkId, status, className = '', title }
     wake()
   }, [mode, size])
 
-  useBarks((id) => {
+  useAttentionCalls((id) => {
     const k = live.current
-    if (!k || !barkId || (barkId !== '*' && barkId !== id)) return
+    if (!k || !attentionOf || (attentionOf !== '*' && attentionOf !== id)) return
     k.flareAt = performance.now()
     k.dirty = true
     wake()
@@ -208,14 +208,14 @@ const LABEL: Record<KnotMode, string> = {
 /** A session's status as a Knot. */
 export function SessionKnot({ id, status, attention }: { id?: string; status: SessionStatus; attention: boolean }) {
   const mode = knotMode(status, attention)
-  return <KnotCanvas mode={mode} size={24} barkId={id} status={status} className={`session-knot ${status}`} title={LABEL[mode]} />
+  return <KnotCanvas mode={mode} size={24} attentionOf={id} status={status} className={`session-knot ${status}`} title={LABEL[mode]} />
 }
 
 /** The app's mark, top left beside the window's buttons: full size and fast while any session works. */
 export function AppMark({ working }: { working: boolean }) {
   return (
     <div className="app-mark" aria-hidden="true">
-      <KnotCanvas mode={working ? 'work' : 'rest'} size={44} barkId="*" title={working ? 'A session is working' : 'No session is working'} />
+      <KnotCanvas mode={working ? 'work' : 'rest'} size={44} attentionOf="*" title={working ? 'A session is working' : 'No session is working'} />
     </div>
   )
 }

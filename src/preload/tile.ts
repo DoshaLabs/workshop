@@ -173,7 +173,7 @@ if (hello) {
         return sub(usageSubs, fn)
       }
     },
-    notify: (n: { text: string; bark?: boolean }): Promise<boolean> => gate('notify', () => ipcRenderer.invoke(CH.notify, { text: n?.text, bark: n?.bark === true })),
+    notify: (n: { text: string; attention?: boolean }): Promise<boolean> => gate('notify', () => ipcRenderer.invoke(CH.notify, { text: n?.text, attention: n?.attention === true })),
     door: {
       /**
        * Answer `op` when a Claude session calls it: `fn(args, caller, { session })`. `caller` is the
