@@ -9,6 +9,17 @@ import { session, type Session } from 'electron'
 import { TILE_SCHEME, checkManifest, devServerOrigin, requestAllowed, type Manifest } from '@shared/manifest'
 import type { TileInfo, TileProblem } from '@shared/ipc'
 import { checkPlugin } from './plugin'
+import { FILES_PREFIX, type TileGrants } from './files'
+import { createReadStream } from 'node:fs'
+import { Readable } from 'node:stream'
+
+/** Set by main: the file grants of a tile (main/files.ts). */
+let grantsOf: (id: string) => TileGrants = () => {
+  throw new Error('grants not set up')
+}
+export function setGrants(fn: (id: string) => TileGrants): void {
+  grantsOf = fn
+}
 
 export { TILE_SCHEME }
 
@@ -200,12 +211,23 @@ async function armOne(tile: Tile, ses: Session): Promise<void> {
       return new Response('bad path', { status: 400 })
     }
     if (rel.includes('\0')) return new Response('bad path', { status: 400 })
+    // A dev-server page is another origin: let it read its own tile's files (the picked ones).
+    const cors: Record<string, string> = tile.devOrigin ? { 'Access-Control-Allow-Origin': tile.devOrigin } : {}
+    if (rel.startsWith(FILES_PREFIX)) {
+      if (!permissions.files) return new Response('not found', { status: 404 })
+      const [handle, ...rest] = rel.slice(FILES_PREFIX.length).split('/')
+      const found = await grantsOf(id).resolve(handle, rest.join('/'))
+      const st = found ? await stat(found.path).catch(() => null) : null
+      if (!found || !st?.isFile()) return new Response('not found', { status: 404, headers: cors })
+      const body = Readable.toWeb(createReadStream(found.path)) as ReadableStream
+      return new Response(body, { headers: { ...cors, 'Content-Type': MIME[extname(found.path).toLowerCase()] ?? 'application/octet-stream', 'Content-Length': String(st.size), 'X-Content-Type-Options': 'nosniff' } })
+    }
     const wanted = resolve(tile.serveRoot, '.' + (rel === '/' ? '/' + basename(tile.src) : rel))
     try {
       const real = await realpath(wanted)
       if (!inside(tile.serveRoot, real) || !(await stat(real)).isFile()) return new Response('not found', { status: 404 })
       return new Response(await readFile(real), {
-        headers: { 'Content-Type': MIME[extname(real).toLowerCase()] ?? 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' }
+        headers: { ...cors, 'Content-Type': MIME[extname(real).toLowerCase()] ?? 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' }
       })
     } catch {
       return new Response('not found', { status: 404 })

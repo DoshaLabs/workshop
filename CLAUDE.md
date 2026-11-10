@@ -30,8 +30,8 @@ drives the door; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture
 - `tiles/wikipedia/`: the reference tile, plain JS with no build step.
 - `bin/workshop.mjs tile dev <folder>`: loads a tile under development (reload on change, or a
   dev-server `entry`); hands the folder to the app if it is already running.
-- Not yet: sessions, `sessions`/`usage`/`transcripts`/`files` (accepted in manifests, not yet in
-  the bridge), the trusted tier, theme picker.
+- Not yet: sessions, `sessions`/`usage`/`transcripts` (accepted in manifests, not yet in the
+  bridge), the trusted tier, theme picker.
 
 Terms used throughout:
 
@@ -265,6 +265,10 @@ sandbox, and making the exception loud and rare, is the answer to it.
 - Core draws the tile's head (icon, name, drag grip, expand, close), so tiles look consistent
   and cannot imitate a session.
 - Popups go to the browser. Camera, microphone and file access go through the bridge.
+- **Files** (`src/main/files.ts`): `pick()` opens the macOS chooser; what the user picks is a grant
+  for that tile, remembered across restarts. The page gets a handle and a name, never the path, and
+  reads through its own origin at `tile://<id>/~files/<handle>/<path>`, streamed (a disc image
+  never crosses IPC). Symlinks that lead outside the grant are refused. Read-only.
 
 ### The bridge
 
@@ -288,7 +292,7 @@ workshop.sessions.paste(id, text)  // "sessions": "write" → type into a sessio
 workshop.usage.get/watch           // "usage"             → costs and rate-limit windows, computed by core
 workshop.door.handle(op, fn)       // "door"              → answer calls from Claude sessions
 workshop.notify({ text, bark })    // "notify"            → needs-you chip, macOS notification, mascot bark
-workshop.files.pick/read           // "files"             → only folders the user picked for this tile
+workshop.files.pick/list/entries/read/url/forget  // "files" → only what the user picked for this tile
 workshop.media                     // "camera" / "microphone" → passed to the macOS prompt
 workshop.backend.call(op, body)    // trusted tier only
 ```

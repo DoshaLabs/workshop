@@ -16,7 +16,8 @@
         "slow"
       ],
       "timeoutMs": 500
-    }
+    },
+    "files": true
   },
   "multiple": true
 }

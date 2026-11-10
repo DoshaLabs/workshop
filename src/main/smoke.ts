@@ -3,7 +3,7 @@
 // drives the door over HTTP. Prints one line per check and exits non-zero if any failed.
 
 import type { BrowserWindow, WebContents } from 'electron'
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -146,6 +146,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     check('wikipedia door: show', show.status === 200 && typeof show.json.result?.title === 'string', JSON.stringify(show.json))
 
     await devTiles(check, liveByTile, door.port, addDevTile)
+    await files(check, ctx)
     await instances(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
@@ -247,4 +248,43 @@ async function instances(check: (name: string, ok: boolean, detail?: string) => 
   })()`)
   await sleep(1500)
   check('instances: no second instance of a tile without multiple', !liveByTile.has('wikipedia.2'))
+}
+
+/** `files`: what the user picked is readable, streamed, by that tile only; nothing outside it is. */
+async function files(check: (name: string, ok: boolean, detail?: string) => void, { liveByTile }: Ctx): Promise<void> {
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'ws-files-')))
+  await mkdir(join(base, 'games', 'gb'), { recursive: true })
+  await writeFile(join(base, 'games', 'gb', 'a.gb'), 'rom bytes')
+  await writeFile(join(base, 'games', 'big.bin'), Buffer.alloc(32 * 1024 * 1024, 7))
+  await writeFile(join(base, 'secret.txt'), 'secret')
+  await symlink(join(base, 'secret.txt'), join(base, 'games', 'escape.txt'))
+  process.env.WORKSHOP_SMOKE_PICK = join(base, 'games')
+
+  const r = (await liveByTile.get('probe')!.wc.executeJavaScript(`(async () => {
+    const fails = async (p) => { try { const res = await p; return !res || res.ok === false } catch { return true } }
+    const g = await workshop.files.pick({ title: 'games' })
+    const listed = await workshop.files.entries(g.handle, '')
+    const big = await workshop.files.read(g.handle, 'big.bin')
+    return {
+      picked: g.name === 'games' && g.kind === 'folder' && !('path' in g),
+      listed: JSON.stringify(listed.map((e) => e.name)) === '["gb","big.bin"]',
+      readText: (await workshop.files.read(g.handle, 'gb/a.gb', 'text')) === 'rom bytes',
+      viaUrl: await fetch(workshop.files.url(g.handle, 'gb/a.gb')).then((x) => x.text()).then((t) => t === 'rom bytes'),
+      bigStreamed: big.byteLength === 32 * 1024 * 1024,
+      noDotDot: await fails(fetch('tile://probe/~files/' + g.handle + '/%2e%2e/secret.txt')),
+      noSymlinkOut: await fails(fetch(workshop.files.url(g.handle, 'escape.txt'))),
+      noBadHandle: await fails(fetch('tile://probe/~files/000000000000/gb/a.gb')),
+      remembered: (await workshop.files.list()).some((x) => x.handle === g.handle),
+      handle: g.handle
+    }
+  })()`)) as Record<string, unknown>
+  const handle = String(r.handle)
+  delete r.handle
+  for (const [k, ok] of Object.entries(r)) check(`files: ${k}`, ok === true, String(ok))
+
+  const w = (await liveByTile.get('wikipedia')!.wc.executeJavaScript(`(async () => ({
+    noBridge: await workshop.files.pick().then(() => false, () => true),
+    noOtherTilesGrant: await fetch('tile://wikipedia/~files/${handle}/gb/a.gb').then((x) => !x.ok, () => true)
+  }))()`)) as Record<string, boolean>
+  for (const [k, ok] of Object.entries(w)) check(`files, tile without the permission: ${k}`, ok === true)
 }

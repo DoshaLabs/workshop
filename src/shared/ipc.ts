@@ -59,6 +59,10 @@ export const CH = {
   storageGet: 'ws:tile:storage-get',
   storageSet: 'ws:tile:storage-set',
   notify: 'ws:tile:notify',
+  filesPick: 'ws:tile:files-pick',
+  filesList: 'ws:tile:files-list',
+  filesEntries: 'ws:tile:files-entries',
+  filesForget: 'ws:tile:files-forget',
   doorReady: 'ws:tile:door-ready', // send: the ops the page now answers
   doorReply: 'ws:tile:door-reply', // send
   // main → tile page

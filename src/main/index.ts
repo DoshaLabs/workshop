@@ -2,7 +2,7 @@
 // arms a sandbox for each, guards every webview core's window attaches, answers the bridge and
 // runs the door. Sessions, the launcher and the rest of deck's core come over in step 3.
 
-import { BrowserWindow, Notification, app, ipcMain, nativeTheme, protocol, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protocol, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { mkdtempSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -10,8 +10,9 @@ import { CH, type DoorCall, type TileHead, type TileHello, type TileView } from 
 import { BRIDGE_VERSION } from '@shared/manifest'
 import { DEFAULT_THEME, resolveVariant, themeVars } from '@shared/themes'
 import { Door } from './door'
+import { TileGrants } from './files'
 import { TileStore } from './storage'
-import { MAX_INSTANCES, TILE_SCHEME, armSession, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
+import { MAX_INSTANCES, TILE_SCHEME, armSession, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
 import { runSmoke } from './smoke'
 
 const SMOKE = process.argv.includes('--smoke')
@@ -69,6 +70,16 @@ const door = new Door({
   }
 })
 
+const grants = new Map<string, TileGrants>()
+function grantsOf(id: string): TileGrants {
+  let g = grants.get(id)
+  if (!g) grants.set(id, (g = TileGrants.forTile(tileDataDir(), id)))
+  return g
+}
+setGrants(grantsOf)
+/** One chooser at a time, whoever asks. */
+let picking = false
+
 function storeOf(id: string): TileStore {
   let s = stores.get(id)
   if (!s) stores.set(id, (s = TileStore.forTile(tileDataDir(), id)))
@@ -91,7 +102,7 @@ function guestOf(e: IpcMainEvent | IpcMainInvokeEvent): Guest | null {
 }
 const tileOf = (e: IpcMainEvent | IpcMainInvokeEvent): Tile | null => guestOf(e)?.tile ?? null
 
-function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify'): Guest {
+function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify' | 'files'): Guest {
   const g = guestOf(e)
   if (!g) throw new Error('not a tile')
   if (perm && !g.tile.manifest.permissions[perm]) throw new Error(`this tile did not ask for "${perm}" in tile.json`)
@@ -274,6 +285,34 @@ function bridge(): void {
     if (!SMOKE && Notification.isSupported()) new Notification({ title: t.manifest.name, body: text, silent: true }).show()
     return true
   })
+
+  ipcMain.handle(CH.filesPick, async (e, opts: { folder?: unknown; title?: unknown }) => {
+    const { tile } = need(e, 'files')
+    if (picking) throw new Error('files: a chooser is already open')
+    picking = true
+    try {
+      const folder = opts?.folder !== false
+      let path: string | undefined
+      if (SMOKE) path = process.env.WORKSHOP_SMOKE_PICK // the smoke test stands in for the user
+      else {
+        const title = typeof opts?.title === 'string' ? opts.title.slice(0, 80) : ''
+        const r = await dialog.showOpenDialog(win!, {
+          title: `${tile.manifest.name}${title ? `: ${title}` : ''}`,
+          message: `${tile.manifest.name} will be able to read what you choose here, and nothing else.`,
+          buttonLabel: `Let ${tile.manifest.name} read it`,
+          properties: folder ? ['openDirectory'] : ['openFile']
+        })
+        path = r.canceled ? undefined : r.filePaths[0]
+      }
+      if (!path) return null
+      return TileGrants.public(await grantsOf(tile.manifest.id).add(path))
+    } finally {
+      picking = false
+    }
+  })
+  ipcMain.handle(CH.filesList, async (e) => (await grantsOf(need(e, 'files').tile.manifest.id).list()).map(TileGrants.public))
+  ipcMain.handle(CH.filesEntries, (e, handle: string, rel: string) => grantsOf(need(e, 'files').tile.manifest.id).entries(String(handle), String(rel ?? '')))
+  ipcMain.handle(CH.filesForget, (e, handle: string) => grantsOf(need(e, 'files').tile.manifest.id).forget(String(handle)))
 
   ipcMain.on(CH.doorReady, (e, ops: unknown) => {
     const t = tileOf(e)

@@ -34,6 +34,15 @@ if (hello) {
   const needs = (p: keyof typeof perms): void => {
     if (!perms[p]) throw new Error(`add "${p}" to permissions in tile.json`)
   }
+  /** A promise-returning method without its permission rejects, like any other failure. */
+  const gate = <T>(p: keyof typeof perms, fn: () => Promise<T>): Promise<T> => {
+    try {
+      needs(p)
+    } catch (err) {
+      return Promise.reject(err)
+    }
+    return fn()
+  }
   const call = (fn: () => void): void => {
     try {
       fn()
@@ -86,8 +95,8 @@ if (hello) {
     closePane: (): Promise<void> => ipcRenderer.invoke(CH.pane, false),
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CH.external, String(url)),
     storage: {
-      get: (key: string): Promise<unknown> => (needs('storage'), ipcRenderer.invoke(CH.storageGet, key)),
-      set: (key: string, value: unknown): Promise<void> => (needs('storage'), ipcRenderer.invoke(CH.storageSet, key, value)),
+      get: (key: string): Promise<unknown> => gate('storage', () => ipcRenderer.invoke(CH.storageGet, key)),
+      set: (key: string, value: unknown): Promise<void> => gate('storage', () => ipcRenderer.invoke(CH.storageSet, key, value)),
       watch: (key: string, fn: (v: unknown) => void): (() => void) => {
         needs('storage')
         let set = storageSubs.get(key)
@@ -95,7 +104,30 @@ if (hello) {
         return sub(set, fn)
       }
     },
-    notify: (n: { text: string; bark?: boolean }): Promise<boolean> => (needs('notify'), ipcRenderer.invoke(CH.notify, { text: n?.text })),
+    files: {
+      /** Opens the macOS chooser. Resolves to { handle, name, kind } for what the user picked, or null. */
+      pick: (opts: { folder?: boolean; title?: string } = {}): Promise<unknown> => gate('files', () => ipcRenderer.invoke(CH.filesPick, { folder: opts?.folder, title: opts?.title })),
+      /** What the user has picked for this tile before (kept across restarts). */
+      list: (): Promise<unknown> => gate('files', () => ipcRenderer.invoke(CH.filesList)),
+      /** A folder's contents: [{ name, kind, size }]. */
+      entries: (handle: string, path = ''): Promise<unknown> => gate('files', () => ipcRenderer.invoke(CH.filesEntries, handle, path)),
+      /** A URL for a picked file, for fetch(), <img>, <audio>…; streamed, so large files are fine. */
+      url: (handle: string, path = ''): string => {
+        needs('files')
+        const p = String(path).split('/').filter(Boolean).map(encodeURIComponent).join('/')
+        return `tile://${hello.id}/~files/${encodeURIComponent(handle)}/${p}`
+      },
+      /** A picked file's contents, as text or bytes. */
+      read: async (handle: string, path = '', as: 'text' | 'bytes' = 'bytes'): Promise<string | ArrayBuffer> => {
+        needs('files')
+        const p = String(path).split('/').filter(Boolean).map(encodeURIComponent).join('/')
+        const res = await fetch(`tile://${hello.id}/~files/${encodeURIComponent(handle)}/${p}`)
+        if (!res.ok) throw new Error(`files: cannot read "${path}"`)
+        return as === 'text' ? res.text() : res.arrayBuffer()
+      },
+      forget: (handle: string): Promise<boolean> => gate('files', () => ipcRenderer.invoke(CH.filesForget, handle))
+    },
+    notify: (n: { text: string; bark?: boolean }): Promise<boolean> => gate('notify', () => ipcRenderer.invoke(CH.notify, { text: n?.text })),
     door: {
       /** Answer `op` when a Claude session calls it. The op must be listed under permissions.door.ops. */
       handle: (op: string, fn: (args: string[], caller: string) => unknown): void => {
