@@ -6,19 +6,27 @@
 import { useEffect, useRef } from 'react'
 import type { TileInfo } from '@shared/ipc'
 
-export function TileLayer({ tiles, pane }: { tiles: TileInfo[]; pane: string | null }) {
+/** One page in the column: a tile's first instance (key = its id) or a later one (`<id>.<n>`). */
+export interface Instance {
+  key: string
+  n: number
+  tile: TileInfo
+}
+
+export function TileLayer({ instances, pane }: { instances: Instance[]; pane: string | null }) {
   return (
     <div className="tile-layer">
-      {tiles.map((t) => (
-        <TileView key={`${t.manifest.id}:${t.rev}`} tile={t} inPane={pane === t.manifest.id} />
+      {instances.map((i) => (
+        <TileView key={`${i.key}:${i.tile.rev}`} inst={i} inPane={pane === i.key} />
       ))}
     </div>
   )
 }
 
-function TileView({ tile, inPane }: { tile: TileInfo; inPane: boolean }) {
+function TileView({ inst, inPane }: { inst: Instance; inPane: boolean }) {
   const box = useRef<HTMLDivElement>(null)
-  const id = tile.manifest.id
+  const id = inst.key
+  const { tile } = inst
 
   useEffect(() => {
     const el = box.current
@@ -57,7 +65,8 @@ function TileView({ tile, inPane }: { tile: TileInfo; inPane: boolean }) {
 
   return (
     <div ref={box} className="tile-page" style={{ visibility: 'hidden' }}>
-      <webview partition={tile.partition} src={tile.src} />
+      {/* Main matches the partition to the tile and instance (main/tiles.ts partitionOf). */}
+      <webview partition={inst.n === 1 ? tile.partition : `${tile.partition}.${inst.n}`} src={tile.src} />
     </div>
   )
 }

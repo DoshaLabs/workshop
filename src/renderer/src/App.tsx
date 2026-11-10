@@ -1,18 +1,31 @@
 // Core's window: sessions on the left (they arrive in roadmap step 3), what you are on now in the
 // center, tiles on the right. Core draws every tile's head; the tile's page fills the face.
+//
+// The column holds tile INSTANCES. A tile's first instance is keyed by its id; a tile with
+// `multiple: true` may have more, keyed `<id>.<n>` (n up to 4), each its own page and partition.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { TileHead, TileInfo, TileProblem } from '@shared/ipc'
-import { TileLayer } from './TileLayer'
+import { TileLayer, type Instance } from './TileLayer'
 
 const OFF_KEY = 'workshop.off'
+const EXTRA_KEY = 'workshop.extra'
+const MAX_INSTANCES = 4
 
-function readOff(): string[] {
+function readList(key: string): string[] {
   try {
-    const v = JSON.parse(localStorage.getItem(OFF_KEY) ?? '[]') as unknown
+    const v = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown
     return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
   } catch {
     return []
+  }
+}
+
+function writeList(key: string, list: string[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(list))
+  } catch {
+    // the column still works, it just forgets
   }
 }
 
@@ -20,10 +33,16 @@ function applyVars(vars: Record<string, string>): void {
   for (const [k, v] of Object.entries(vars)) document.documentElement.style.setProperty(k, v)
 }
 
+const instanceN = (key: string): number => Number(/\.(\d)$/.exec(key)?.[1] ?? 1)
+const tileIdOf = (key: string): string => key.replace(/\.\d$/, '')
+
 export function App() {
   const [tiles, setTiles] = useState<TileInfo[]>([])
   const [problems, setProblems] = useState<TileProblem[]>([])
-  const [off, setOff] = useState<string[]>(readOff)
+  /** Tiles whose first instance is turned off. */
+  const [off, setOff] = useState<string[]>(() => readList(OFF_KEY))
+  /** Second and later instances that are on: `<id>.<n>`. */
+  const [extra, setExtra] = useState<string[]>(() => readList(EXTRA_KEY))
   const [pane, setPane] = useState<string | null>(null)
   const [heads, setHeads] = useState<Record<string, TileHead>>({})
   const [chips, setChips] = useState<Record<string, string>>({})
@@ -39,27 +58,34 @@ export function App() {
     const offs = [
       window.core.onTilesChanged(load),
       window.core.onTheme(applyVars),
-      window.core.onTileHead((id, head) => setHeads((h) => ({ ...h, [id]: head }))),
-      window.core.onTilePane((id, open) => setPane((p) => (open ? id : p === id ? null : p))),
-      window.core.onTileNotify((id, text) => {
-        setChips((c) => ({ ...c, [id]: text }))
-        window.setTimeout(() => setChips((c) => (c[id] === text ? { ...c, [id]: '' } : c)), 8000)
+      window.core.onTileHead((key, head) => setHeads((h) => ({ ...h, [key]: head }))),
+      window.core.onTilePane((key, open) => setPane((p) => (open ? key : p === key ? null : p))),
+      window.core.onTileNotify((key, text) => {
+        setChips((c) => ({ ...c, [key]: text }))
+        window.setTimeout(() => setChips((c) => (c[key] === text ? { ...c, [key]: '' } : c)), 8000)
       })
     ]
     return () => offs.forEach((f) => f())
   }, [])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(OFF_KEY, JSON.stringify(off))
-    } catch {
-      // the column still works, it just forgets
+  useEffect(() => writeList(OFF_KEY, off), [off])
+  useEffect(() => writeList(EXTRA_KEY, extra), [extra])
+
+  /** Every instance that is on, each tile's together, in the catalog's order. */
+  const instances = useMemo<Instance[]>(() => {
+    const out: Instance[] = []
+    for (const tile of tiles) {
+      const id = tile.manifest.id
+      if (!off.includes(id)) out.push({ key: id, n: 1, tile })
+      if (!tile.manifest.multiple) continue
+      for (const key of extra.filter((k) => tileIdOf(k) === id).sort()) out.push({ key, n: instanceN(key), tile })
     }
-  }, [off])
+    return out
+  }, [tiles, off, extra])
 
   useEffect(() => {
-    for (const t of tiles) void window.core.setView(t.manifest.id, pane === t.manifest.id ? 'pane' : 'tile')
-  }, [pane, tiles])
+    for (const i of instances) void window.core.setView(i.key, pane === i.key ? 'pane' : 'tile')
+  }, [pane, instances])
 
   useEffect(() => {
     if (!pane) return
@@ -68,13 +94,26 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [pane])
 
-  const on = tiles.filter((t) => !off.includes(t.manifest.id))
-  const offTiles = tiles.filter((t) => off.includes(t.manifest.id))
-  const close = useCallback((id: string) => {
-    setPane((p) => (p === id ? null : p))
-    setOff((o) => [...o, id])
+  const close = useCallback((key: string) => {
+    setPane((p) => (p === key ? null : p))
+    if (instanceN(key) === 1) setOff((o) => [...o, key])
+    else setExtra((x) => x.filter((k) => k !== key))
   }, [])
-  const paneTile = on.find((t) => t.manifest.id === pane)
+
+  /** Another instance of a `multiple` tile: the first one that is off, else the lowest free slot. */
+  const another = (tile: TileInfo): void => {
+    const id = tile.manifest.id
+    if (off.includes(id)) return setOff((o) => o.filter((x) => x !== id))
+    for (let n = 2; n <= MAX_INSTANCES; n++) {
+      const key = `${id}.${n}`
+      if (!extra.includes(key)) return setExtra((x) => [...x, key])
+    }
+  }
+  const countOf = (id: string): number => instances.filter((i) => i.tile.manifest.id === id).length
+
+  const offTiles = tiles.filter((t) => countOf(t.manifest.id) === 0)
+  const paneInst = instances.find((i) => i.key === pane)
+  const label = (i: Instance): string => heads[i.key]?.title || (i.n > 1 ? `${i.tile.manifest.name} ${i.n}` : i.tile.manifest.name)
 
   return (
     <div className="app">
@@ -84,16 +123,16 @@ export function App() {
       </aside>
 
       <main className="col center">
-        {paneTile ? (
+        {paneInst ? (
           <section className="pane">
             <header className="head">
-              <Icon tile={paneTile} />
-              <span className="name">{heads[paneTile.manifest.id]?.title || paneTile.manifest.name}</span>
+              <Icon tile={paneInst.tile} />
+              <span className="name">{label(paneInst)}</span>
               <button className="ghost" title="Back to the column (Esc)" onClick={() => setPane(null)}>
                 ×
               </button>
             </header>
-            <div className="face pane-face" data-pane={paneTile.manifest.id} />
+            <div className="face pane-face" data-pane={paneInst.key} />
           </section>
         ) : (
           <section className="launcher">
@@ -120,30 +159,39 @@ export function App() {
 
       <aside className="col tiles">
         <div className="tile-scroll">
-          {on.map((t) => {
-            const id = t.manifest.id
-            const head = heads[id]
+          {instances.map((i) => {
+            const t = i.tile
+            const head = heads[i.key]
             return (
-              <article key={id} className={`tile ${pane === id ? 'in-pane' : ''}`}>
+              <article key={i.key} className={`tile ${pane === i.key ? 'in-pane' : ''}`}>
                 <header className="head">
                   <Icon tile={t} />
                   <span className="name" title={t.manifest.hint}>
-                    {head?.title || t.manifest.name}
+                    {label(i)}
                   </span>
                   {head?.badge && <span className="badge">{head.badge}</span>}
-                  {chips[id] && <span className="chip" title={chips[id]}>{chips[id]}</span>}
+                  {chips[i.key] && (
+                    <span className="chip" title={chips[i.key]}>
+                      {chips[i.key]}
+                    </span>
+                  )}
                   {t.source === 'dev' && <span className="dev">dev</span>}
+                  {t.manifest.multiple && countOf(t.manifest.id) < MAX_INSTANCES && (
+                    <button className="ghost" title={`Another ${t.manifest.name}`} onClick={() => another(t)}>
+                      +
+                    </button>
+                  )}
                   {t.manifest.pane && (
-                    <button className="ghost" title="Open large" onClick={() => setPane(pane === id ? null : id)}>
+                    <button className="ghost" title="Open large" onClick={() => setPane(pane === i.key ? null : i.key)}>
                       ⤢
                     </button>
                   )}
-                  <button className="ghost" title="Turn off" onClick={() => close(id)}>
+                  <button className="ghost" title="Turn off" onClick={() => close(i.key)}>
                     ×
                   </button>
                 </header>
-                <div className="face" data-face={id} style={{ height: t.manifest.span * 190 }}>
-                  {pane === id && <span className="away">open in the center</span>}
+                <div className="face" data-face={i.key} style={{ height: t.manifest.span * 190 }}>
+                  {pane === i.key && <span className="away">open in the center</span>}
                 </div>
               </article>
             )
@@ -151,7 +199,7 @@ export function App() {
           {offTiles.length > 0 && (
             <div className="plus">
               {offTiles.map((t) => (
-                <button key={t.manifest.id} onClick={() => setOff((o) => o.filter((x) => x !== t.manifest.id))}>
+                <button key={t.manifest.id} onClick={() => another(t)}>
                   + {t.manifest.name}
                 </button>
               ))}
@@ -160,7 +208,7 @@ export function App() {
         </div>
       </aside>
 
-      <TileLayer tiles={on} pane={pane} />
+      <TileLayer instances={instances} pane={pane} />
     </div>
   )
 }

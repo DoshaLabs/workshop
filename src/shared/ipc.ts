@@ -34,6 +34,8 @@ export interface TileHead {
 /** What a tile's preload gets back from its one synchronous hello. */
 export interface TileHello {
   id: string
+  /** This page's instance: the id for a tile's first, `<id>.<n>` after (manifest `multiple`). */
+  instance: string
   view: TileView
   vars: Record<string, string>
   bridge: string

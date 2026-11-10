@@ -19,8 +19,8 @@ export interface DoorHost {
   live(id: string): boolean
   /** The ops the live page has registered a handler for. */
   answers(id: string, op: string): boolean
-  /** Hands the call to the tile's page. */
-  deliver(id: string, call: DoorCall): void
+  /** Hands the call to one of the tile's live pages; returns which instance took it. */
+  deliver(id: string, call: DoorCall): string | undefined
 }
 
 type Reply = { ok: true; result: unknown } | { ok: false; error: string }
@@ -29,7 +29,7 @@ export class Door {
   private server: Server | null = null
   /** token → caller name. Sessions get their own when they exist (roadmap step 3). */
   private readonly callers = new Map<string, string>()
-  private readonly pending = new Map<string, { tile: string; resolve: (r: Reply) => void; timer: NodeJS.Timeout }>()
+  private readonly pending = new Map<string, { tile: string; instance: string; resolve: (r: Reply) => void; timer: NodeJS.Timeout }>()
   port = 0
   /** The token for callers outside any session (a terminal, the smoke test). */
   readonly token = randomBytes(24).toString('hex')
@@ -70,19 +70,19 @@ export class Door {
     this.pending.clear()
   }
 
-  /** The tile's page answered a call. Only the tile the call went to may answer it. */
-  answer(tileId: string, callId: string, reply: Reply): void {
+  /** A tile's page answered a call. Only the page (instance) the call went to may answer it. */
+  answer(instance: string, callId: string, reply: Reply): void {
     const p = this.pending.get(callId)
-    if (!p || p.tile !== tileId) return
+    if (!p || p.instance !== instance) return
     clearTimeout(p.timer)
     this.pending.delete(callId)
     p.resolve(reply)
   }
 
-  /** The tile went away: everything it owed fails now rather than at its timeout. */
-  dropTile(tileId: string): void {
+  /** A tile's page went away: everything it owed fails now rather than at its timeout. */
+  dropInstance(instance: string): void {
     for (const [id, p] of this.pending) {
-      if (p.tile !== tileId) continue
+      if (p.instance !== instance) continue
       clearTimeout(p.timer)
       this.pending.delete(id)
       p.resolve({ ok: false, error: 'the tile closed before answering' })
@@ -125,8 +125,9 @@ export class Door {
         this.pending.delete(callId)
         resolve({ ok: false, error: `the ${man.name} tile did not answer within ${door.timeoutMs} ms` })
       }, door.timeoutMs)
-      this.pending.set(callId, { tile: id, resolve, timer })
-      this.host.deliver(id, { callId, op, args: args as string[], caller })
+      const entry = { tile: id, instance: '', resolve, timer }
+      this.pending.set(callId, entry)
+      entry.instance = this.host.deliver(id, { callId, op, args: args as string[], caller }) ?? ''
     })
     if (reply.ok) {
       let json: string

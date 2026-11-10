@@ -28,8 +28,10 @@ drives the door; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture
 - `src/main/storage.ts`, `src/main/door.ts`, `bin/workshop-tile.mjs`: storage (5 MB, atomic) and
   the door (127.0.0.1, bearer token, caller from the token, browser `Origin` refused).
 - `tiles/wikipedia/`: the reference tile, plain JS with no build step.
+- `bin/workshop.mjs tile dev <folder>`: loads a tile under development (reload on change, or a
+  dev-server `entry`); hands the folder to the app if it is already running.
 - Not yet: sessions, `sessions`/`usage`/`transcripts`/`files` (accepted in manifests, not yet in
-  the bridge), `multiple`, the trusted tier, `entry` pointing at a dev server, theme picker.
+  the bridge), the trusted tier, theme picker.
 
 Terms used throughout:
 
@@ -233,7 +235,10 @@ permissions, which makes them the trusted tier.
 - `workshop`: the bridge version the tile was built for (semver). Core refuses a tile it cannot
   satisfy.
 - `pane`: the tile can open in the center column at reading size.
-- `multiple`: several instances at once are allowed.
+- `multiple`: up to four instances at once. Each is its own page on its own partition
+  (`persist:tile-<id>.<n>`), so web storage and cookies are per instance; `workshop.storage` is
+  per tile and shared; a door call goes to the instance used most recently. A page knows which
+  it is from `workshop.instance` (`<id>`, then `<id>.2`…).
 - `span`: default height in grid rows.
 
 ### Two trust tiers

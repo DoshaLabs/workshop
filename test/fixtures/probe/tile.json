@@ -10,6 +10,13 @@
   "permissions": {
     "storage": true,
     "notify": true,
-    "door": { "ops": ["echo", "slow"], "timeoutMs": 500 }
-  }
+    "door": {
+      "ops": [
+        "echo",
+        "slow"
+      ],
+      "timeoutMs": 500
+    }
+  },
+  "multiple": true
 }

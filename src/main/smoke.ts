@@ -13,7 +13,7 @@ import type { Door } from './door'
 interface Ctx {
   win: BrowserWindow
   door: Door
-  liveByTile: Map<string, { wc: WebContents; ops: Set<string> }>
+  liveByTile: Map<string, { wc: WebContents; ops: Set<string>; usedAt: number }>
   userData: string
   /** What the tiles asked the browser to open (a smoke run never opens one). */
   opened: string[]
@@ -78,7 +78,8 @@ async function post(port: number, path: string, body: unknown, headers: Record<s
   return { status: res.status, json: await res.json() }
 }
 
-export async function runSmoke({ win, door, liveByTile, userData, opened, addDevTile }: Ctx): Promise<number> {
+export async function runSmoke(ctx: Ctx): Promise<number> {
+  const { win, door, liveByTile, userData, opened, addDevTile } = ctx
   const results: [string, boolean, string?][] = []
   const check = (name: string, ok: boolean, detail?: string): void => void results.push([name, ok, detail])
   try {
@@ -145,6 +146,7 @@ export async function runSmoke({ win, door, liveByTile, userData, opened, addDev
     check('wikipedia door: show', show.status === 200 && typeof show.json.result?.title === 'string', JSON.stringify(show.json))
 
     await devTiles(check, liveByTile, door.port, addDevTile)
+    await instances(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
   }
@@ -213,4 +215,36 @@ async function devTiles(
   } finally {
     server.close()
   }
+}
+
+/** `multiple`: a second probe, its own page and web storage, the same workshop.storage, and the door. */
+async function instances(check: (name: string, ok: boolean, detail?: string) => void, { win, door, liveByTile }: Ctx): Promise<void> {
+  const js = (key: string, code: string): Promise<unknown> => liveByTile.get(key)!.wc.executeJavaScript(code)
+  await js('probe', `localStorage.setItem('mine', 'first'); true`)
+  // Open a second probe the way the column's + does, then reload the window (every page remounts).
+  await win.webContents.executeJavaScript(`localStorage.setItem('workshop.extra', '["probe.2"]'); true`)
+  win.webContents.reload()
+  await waitFor('the second probe', async () => !!liveByTile.get('probe.2') && (await js('probe.2', 'window.probeReady === true').catch(() => false)) === true)
+  await waitFor('the first probe again', async () => !!liveByTile.get('probe')?.ops.has('echo'))
+  check('instances: the second page knows it is probe.2', (await js('probe.2', 'workshop.instance')) === 'probe.2')
+  check('instances: web storage is per instance', (await js('probe.2', `localStorage.getItem('mine')`)) === null)
+  check('instances: workshop.storage is per tile', JSON.stringify(await js('probe.2', `workshop.storage.get('k')`)) === '{"a":1,"list":[1,2]}')
+
+  const auth = { Authorization: `Bearer ${door.token}` }
+  for (const key of ['probe.2', 'probe']) {
+    liveByTile.get(key)!.usedAt = Date.now() + (key === 'probe.2' ? 10_000 : 20_000)
+    const r = await post(door.port, '/tile/probe', { op: 'echo' }, auth)
+    check(`instances: the door goes to the instance used last (${key})`, r.json.result?.instance === key, JSON.stringify(r.json))
+  }
+
+  // A webview for an instance of a tile without `multiple` is refused.
+  await win.webContents.executeJavaScript(`(() => {
+    for (const p of ['persist:tile-wikipedia.2']) {
+      const w = document.createElement('webview'); w.setAttribute('partition', p)
+      w.setAttribute('src', p.includes('wikipedia') ? 'tile://wikipedia/index.html' : 'tile://probe/index.html'); document.body.append(w)
+    }
+    return true
+  })()`)
+  await sleep(1500)
+  check('instances: no second instance of a tile without multiple', !liveByTile.has('wikipedia.2'))
 }

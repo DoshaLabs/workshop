@@ -20,7 +20,8 @@ export interface Tile {
   serveRoot: string
   source: TileInfo['source']
   partition: string
-  session: Session
+  /** One session per instance slot: [0] is the tile's first instance, [1] its second, … */
+  sessions: Session[]
   src: string
   icon: string
   /** The tile's Claude Code plugin (handed to new sessions with --plugin-dir), or null. */
@@ -73,7 +74,7 @@ export function ownsUrl(tile: Pick<Tile, 'manifest' | 'devOrigin'>, url: string)
   return url.startsWith(`${TILE_SCHEME}://${tile.manifest.id}/`) || (!!tile.devOrigin && url.startsWith(`${tile.devOrigin}/`))
 }
 
-export async function readTile(folder: string, source: Tile['source']): Promise<Omit<Tile, 'session' | 'rev'> | TileProblem> {
+export async function readTile(folder: string, source: Tile['source']): Promise<Omit<Tile, 'sessions' | 'rev'> | TileProblem> {
   let raw: unknown
   try {
     raw = JSON.parse(await readFile(join(folder, 'tile.json'), 'utf8'))
@@ -143,7 +144,7 @@ export async function loadTiles(sources: { dir: string; source: Tile['source']; 
         problems.push({ folder, errors: [`id: "${t.manifest.id}" is already taken by ${tiles.get(t.manifest.id)!.root}`] })
         continue
       }
-      tiles.set(t.manifest.id, { ...t, rev: 0, session: session.fromPartition(t.partition) })
+      tiles.set(t.manifest.id, { ...t, rev: 0, sessions: sessionsFor(t) })
     }
   }
   return { tiles, problems }
@@ -155,11 +156,37 @@ export async function loadTiles(sources: { dir: string; source: Tile['source']; 
  * Traffic to undeclared hosts is also sent to a proxy that does not exist, which closes the side
  * doors a request filter cannot see (WebRTC, DNS prefetch).
  */
+/** The most instances of one tile (manifest `multiple: true`) open at once. */
+export const MAX_INSTANCES = 4
+
+/** Instance n of a tile: partition `persist:tile-<id>` for the first, `persist:tile-<id>.<n>` after. */
+export const partitionOf = (partition: string, n: number): string => (n === 1 ? partition : `${partition}.${n}`)
+/** The instance's key, used everywhere core names one: `<id>` for the first, `<id>.<n>` after. */
+export const instanceKey = (id: string, n: number): string => (n === 1 ? id : `${id}.${n}`)
+
+export function sessionsFor(t: Pick<Tile, 'partition' | 'manifest'>): Session[] {
+  const n = t.manifest.multiple ? MAX_INSTANCES : 1
+  return Array.from({ length: n }, (_, i) => session.fromPartition(partitionOf(t.partition, i + 1)))
+}
+
+/** Which tile and instance a webview partition is, or null. */
+export function instanceOfPartition(tiles: Map<string, Tile>, partition: string): { tile: Tile; n: number; key: string } | null {
+  const m = /^persist:tile-([a-z0-9-]+)(?:\.([2-9]))?$/.exec(partition)
+  const tile = m ? tiles.get(m[1]) : undefined
+  if (!m || !tile) return null
+  const n = m[2] ? Number(m[2]) : 1
+  if (n > tile.sessions.length) return null
+  return { tile, n, key: instanceKey(tile.manifest.id, n) }
+}
+
 const armed = new WeakSet<Session>()
 
-/** Safe to call again for the same session (a dev tile reloaded): every handler is replaced. */
+/** Arms every instance's session. Safe to call again (a dev tile reloaded): every handler is replaced. */
 export async function armSession(tile: Tile): Promise<void> {
-  const ses = tile.session
+  await Promise.all(tile.sessions.map((ses) => armOne(tile, ses)))
+}
+
+async function armOne(tile: Tile, ses: Session): Promise<void> {
   const { id, permissions } = tile.manifest
 
   if (ses.protocol.isProtocolHandled(TILE_SCHEME)) ses.protocol.unhandle(TILE_SCHEME)

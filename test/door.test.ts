@@ -22,6 +22,7 @@ async function start(): Promise<void> {
     deliver: (id, call) => {
       delivered.push(call)
       if (call.op === 'say') setTimeout(() => door.answer(id, call.callId, { ok: true, result: { said: call.args, by: call.caller } }), 5)
+      return id
     }
   })
   await door.start()
@@ -86,11 +87,11 @@ describe('Door', () => {
     expect((await p).status).toBe(502)
   })
 
-  it('fails pending calls at once when the tile goes away', async () => {
+  it('fails pending calls at once when the page they went to goes away', async () => {
     await start()
     const p = call({ op: 'hang' })
     await new Promise((r) => setTimeout(r, 50))
-    door.dropTile('echo')
+    door.dropInstance('echo')
     expect((await p).json.error).toMatch(/closed/)
   })
 })

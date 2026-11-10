@@ -2,7 +2,7 @@
 // arms a sandbox for each, guards every webview core's window attaches, answers the bridge and
 // runs the door. Sessions, the launcher and the rest of deck's core come over in step 3.
 
-import { BrowserWindow, Notification, app, ipcMain, nativeTheme, protocol, session, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { BrowserWindow, Notification, app, ipcMain, nativeTheme, protocol, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { mkdtempSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -11,7 +11,7 @@ import { BRIDGE_VERSION } from '@shared/manifest'
 import { DEFAULT_THEME, resolveVariant, themeVars } from '@shared/themes'
 import { Door } from './door'
 import { TileStore } from './storage'
-import { TILE_SCHEME, armSession, loadTiles, ownsUrl, readTile, tileInfo, type Registry, type Tile } from './tiles'
+import { MAX_INSTANCES, TILE_SCHEME, armSession, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
 import { runSmoke } from './smoke'
 
 const SMOKE = process.argv.includes('--smoke')
@@ -36,12 +36,18 @@ let registry: Registry = { tiles: new Map(), problems: [] }
 interface Guest {
   tile: Tile
   wc: WebContents
+  /** Which instance: `<id>` for a tile's first, `<id>.<n>` for the others (manifest `multiple`). */
+  key: string
   /** The ops the page has registered a handler for. */
   ops: Set<string>
+  /** When the user last worked in it: door calls go to the most recent instance. */
+  usedAt: number
 }
-/** Live tile pages by webContents id, and by tile id (one live page per tile in v1). */
+/** Live tile pages by webContents id, and by instance key. A tile's first instance's key is its id. */
 const guests = new Map<number, Guest>()
 const liveByTile = new Map<string, Guest>()
+const instancesOf = (id: string): Guest[] => [...liveByTile.values()].filter((g) => g.tile.manifest.id === id)
+/** Keyed by instance. */
 const views = new Map<string, TileView>()
 const stores = new Map<string, TileStore>()
 const lastNotify = new Map<string, number>()
@@ -52,9 +58,15 @@ const vars = (): Record<string, string> => themeVars(resolveVariant(DEFAULT_THEM
 
 const door = new Door({
   manifest: (id) => registry.tiles.get(id)?.manifest,
-  live: (id) => liveByTile.has(id),
-  answers: (id, op) => liveByTile.get(id)?.ops.has(op) ?? false,
-  deliver: (id, call: DoorCall) => liveByTile.get(id)?.wc.send(CH.doorCall, call)
+  live: (id) => instancesOf(id).length > 0,
+  answers: (id, op) => instancesOf(id).some((g) => g.ops.has(op)),
+  deliver: (id, call: DoorCall) => {
+    const g = instancesOf(id)
+      .filter((x) => x.ops.has(call.op))
+      .sort((a, b) => b.usedAt - a.usedAt)[0]
+    g?.wc.send(CH.doorCall, call)
+    return g?.key
+  }
 })
 
 function storeOf(id: string): TileStore {
@@ -68,21 +80,22 @@ function storeOf(id: string): TileStore {
  * that tile, from its top frame, on its own origin: an iframe the page embeds, or the page after
  * it somehow navigated away, gets nothing.
  */
-function tileOf(e: IpcMainEvent | IpcMainInvokeEvent): Tile | null {
+function guestOf(e: IpcMainEvent | IpcMainInvokeEvent): Guest | null {
   const g = guests.get(e.sender.id)
   const f = e.senderFrame
   if (!g || !f || e.sender.isDestroyed()) return null
   const top = e.sender.mainFrame
   if (f.processId !== top.processId || f.routingId !== top.routingId) return null
   if (!ownsUrl(g.tile, f.url)) return null
-  return g.tile
+  return g
 }
+const tileOf = (e: IpcMainEvent | IpcMainInvokeEvent): Tile | null => guestOf(e)?.tile ?? null
 
-function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify'): Tile {
-  const t = tileOf(e)
-  if (!t) throw new Error('not a tile')
-  if (perm && !t.manifest.permissions[perm]) throw new Error(`this tile did not ask for "${perm}" in tile.json`)
-  return t
+function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify'): Guest {
+  const g = guestOf(e)
+  if (!g) throw new Error('not a tile')
+  if (perm && !g.tile.manifest.permissions[perm]) throw new Error(`this tile did not ask for "${perm}" in tile.json`)
+  return g
 }
 
 const isHttp = (url: string): boolean => /^https?:\/\//i.test(url)
@@ -107,8 +120,8 @@ function openForTile(id: string, url: string): boolean {
 /** Every webview core's window attaches must be a registered tile, and gets core's sandbox. */
 function guardWebviews(w: BrowserWindow): void {
   w.webContents.on('will-attach-webview', (e, prefs, params) => {
-    const tile = [...registry.tiles.values()].find((t) => t.partition === params.partition)
-    if (!tile || params.src !== tile.src) {
+    const inst = instanceOfPartition(registry.tiles, params.partition ?? '')
+    if (!inst || params.src !== inst.tile.src) {
       e.preventDefault()
       return
     }
@@ -125,15 +138,23 @@ function guardWebviews(w: BrowserWindow): void {
     prefs.backgroundThrottling = !SMOKE
   })
   w.webContents.on('did-attach-webview', (_e, wc) => {
-    const tile = [...registry.tiles.values()].find((t) => t.session === wc.session)
-    if (!tile) {
+    let found: { tile: Tile; key: string } | undefined
+    for (const tile of registry.tiles.values()) {
+      const i = tile.sessions.indexOf(wc.session)
+      if (i >= 0) found = { tile, key: instanceKey(tile.manifest.id, i + 1) }
+    }
+    if (!found) {
       wc.close()
       return
     }
-    const g: Guest = { tile, wc, ops: new Set() }
+    // Core's window asked for this page. If the instance already had one (the window reloading,
+    // a dev tile loaded again), the new page takes over and the old one is on its way out.
+    const { tile, key } = found
+    const g: Guest = { tile, wc, key, ops: new Set(), usedAt: Date.now() }
     const id = tile.manifest.id
     guests.set(wc.id, g)
-    liveByTile.set(id, g)
+    liveByTile.set(key, g)
+    wc.on('focus', () => (g.usedAt = Date.now()))
     wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
     // Popups go to the browser. The page itself stays on its own origin.
     wc.setWindowOpenHandler(({ url }) => {
@@ -151,8 +172,8 @@ function guardWebviews(w: BrowserWindow): void {
     })
     wc.once('destroyed', () => {
       guests.delete(wc.id)
-      if (liveByTile.get(id) === g) liveByTile.delete(id)
-      door.dropTile(id)
+      if (liveByTile.get(key) === g) liveByTile.delete(key)
+      door.dropInstance(key)
     })
   })
 }
@@ -175,7 +196,7 @@ async function addDevTile(folder: string): Promise<string> {
   }
   const id = t.manifest.id
   const old = registry.tiles.get(id)
-  const tile: Tile = { ...t, rev: (old?.rev ?? 0) + 1, session: old?.session ?? session.fromPartition(t.partition) }
+  const tile: Tile = { ...t, rev: (old?.rev ?? 0) + 1, sessions: old?.sessions.length === (t.manifest.multiple ? MAX_INSTANCES : 1) ? old.sessions : sessionsFor(t) }
   registry.tiles.set(id, tile)
   await armSession(tile)
   if (!tile.devOrigin && !devWatchers.has(folder)) {
@@ -189,7 +210,7 @@ async function addDevTile(folder: string): Promise<string> {
         const again = reload
         reload = false
         if (again) void addDevTile(folder)
-        else liveByTile.get(id)?.wc.reloadIgnoringCache()
+        else for (const g of instancesOf(id)) g.wc.reloadIgnoringCache()
       }, 150)
     })
     w.on('error', () => devWatchers.delete(folder))
@@ -207,47 +228,49 @@ function bridge(): void {
       return
     }
     // Every new document says hello first, so a reloaded page starts with no door ops until it registers them again.
-    const g = guests.get(e.sender.id)
-    if (g) g.ops = new Set()
-    const hello: TileHello = { id: t.manifest.id, view: views.get(t.manifest.id) ?? 'tile', vars: vars(), bridge: BRIDGE_VERSION, permissions: t.manifest.permissions }
+    const g = guests.get(e.sender.id)!
+    g.ops = new Set()
+    const hello: TileHello = { id: t.manifest.id, instance: g.key, view: views.get(g.key) ?? 'tile', vars: vars(), bridge: BRIDGE_VERSION, permissions: t.manifest.permissions }
     e.returnValue = hello
   })
 
   ipcMain.handle(CH.head, (e, head: TileHead) => {
-    const t = need(e)
+    const g = need(e)
     const clean: TileHead = {}
     if (typeof head?.title === 'string') clean.title = head.title.slice(0, 60)
     if (typeof head?.badge === 'string') clean.badge = head.badge.slice(0, 12)
-    win?.webContents.send(CH.tileHead, t.manifest.id, clean)
+    win?.webContents.send(CH.tileHead, g.key, clean)
   })
 
   ipcMain.handle(CH.pane, (e, open: boolean) => {
-    const t = need(e)
-    if (open && !t.manifest.pane) throw new Error('this tile did not set "pane": true in tile.json')
-    win?.webContents.send(CH.tilePane, t.manifest.id, !!open)
+    const g = need(e)
+    if (open && !g.tile.manifest.pane) throw new Error('this tile did not set "pane": true in tile.json')
+    win?.webContents.send(CH.tilePane, g.key, !!open)
   })
 
   ipcMain.handle(CH.external, (e, url: string) => {
-    const t = need(e)
+    const { tile } = need(e)
     if (typeof url !== 'string' || !isHttp(url)) throw new Error('openExternal: http(s) URLs only')
-    if (!openForTile(t.manifest.id, url)) throw new Error('openExternal: one a second')
+    if (!openForTile(tile.manifest.id, url)) throw new Error('openExternal: one a second')
   })
 
-  ipcMain.handle(CH.storageGet, (e, key: string) => storeOf(need(e, 'storage').manifest.id).get(key))
+  // One store per tile, shared by its instances: a write is seen by every one of them.
+  ipcMain.handle(CH.storageGet, (e, key: string) => storeOf(need(e, 'storage').tile.manifest.id).get(key))
   ipcMain.handle(CH.storageSet, async (e, key: string, value: unknown) => {
-    const id = need(e, 'storage').manifest.id
+    const id = need(e, 'storage').tile.manifest.id
     await storeOf(id).set(key, value)
-    liveByTile.get(id)?.wc.send(CH.storageChanged, key, value ?? null)
+    for (const g of instancesOf(id)) g.wc.send(CH.storageChanged, key, value ?? null)
   })
 
   ipcMain.handle(CH.notify, (e, n: { text?: unknown }) => {
-    const t = need(e, 'notify')
+    const g = need(e, 'notify')
+    const t = g.tile
     const text = typeof n?.text === 'string' ? n.text.slice(0, 200) : ''
     if (!text) throw new Error('notify: { text }')
     const now = Date.now()
     if (now - (lastNotify.get(t.manifest.id) ?? 0) < 3000) return false
     lastNotify.set(t.manifest.id, now)
-    win?.webContents.send(CH.tileNotify, t.manifest.id, text)
+    win?.webContents.send(CH.tileNotify, g.key, text)
     if (!SMOKE && Notification.isSupported()) new Notification({ title: t.manifest.name, body: text, silent: true }).show()
     return true
   })
@@ -260,10 +283,10 @@ function bridge(): void {
     g.ops = new Set(ops.filter((o): o is string => typeof o === 'string' && declared.includes(o)))
   })
   ipcMain.on(CH.doorReply, (e, callId: unknown, reply: unknown) => {
-    const t = tileOf(e)
-    if (!t || typeof callId !== 'string' || !reply || typeof reply !== 'object') return
+    const g = guestOf(e)
+    if (!g || typeof callId !== 'string' || !reply || typeof reply !== 'object') return
     const r = reply as { ok?: unknown; result?: unknown; error?: unknown }
-    door.answer(t.manifest.id, callId, r.ok === true ? { ok: true, result: r.result } : { ok: false, error: String(r.error ?? 'failed').slice(0, 500) })
+    door.answer(g.key, callId, r.ok === true ? { ok: true, result: r.result } : { ok: false, error: String(r.error ?? 'failed').slice(0, 500) })
   })
 
   // Core's own window.
@@ -271,10 +294,13 @@ function bridge(): void {
     if (e.sender !== win?.webContents) throw new Error('core only')
     return { tiles: [...registry.tiles.values()].map(tileInfo), problems: registry.problems, vars: vars() }
   })
-  ipcMain.handle(CH.setView, (e, id: string, view: TileView) => {
+  ipcMain.handle(CH.setView, (e, key: string, view: TileView) => {
     if (e.sender !== win?.webContents || (view !== 'tile' && view !== 'pane')) return
-    views.set(id, view)
-    liveByTile.get(id)?.wc.send(CH.view, view)
+    views.set(key, view)
+    const g = liveByTile.get(key)
+    if (!g) return
+    g.usedAt = Date.now()
+    g.wc.send(CH.view, view)
   })
 }
 

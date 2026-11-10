@@ -71,6 +71,8 @@ if (hello) {
   const raw = {
     bridge: hello.bridge,
     id: hello.id,
+    /** Which instance this page is: the id for the first, `<id>.<n>` for others (manifest `multiple`). */
+    instance: hello.instance,
     viewNow: (): TileView => view,
     onViewChange: (fn: (v: TileView) => void) => sub(viewSubs, fn),
     theme: {
