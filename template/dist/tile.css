@@ -1,5 +1,6 @@
 /* Colours come from workshop as --ws-* variables, already on :root, and follow the user's theme:
    --ws-bg --ws-panel --ws-ink --ws-muted --ws-line --ws-accent --ws-busy --ws-idle --ws-blocked
+   --ws-starting --ws-dead, and --ws-green / --ws-red for added and removed, good and bad.
    So do its fonts: --ws-font (the interface), --ws-font-mono (code, paths), --ws-font-serif (prose). */
 * {
   box-sizing: border-box;

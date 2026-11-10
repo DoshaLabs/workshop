@@ -1,6 +1,7 @@
 // Theme catalog shared by main (window background at boot, every tile's --ws-* variables) and
 // the renderer (CSS variables + xterm palettes). Carried over from deck's src/shared/themes.ts. Every family has a light and a dark variant; `appearance` in settings
-// picks which one is live. Keep this file dependency-free.
+// picks which one is live. Keep this file dependency-free (the colour maths it borrows from ./knot is pure too).
+import { ensureContrast, hex, parseColor } from './knot'
 
 export type Appearance = 'system' | 'light' | 'dark'
 
@@ -620,6 +621,14 @@ export function resolveVariant(themeId: string, appearance: Appearance, systemDa
  * The CSS variables a variant becomes, named the same in core's window and in every tile, so a
  * tile's page can follow the theme with `var(--ws-panel)` and friends.
  */
+/** `color` as text on the panel: moved toward the ink just far enough to reach 4.5:1. */
+function readable(color: string, v: ThemeVariant): string {
+  const c = parseColor(color)
+  const panel = parseColor(v.panel)
+  const ink = parseColor(v.ink)
+  return c && panel && ink ? hex(ensureContrast(c, [panel], ink, 4.5)) : color
+}
+
 export function themeVars(v: ThemeVariant): Record<string, string> {
   return {
     '--ws-bg': v.bg,
@@ -632,6 +641,10 @@ export function themeVars(v: ThemeVariant): Record<string, string> {
     '--ws-idle': v.idle,
     '--ws-blocked': v.blocked,
     '--ws-starting': v.starting,
-    '--ws-dead': v.dead
+    '--ws-dead': v.dead,
+    // Added and removed, good and bad (a diff's counts, a passing check): the terminal's own green
+    // and red, moved toward the ink where needed so small text in them reads on the panel (4.5:1).
+    '--ws-green': readable(v.term.green, v),
+    '--ws-red': readable(v.term.red, v)
   }
 }

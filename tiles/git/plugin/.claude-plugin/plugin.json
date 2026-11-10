@@ -1,0 +1,9 @@
+{
+  "name": "git",
+  "description": "Lets a Claude session show the user its changes in the workshop's Git tile.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DoshaLabs"
+  },
+  "license": "MIT"
+}

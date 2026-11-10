@@ -80,9 +80,9 @@ export async function installs(check: Check, { win, liveByTile, userData }: Ctx)
   await sleep(150)
   const builtin = await text('.picker-body')
   // Trusted is the smoke's built-in tile with a backend (test/fixtures/trusted, smoke only).
-  check('menu: Built in holds Wikipedia and Reminders, each with its permissions in words and whether it is on', builtin.includes('Wikipedia') && builtin.includes('Reminders') && builtin.includes('reach en.wikipedia.org') && (await js(`document.querySelectorAll('.picker .pick-state.is-on').length`)) === 3 && !builtin.includes('Probe'), builtin.slice(0, 300))
+  check('menu: Built in holds Wikipedia, Reminders and Git, each with its permissions in words and whether it is on', builtin.includes('Wikipedia') && builtin.includes('Reminders') && builtin.includes('Git') && builtin.includes('reach en.wikipedia.org') && (await js(`document.querySelectorAll('.picker .pick-state.is-on').length`)) === 4 && !builtin.includes('Probe'), builtin.slice(0, 300))
   const rows = (await js(`[...document.querySelectorAll('.picker .pick-row')].map((r) => [r.querySelector('.pick-name b')?.textContent, r.querySelector('.pick-full')?.textContent ?? ''])`)) as [string, string][]
-  check('menu: a built-in tile with a backend says, on a line of its own, that it has full access to this Mac', rows.some(([n, t]) => n === 'Trusted' && /full access to this Mac/i.test(t)) && rows.filter(([, t]) => t).length === 1, JSON.stringify(rows))
+  check('menu: a built-in tile with a backend says, on a line of its own, that it has full access to this Mac', rows.some(([n, t]) => n === 'Trusted' && /full access to this Mac/i.test(t)) && rows.some(([n, t]) => n === 'Git' && /full access to this Mac/i.test(t)) && rows.filter(([, t]) => t).length === 2, JSON.stringify(rows))
   await click('.picker [data-tab="yours"]')
   await sleep(150)
   const yours = await text('.picker-body')
