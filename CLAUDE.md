@@ -14,6 +14,7 @@ throwaway profile and `test/fixtures/probe`, a tile that tries every way out of 
 drives the door; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture of the window).
 Smoke sessions run a stand-in `claude` (`test/fixtures/fake-claude/claude`) that runs our hooks the
 way the CLI does; `WORKSHOP_REAL_CLAUDE=1 npx electron . --smoke` runs one real Haiku turn instead.
+The first build session's notes, open issues and second-pass list: `docs/progress/2026-11-10.md`.
 
 - `src/shared/manifest.ts`: the tile.json validator and the per-request network rule. Unknown
   permissions are refused, `backend` is refused, `net` is https/wss to listed hosts only.
