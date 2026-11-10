@@ -10,7 +10,7 @@
 
 import { lstat, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
-import { checkManifest, devServerOrigin, type Manifest } from '../shared/manifest'
+import { TRUSTED_ONLY, checkManifest, devServerOrigin, type Manifest } from '../shared/manifest'
 import { checkPlugin } from './plugin'
 
 export interface FolderCheck {
@@ -52,7 +52,7 @@ export function wantsBackend(raw: unknown, hasBackendFile: boolean): string | nu
   return null
 }
 
-export const TRUSTED_ONLY = 'the trusted tier (a backend with full access to the Mac) is only for tiles that ship with workshop'
+export { TRUSTED_ONLY }
 
 export async function checkTileFolder(folder: string, opts: CheckOpts = {}): Promise<FolderCheck> {
   const errors: string[] = []
@@ -88,7 +88,7 @@ export async function checkTileFolder(folder: string, opts: CheckOpts = {}): Pro
     }
   }
 
-  const checked = checkManifest(forManifest, { dev: opts.dev })
+  const checked = checkManifest(forManifest, { dev: opts.dev, builtin: opts.builtin })
   if (!checked.ok) {
     errors.push(...checked.errors)
     return out(null)
@@ -104,6 +104,17 @@ export async function checkTileFolder(folder: string, opts: CheckOpts = {}): Pro
       else if (!/http-equiv=["']?content-security-policy/i.test(await readFile(entry, 'utf8'))) warnings.push(`entry: ${m.entry} has no Content-Security-Policy <meta>; the starter's is a good one to keep`)
     } catch {
       errors.push(`entry: ${m.entry} does not exist (the built page must be committed in the folder; nothing is built on install)`)
+    }
+  }
+
+  // A built-in tile's backend: a file inside the folder, like the page.
+  if (m.backend) {
+    try {
+      const file = await realpath(resolve(root, m.backend.entry))
+      if (!inside(root, file)) errors.push(`backend.entry: ${m.backend.entry} points outside the folder`)
+      else if (!(await stat(file)).isFile()) errors.push(`backend.entry: ${m.backend.entry} is not a file`)
+    } catch {
+      errors.push(`backend.entry: ${m.backend.entry} does not exist`)
     }
   }
 

@@ -1,0 +1,14 @@
+{
+  "id": "trusted",
+  "name": "Trusted",
+  "version": "0.0.1",
+  "workshop": "^1.2",
+  "author": "workshop smoke test",
+  "hint": "A built-in tile with a backend; loaded only by npm run smoke",
+  "entry": "dist/index.html",
+  "backend": {
+    "entry": "backend.mjs",
+    "ops": ["echo", "env", "slow", "crash", "sessions", "pid", "count"],
+    "timeoutMs": 500
+  }
+}

@@ -6,8 +6,8 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-/** 1.1: `overlay` (the tile's page over the whole window). */
-export const BRIDGE_VERSION = '1.1.0'
+/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). */
+export const BRIDGE_VERSION = '1.2.0'
 
 /** A tile's own origin is tile://<id>/. */
 export const TILE_SCHEME = 'tile'
@@ -17,6 +17,23 @@ export interface DoorPermission {
   /** How long core waits for the tile to answer one call. */
   timeoutMs: number
 }
+
+/**
+ * The trusted tier: a node program beside the page (`backend.mjs`), with full access to the Mac.
+ * Declared at the top of tile.json, not under permissions, because it is not something the page
+ * may do but a second program the tile ships. CLAUDE.md §5 "Two trust tiers".
+ */
+export interface BackendDecl {
+  /** The program, a .mjs file inside the tile's folder. */
+  entry: string
+  /** What the page may ask it, by name. Anything else is refused by core before it gets there. */
+  ops: string[]
+  /** How long core waits for one answer. */
+  timeoutMs: number
+}
+
+/** Why an installed or local tile may not have a backend. The one sentence every refusal uses. */
+export const TRUSTED_ONLY = 'the trusted tier (a backend with full access to the Mac) is only for tiles that ship with workshop'
 
 export interface Permissions {
   storage?: boolean
@@ -37,7 +54,10 @@ export interface Permissions {
   overlay?: boolean
   /** Hosts the page may reach: `example.com` or `*.example.com`. Nothing else gets through. */
   net?: string[]
-  /** The trusted tier: a node process beside the page. Not accepted from any tile yet. */
+  /**
+   * Set by core, never by tile.json: true when the manifest declares a `backend`. It is here so the
+   * words the user is shown, and what an update is compared on, include it like any permission.
+   */
   backend?: boolean
 }
 
@@ -55,6 +75,8 @@ export interface Manifest {
   multiple: boolean
   span: number
   permissions: Permissions
+  /** Only on a tile that ships with workshop (`tiles/` in the app). */
+  backend?: BackendDecl
 }
 
 export type Checked = { ok: true; manifest: Manifest } | { ok: false; errors: string[] }
@@ -64,6 +86,8 @@ const OP_RE = /^[a-z][a-z0-9-]{0,31}$/
 const HOST_RE = /^(\*\.)?(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
 export const DOOR_TIMEOUT_DEFAULT = 10_000
 export const DOOR_TIMEOUT_MAX = 120_000
+export const BACKEND_TIMEOUT_DEFAULT = 10_000
+export const BACKEND_TIMEOUT_MAX = 120_000
 
 const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'net', 'backend'])
 
@@ -89,7 +113,35 @@ export function devServerOrigin(entry: string): string | null {
   return m && Number(m[2]) > 0 && Number(m[2]) < 65536 ? `http://${m[1]}:${m[2]}` : null
 }
 
-export function checkManifest(raw: unknown, opts: { dev?: boolean } = {}): Checked {
+/**
+ * A list of op names and a timeout, the same rules for the door and a backend: 1 to 32 lowercase
+ * words, none twice, and a timeout from 100 ms to the cap. Errors go to `errors` under `where`.
+ */
+function checkOps(d: unknown, where: string, extra: string[], timeout: { def: number; max: number }, errors: string[]): { ops: string[]; timeoutMs: number } | null {
+  if (!isObj(d) || !Array.isArray(d.ops) || d.ops.length === 0 || d.ops.length > 32) {
+    errors.push(`${where}: { ${extra.map((k) => `"${k}": …, `).join('')}"ops": [1 to 32 op names], "timeoutMs"?: number }`)
+    return null
+  }
+  const ops = d.ops.filter((o): o is string => typeof o === 'string' && OP_RE.test(o))
+  if (ops.length !== d.ops.length) errors.push(`${where}.ops: each op is a lowercase word (letters, digits, dashes), at most 32 long`)
+  if (new Set(ops).size !== ops.length) errors.push(`${where}.ops: listed twice`)
+  let timeoutMs = timeout.def
+  if (d.timeoutMs !== undefined) {
+    if (typeof d.timeoutMs !== 'number' || !Number.isInteger(d.timeoutMs) || d.timeoutMs < 100 || d.timeoutMs > timeout.max) errors.push(`${where}.timeoutMs: a whole number from 100 to ${timeout.max}`)
+    else timeoutMs = d.timeoutMs
+  }
+  for (const k of Object.keys(d)) if (k !== 'ops' && k !== 'timeoutMs' && !extra.includes(k)) errors.push(`${where}.${k}: not known`)
+  return { ops, timeoutMs }
+}
+
+export interface CheckOptions {
+  /** Loaded with `workshop tile dev`: the entry may be a dev server. */
+  dev?: boolean
+  /** Ships with workshop (`tiles/` in the app): the only tiles that may declare a backend. */
+  builtin?: boolean
+}
+
+export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
   const errors: string[] = []
   if (!isObj(raw)) return { ok: false, errors: ['tile.json must be a JSON object'] }
   const str = (k: string, max: number, required = true): string | undefined => {
@@ -161,20 +213,8 @@ export function checkManifest(raw: unknown, opts: { dev?: boolean } = {}): Check
       else permissions.sessions = p.sessions
     }
     if (p.door !== undefined) {
-      const d = p.door
-      if (!isObj(d) || !Array.isArray(d.ops) || d.ops.length === 0 || d.ops.length > 32) errors.push('permissions.door: { "ops": [1 to 32 op names], "timeoutMs"?: number }')
-      else {
-        const ops = d.ops.filter((o): o is string => typeof o === 'string' && OP_RE.test(o))
-        if (ops.length !== d.ops.length) errors.push('permissions.door.ops: each op is a lowercase word (letters, digits, dashes), at most 32 long')
-        if (new Set(ops).size !== ops.length) errors.push('permissions.door.ops: listed twice')
-        let timeoutMs = DOOR_TIMEOUT_DEFAULT
-        if (d.timeoutMs !== undefined) {
-          if (typeof d.timeoutMs !== 'number' || !Number.isInteger(d.timeoutMs) || d.timeoutMs < 100 || d.timeoutMs > DOOR_TIMEOUT_MAX) errors.push(`permissions.door.timeoutMs: a whole number from 100 to ${DOOR_TIMEOUT_MAX}`)
-          else timeoutMs = d.timeoutMs
-        }
-        for (const k of Object.keys(d)) if (k !== 'ops' && k !== 'timeoutMs') errors.push(`permissions.door.${k}: not known`)
-        permissions.door = { ops, timeoutMs }
-      }
+      const door = checkOps(p.door, 'permissions.door', [], { def: DOOR_TIMEOUT_DEFAULT, max: DOOR_TIMEOUT_MAX }, errors)
+      if (door) permissions.door = door
     }
     if (p.net !== undefined) {
       if (!Array.isArray(p.net) || p.net.length > 32) errors.push('permissions.net: a list of at most 32 host names')
@@ -185,11 +225,30 @@ export function checkManifest(raw: unknown, opts: { dev?: boolean } = {}): Check
         if (hosts.length) permissions.net = hosts
       }
     }
-    if (p.backend !== undefined) errors.push('permissions.backend: the trusted tier is not open to tiles in this build')
+    // Never a permission a tile writes: core sets it from the top-level `backend` below.
+    if (p.backend !== undefined)
+      errors.push(opts.builtin ? 'permissions.backend: declare a backend at the top of tile.json, as "backend": { "entry": "backend.mjs", "ops": [...] }' : `permissions.backend: ${TRUSTED_ONLY}`)
+  }
+
+  let backend: BackendDecl | undefined
+  if (raw.backend !== undefined) {
+    if (!opts.builtin) errors.push(`backend: ${TRUSTED_ONLY}`)
+    else {
+      const b = raw.backend
+      const ops = checkOps(b, 'backend', ['entry'], { def: BACKEND_TIMEOUT_DEFAULT, max: BACKEND_TIMEOUT_MAX }, errors)
+      const entry = isObj(b) ? b.entry : undefined
+      const bad = badRelPath(entry)
+      if (bad) errors.push(`backend.entry: ${bad}`)
+      else if (!(entry as string).endsWith('.mjs')) errors.push('backend.entry: must be an .mjs file (an ES module)')
+      if (ops && !bad) {
+        backend = { entry: entry as string, ops: ops.ops, timeoutMs: ops.timeoutMs }
+        permissions.backend = true
+      }
+    }
   }
 
   if (errors.length || !id || !name || !version || !range || !author || !entry) return { ok: false, errors: errors.length ? errors : ['incomplete manifest'] }
-  return { ok: true, manifest: { id, name, version, workshop: range, author, repo, hint, icon, entry, pane, multiple, span, permissions } }
+  return { ok: true, manifest: { id, name, version, workshop: range, author, repo, hint, icon, entry, pane, multiple, span, permissions, ...(backend ? { backend } : {}) } }
 }
 
 /** Whether `host` (from a request URL, lowercase) is one the manifest's `net` list lets through. */

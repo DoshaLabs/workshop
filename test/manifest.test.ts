@@ -25,6 +25,8 @@ describe('checkManifest', () => {
 
   it('accepts the shipped tiles', () => {
     for (const f of ['tiles/wikipedia/tile.json', 'test/fixtures/probe/tile.json']) expect(errs(JSON.parse(readFileSync(f, 'utf8')))).toEqual([])
+    const trusted = checkManifest(JSON.parse(readFileSync('test/fixtures/trusted/tile.json', 'utf8')), { builtin: true })
+    expect(trusted.ok ? [] : trusted.errors).toEqual([])
   })
 
   it('fills defaults', () => {
@@ -47,11 +49,37 @@ describe('checkManifest', () => {
 
   it('says which bridge an overlay tile needs', () => {
     expect(checkManifest({ ...base, workshop: '^1.1', permissions: { overlay: true } }).ok).toBe(true)
-    expect(errs({ ...base, workshop: '^1.2' })[0]).toMatch(/does not accept/)
+    expect(checkManifest({ ...base, workshop: '^1.2' }).ok).toBe(true)
+    expect(errs({ ...base, workshop: '^1.3' })[0]).toMatch(/does not accept/)
   })
 
-  it('refuses the trusted tier', () => {
-    expect(errs({ ...base, permissions: { backend: true } })[0]).toMatch(/trusted tier/)
+  it('refuses the trusted tier for any tile not built in, however it is asked for', () => {
+    expect(errs({ ...base, permissions: { backend: true } })[0]).toMatch(/^permissions.backend: the trusted tier .* only for tiles that ship with workshop/)
+    expect(errs({ ...base, backend: { entry: 'backend.mjs', ops: ['status'] } })[0]).toMatch(/^backend: the trusted tier .* only for tiles that ship with workshop/)
+    expect(checkManifest({ ...base, backend: { entry: 'backend.mjs', ops: ['status'] } }, { dev: true }).ok).toBe(false)
+  })
+
+  it('takes a built-in tile\'s backend: an .mjs in the folder, ops as the door\'s, a timeout', () => {
+    const built = (backend: unknown): string[] => {
+      const r = checkManifest({ ...base, backend }, { builtin: true })
+      return r.ok ? [] : r.errors
+    }
+    const r = checkManifest({ ...base, backend: { entry: 'backend.mjs', ops: ['status', 'diff'] } }, { builtin: true })
+    expect(r.ok && r.manifest.backend).toEqual({ entry: 'backend.mjs', ops: ['status', 'diff'], timeoutMs: 10_000 })
+    // Shown and compared like a permission, though a tile cannot write it as one.
+    expect(r.ok && r.manifest.permissions.backend).toBe(true)
+    expect(checkManifest(base, { builtin: true }).ok && (checkManifest(base, { builtin: true }) as { manifest: Manifest }).manifest.backend).toBeUndefined()
+    expect(built({ entry: 'b.mjs', ops: ['x'], timeoutMs: 60_000 })).toEqual([])
+    expect(built({ entry: 'b.js', ops: ['x'] })[0]).toMatch(/backend.entry: must be an .mjs/)
+    expect(built({ entry: '../b.mjs', ops: ['x'] })[0]).toMatch(/backend.entry/)
+    expect(built({ entry: '/b.mjs', ops: ['x'] })[0]).toMatch(/backend.entry/)
+    expect(built({ entry: 'b.mjs', ops: [] })[0]).toMatch(/^backend: /)
+    expect(built({ entry: 'b.mjs', ops: ['Status'] })[0]).toMatch(/backend.ops: each op/)
+    expect(built({ entry: 'b.mjs', ops: ['a', 'a'] })[0]).toMatch(/backend.ops: listed twice/)
+    expect(built({ entry: 'b.mjs', ops: ['a'], timeoutMs: 50 })[0]).toMatch(/backend.timeoutMs/)
+    expect(built({ entry: 'b.mjs', ops: ['a'], background: true })[0]).toMatch(/backend.background: not known/)
+    expect(built(true)[0]).toMatch(/^backend: /)
+    expect(checkManifest({ ...base, permissions: { backend: true } }, { builtin: true }).ok).toBe(false)
   })
 
   it('refuses a bridge range this core does not satisfy', () => {
