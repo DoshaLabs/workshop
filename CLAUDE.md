@@ -58,8 +58,8 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   `src/renderer/src/cosmos.ts`. Glass is solid until its picture wall comes over from deck.
 - Sessions (`src/main/core-sessions.ts` wires them): `sessions.ts` (tmux + node-pty, park /
   resume / kill), `hooks.ts` (the `--settings` file), `fleet.ts`, `usage.ts`, `tmux.ts`, `env.ts`,
-  carried from deck without slots, cap or wolfpack. In the window: `Sessions.tsx` (column,
-  launcher, focus pane) and `terminals.ts`. Differences from deck: hooks go through the door's
+  carried from deck without slots, cap or wolfpack. In the window: `SessionColumn.tsx`,
+  `Sessions.tsx` (launcher, focus pane) and `terminals.ts`. Differences from deck: hooks go through the door's
   server with a per-session token kept in a 0600 file named by `WORKSHOP_AUTH` (never on a
   command line, where `ps` shows it), so core knows which session called (the door's `caller`
   is the session's name) and a hook naming another session's id is ignored; hooks read core's
@@ -72,8 +72,22 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   input in that page (`input-event` / `before-input-event`, used up per open) and takes Esc from
   every webContents before the page sees it (`index.ts` `escClosesOverlay`). Wikipedia's picture
   lightbox uses it.
-- Not yet: `transcripts`, the trusted tier, session tiles (conversations as tiles), the leash and
-  permission prompts in a tile, Foxtrot.
+- Session tiles (phase 1, `docs/progress/2026-11-10-phase1.md`): the left column is a column of
+  tiles, one per open session, each its live conversation (`ChatView.tsx`; prose as markdown in
+  the serif face, parsed to a tree by `src/shared/markdown.ts`, never HTML), with ⌘n, the status
+  dot, Claude's title, model, context % and cost on its head and a prompt bar at its foot. Main
+  tails each open session's transcript (`src/main/transcript.ts`, parser in
+  `src/shared/transcript.ts`), finding `<session id>.jsonl` under the CLI's config folder by
+  name. The focused session's terminal is in the center and its tile gives way to a line; parked
+  sessions are a Closed card at the foot. A render error stays in its piece (`Guard.tsx`).
+- Usage: the top bar's 5-hour and weekly meters are always there (a dash and a tooltip until a
+  session reports); each session shows its context % and cost.
+- Shortcuts (`src/shared/shortcuts.ts`): ⌘1–9 (sessions in the order they were started), ⌘[ ⌘],
+  ⌘N. Main catches them in `before-input-event` on core's window and every tile's page.
+- The tile column's state (off, extra instances, heights) is `settings.column` in core's
+  settings (`src/shared/column.ts`), migrated once from the window's old localStorage.
+- Not yet: `transcripts` for tiles, the trusted tier, subagent tiles and the wolfpack, the leash
+  and permission prompts in a tile, the preview pane, drag to reorder, Foxtrot.
 
 Terms used throughout:
 
@@ -467,7 +481,9 @@ the working version.
 - **Tiles of sessions are conversations, not terminals.** Main tails each session's transcript
   JSONL and the tile renders prompts, prose as markdown, and a line per tool call. Only the
   focused session mounts a terminal, and only that terminal holds a WebGL context.
-  (`transcript.ts`, `ChatView`)
+  (`transcript.ts`, `ChatView`; built so in workshop too.) The CLI writes lines it injects as
+  the user (a background task's notification, another session's message) with an `origin` that
+  is not `human`: they are not your prompts, and the tile does not show them as such.
 - **Status = a poll plus hooks.** `claude agents --json` polled is the truth; Notification / Stop
   / UserPromptSubmit hooks make it instant. After a Stop, the poll's "busy" is not believed until
   the next prompt (a background shell outliving the turn reads as busy). (`fleet.ts`, `hooks.ts`)

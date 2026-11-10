@@ -36,15 +36,17 @@ else gets used for real.
 
 | Piece | From deck | Size |
 |---|---|---|
-| Context % and cost on each session's row; usage meters always present (empty until known) | `usage.ts` data exists | S |
-| Session tiles: the conversation, not a terminal, for every unfocused session | `transcript.ts`, `ChatView` | L |
+| ✅ Context % and cost on each session's row; usage meters always present (empty until known) | `usage.ts` data exists | S |
+| ✅ Session tiles: the conversation, not a terminal, for every unfocused session | `transcript.ts`, `ChatView` | L |
 | `workshop.sessions.transcript` + the `transcripts` permission and its loud prompt | same tailer | M |
 | Subagent and helper-session tiles with pause and kill (wolfpack) | hooks, sidecar reading | L |
 | The leash: PreToolUse held at `/pretool` | `hooks.ts` | M |
 | Permission prompts answered from a tile (the biggest gap against the Claude app) | new; verify the route first | M |
 | Preview pane: read, tick boxes, edit a file a session points at | deck's pane | M |
-| Keyboard shortcuts (⌘1–9, ⌘[ ⌘], ⌘N), drag to reorder tiles, image paste into a prompt | deck | M |
-| Tile column state (`off`, `extra`, `span`) into core's settings, out of `localStorage` | | S |
+| ✅ Keyboard shortcuts (⌘1–9, ⌘[ ⌘], ⌘N); still to do: drag to reorder tiles, image paste into a prompt | deck | M |
+| ✅ Tile column state (`off`, `extra`, `span`) into core's settings, out of `localStorage` | | S |
+
+The four ✅ rows were done on 10 Nov 2026 (`docs/progress/2026-11-10-phase1.md`).
 
 ## Phase 2: the mascot (M) · §8
 
