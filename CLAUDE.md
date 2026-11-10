@@ -18,6 +18,17 @@ Smoke sessions run a stand-in `claude` (`test/fixtures/fake-claude/claude`) that
 way the CLI does; `WORKSHOP_REAL_CLAUDE=1 npx electron . --smoke` runs one real Haiku turn instead.
 The first build session's notes, open issues and second-pass list: `docs/progress/2026-11-10.md`.
 
+`npm run dist` builds `dist/mac-arm64/workshop.app` (electron-builder, signed with the keychain's
+identity, hardened runtime, not notarized); `npm run install-app` builds it and copies it to
+/Applications, refusing while that copy runs. The installed app (profile `workshop`) shows
+"Install update" in its top bar when the repo it was built from changes (`src/main/updates.ts`,
+carried from deck: a fingerprint of the source every minute, `npm run dist`, then a swap once it
+has quit, and a relaunch; sessions carry on in tmux). `npm run icon` redraws `build/icon.icns`
+from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `assets`, `plugin`,
+`native`) are `extraResources`, found through `coreFile()` (`src/main/resources.ts`).
+`WORKSHOP_PROFILE=<name>` runs any build on a throwaway profile. Notes:
+`docs/progress/2026-11-10-dist.md`.
+
 - `src/shared/manifest.ts`: the tile.json validator and the per-request network rule. Unknown
   permissions are refused, `backend` is refused, `net` is https/wss to listed hosts only.
 - `src/main/tiles.ts`: finds tiles (`--dev-tile=<folder>`, then `tiles/`, then userData `tiles/`;
@@ -595,7 +606,11 @@ the working version.
   Right: tiles, draggable, each column its own endless scroll. Center: whatever you are on now.
 - **Profiles.** The profile name is the tmux socket name and the settings folder name, with its
   own hook port, so a dev build never sees the installed app's sessions. A session working ON
-  workshop can run the dev build inside the installed one.
+  workshop can run the dev build inside the installed one. The installed app is `workshop`, `npm run dev` is `workshop-dev`, `WORKSHOP_PROFILE=<name>` is any
+  other (install update is off there).
+- **Dev and installed.** `npm run dev` hot-reloads the window and reloads dev tiles on save. The
+  installed app updates itself from the repo it was built from: "Install update" builds it, swaps
+  the bundle once the app has quit and relaunches; the tmux sessions are reattached.
 - **Themes are data.** A catalog of families with light and dark variants, written into CSS
   variables and the terminal palette. No colour is hard-coded in the stylesheet. Deep Space is a
   star-field wall behind see-through panes and is dark in both appearances.

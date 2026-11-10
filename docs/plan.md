@@ -135,6 +135,10 @@ sprite packs as a second category, the tile template as its own repo with `npm c
 
 ## Track H: something a stranger can install (M) · §10
 
+Done 10 Nov 2026 (`docs/progress/2026-11-10-dist.md`): packaging (`npm run dist`, signed with the keychain's
+identity, not notarized), `npm run install-app`, Install update, the Knot as the app icon. Still to
+do: a stranger's installer (a notarized download), the tutorial session, provider profiles.
+
 Packaging (electron-builder; `tmux.conf`, the door CLI, `tiles/`, `template/`, `assets/` as
 `extraResources`), the install script, the tutorial session on first launch, `README`,
 `LICENSE`, bring-your-own-model provider profiles.
