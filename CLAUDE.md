@@ -55,7 +55,10 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   moves to its own repo (section 3). What the port changed in core and what it could not do:
   `docs/progress/2026-11-10.md` section 8.
 - Layout: three equal columns, as in deck. The tile column is four rows tall: a tile is one row
-  (its manifest's `span`, 1 for every core tile) and ↕ on its head steps it taller.
+  (its manifest's `span`, 1 for every core tile) and ↕ on its head steps it taller. A new profile's column starts
+  with Wikipedia at the top (`shared/column.ts` `DEFAULT_ORDER`). The left column's session tiles
+  are one row too, so the two columns line up. A wheel a tile's page cannot use scrolls the column
+  (`preload/tile.ts`).
 - The `+` is the tile column's last cell (`TilePicker.tsx`), a card in three tabs. Built in:
   `tiles/`. Yours: dev folders, "make one with Claude" (copies `template/` to
   `~/workshop-tiles/<id>`, `src/main/scaffold.ts`, loads it as a dev tile, starts a session
@@ -146,7 +149,10 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   dot, Claude's title, model, context % and cost on its head and a prompt bar at its foot. Main
   tails each open session's transcript (`src/main/transcript.ts`, parser in
   `src/shared/transcript.ts`), finding `<session id>.jsonl` under the CLI's config folder by
-  name. The focused session's terminal is in the center and its tile gives way to a line; parked
+  name. The focused session's terminal is in the center and its tile leaves the column, as in
+  deck (the center's head has its ⌘ number and park ×); a conversation is pinned to the latest and
+  scrolls up for history; files dropped on a session (`drop.ts`) are pasted as paths on the
+  terminal or a tile, and wait as a chip on a prompt bar; parked
   sessions are a Closed card at the foot. A render error stays in its piece (`Guard.tsx`).
 - Usage: the top bar's 5-hour and weekly meters are always there (a dash and a tooltip until a
   session reports); each session shows its context % and cost.
@@ -434,6 +440,8 @@ sandbox, and making the exception loud and rare, is the answer to it.
   window under a 40 px strip core draws (icon, name, Esc, ×). The page cannot reach the strip.
   Opening needs real input in that page in the last 5 s, one open per input; Esc from any
   webContents closes it in main and never reaches the page. The page draws its own dim backdrop.
+- **The wheel** at a page's edge is the column's (`preload/tile.ts`), as nested scrolling is in a
+  page: a tile that scrolls keeps the wheel until its end.
 - **Files** (`src/main/files.ts`): `pick()` opens the macOS chooser; what the user picks is a grant
   for that tile, remembered across restarts. The page gets a handle and a name, never the path, and
   reads through its own origin at `tile://<id>/~files/<handle>/<path>`, streamed (a disc image
@@ -637,6 +645,8 @@ the working version.
 - **Electron ships no Widevine**, so web players that need DRM (Spotify's) cannot be embedded;
   drive the native app instead.
 - **tmux 3.5a rejects `=name` exact-match targets** for some commands; use plain names.
+- **`-webkit-app-region` is inherited**, and `none` is not a keyword Chromium takes: reset it with
+  `initial`. A full-window fixed layer under `.app > *` silently made the whole window no-drag.
 - **Keep this file small.** deck's CLAUDE.md grew to 175,000 characters, past Claude Code's
   150,000 limit. This file is loaded into every session: one screen per topic, details in
   `docs/`.
