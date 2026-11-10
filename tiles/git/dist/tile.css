@@ -1,0 +1,334 @@
+/* Colours come from workshop as --ws-* variables, already on :root, and follow the user's theme.
+   --ws-green and --ws-red are the theme's own (its terminal's), for added and removed lines. */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  font: 12px/1.45 var(--ws-font, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif);
+}
+body {
+  display: flex;
+  flex-direction: column;
+  --mono: var(--ws-font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  --green: var(--ws-green, #3f8f4f);
+  --red: var(--ws-red, #c8453a);
+  --fill: color-mix(in srgb, var(--ws-ink) 6%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+body.pane {
+  font-size: 13px;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+.spacer {
+  flex: 1 1 auto;
+}
+.muted {
+  color: var(--ws-muted);
+}
+.err {
+  color: var(--red);
+}
+
+#bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--ws-line);
+}
+.tabs {
+  display: flex;
+  gap: 2px;
+}
+.tabs button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ws-muted);
+  padding: 1px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tabs button:hover {
+  color: var(--ws-ink);
+}
+.tabs button.on {
+  color: var(--ws-ink);
+  background: color-mix(in srgb, var(--ws-ink) 12%, transparent);
+}
+.when {
+  font-size: 11px;
+}
+#problem {
+  flex: none;
+  padding: 5px 10px;
+  color: var(--red);
+  border-bottom: 1px solid var(--ws-line);
+}
+#body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 0 10px;
+}
+.empty,
+.coming {
+  padding: 10px 12px;
+}
+.coming p {
+  margin: 0 0 6px;
+  max-width: 46ch;
+}
+.coming-title {
+  font-weight: 700;
+}
+
+/* A project, then a line per working tree. */
+.project {
+  padding: 4px 0;
+}
+.project + .project {
+  border-top: 1px solid var(--ws-line);
+}
+.project-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 10px 2px;
+  min-width: 0;
+}
+.project-name {
+  font-weight: 700;
+  flex: none;
+}
+.path {
+  font: 11px var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+.line {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 4px 10px 5px;
+  cursor: pointer;
+}
+.line:hover:not(:disabled),
+.line.open {
+  background: var(--fill);
+}
+.line:disabled {
+  cursor: default;
+}
+.line.outside {
+  padding: 3px 10px 3px 26px;
+}
+.row1,
+.row2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.row2 {
+  padding-left: 16px;
+  font-size: 11px;
+}
+.caret {
+  flex: none;
+  width: 10px;
+  color: var(--ws-muted);
+}
+.branch {
+  font-family: var(--mono);
+  color: var(--ws-accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tag {
+  flex: none;
+  font-size: 11px;
+}
+.who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.add,
+.del {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.add {
+  color: var(--green);
+}
+.del {
+  color: var(--red);
+}
+.count {
+  flex: none;
+}
+.dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ws-idle);
+}
+.dot.busy {
+  background: var(--ws-busy);
+}
+.dot.blocked {
+  background: var(--ws-blocked);
+}
+.dot.starting {
+  background: var(--ws-starting);
+}
+.dot.dead {
+  background: var(--ws-dead);
+}
+
+/* Unfolded: the files, then their diffs. */
+.changes {
+  padding: 2px 0 8px;
+  background: var(--fill);
+}
+.files {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px 6px 26px;
+}
+.file-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.letter {
+  flex: none;
+  width: 1ch;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ws-muted);
+}
+.k-added,
+.k-untracked {
+  color: var(--green);
+}
+.k-deleted,
+.k-conflict {
+  color: var(--red);
+}
+.fpath {
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.note {
+  margin: 4px 10px;
+  font-size: 11px;
+}
+.diffs {
+  padding: 0 6px;
+}
+.dfile {
+  margin-top: 6px;
+  border: 1px solid var(--ws-line);
+  border-radius: 5px;
+  background: var(--ws-panel);
+  overflow: hidden;
+}
+.dfile-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--ws-line);
+  background: var(--fill);
+  padding: 3px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 11px;
+}
+.code {
+  overflow-x: auto;
+  font: 11px/1.5 var(--mono);
+}
+body.pane .code {
+  font-size: 12px;
+}
+.code-in {
+  width: max-content;
+  min-width: 100%;
+}
+.hunk {
+  padding: 2px 8px;
+  color: var(--ws-muted);
+  background: color-mix(in srgb, var(--ws-accent) 8%, transparent);
+  white-space: pre;
+}
+.section {
+  color: var(--ws-ink);
+  opacity: 0.7;
+}
+.l {
+  display: flex;
+  white-space: pre;
+}
+.l .no {
+  flex: none;
+  width: 4ch;
+  padding-right: 4px;
+  text-align: right;
+  color: var(--ws-muted);
+  opacity: 0.7;
+  user-select: none;
+}
+/* In the narrow tile, one column of numbers is enough: the new file's. */
+body:not(.pane) .l .no:first-child {
+  display: none;
+}
+.l .mk {
+  flex: none;
+  width: 2ch;
+  text-align: center;
+  user-select: none;
+}
+.l .s {
+  padding-right: 10px;
+}
+.l.a {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+}
+.l.a .mk {
+  color: var(--green);
+}
+.l.d {
+  background: color-mix(in srgb, var(--red) 15%, transparent);
+}
+.l.d .mk {
+  color: var(--red);
+}
+.l.nn {
+  color: var(--ws-muted);
+  font-style: italic;
+}

@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { CH } from '@shared/ipc'
 import type { Door } from './door'
 import { installs } from './smoke-install'
+import { gitSmoke } from './smoke-git'
 import { backendSmoke } from './smoke-backend'
 import type { Backends } from './backend'
 import { previewSmoke, reorderSmoke } from './smoke-preview'
@@ -206,6 +207,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await instances(check, ctx)
     await installs(check, ctx)
     await backendSmoke(check, ctx)
+    await gitSmoke(check, ctx)
     await musicSmoke(check, ctx)
     await knotClock(check, ctx)
     await recorderSmoke(check, ctx)
