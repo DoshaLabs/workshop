@@ -9,6 +9,7 @@ import { app, session, type Session } from 'electron'
 import { TILE_SCHEME, checkManifest, devServerOrigin, requestAllowed, type Manifest } from '@shared/manifest'
 import type { TileInfo, TileProblem } from '@shared/ipc'
 import { checkPlugin } from './plugin'
+import { BACKEND_FILE, TRUSTED_ONLY, wantsBackend } from './tile-check'
 import { FILES_PREFIX, type TileGrants } from './files'
 import { FONTS_PREFIX, FONT_FILES } from '@shared/fonts'
 import { createReadStream } from 'node:fs'
@@ -93,6 +94,10 @@ export async function readTile(folder: string, source: Tile['source']): Promise<
   } catch (err) {
     return { folder, errors: [`tile.json: ${(err as Error).message}`] }
   }
+  // The trusted tier is for tiles that ship with workshop: an installed or local tile asking for a
+  // backend is refused here, with the reason, whatever the manifest validator would say.
+  const backend = source === 'core' ? null : wantsBackend(raw, await stat(join(folder, BACKEND_FILE)).then(() => true, () => false))
+  if (backend) return { folder, errors: [`backend: ${TRUSTED_ONLY}, and ${backend}`] }
   const checked = checkManifest(raw, { dev: source === 'dev' })
   if (!checked.ok) return { folder, errors: checked.errors }
   const m = checked.manifest

@@ -21,6 +21,7 @@ import { runSmoke } from './smoke'
 import { scaffoldTile } from './scaffold'
 import { startSessions, type CoreSessions } from './core-sessions'
 import { MascotStore } from './mascot'
+import { startTileMenu } from './tile-menu'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 
@@ -673,6 +674,7 @@ app.whenReady().then(async () => {
   writeFileSync(join(app.getPath('userData'), 'door.json'), JSON.stringify({ port: door.port, token: door.token }), { mode: 0o600 })
 
   bridge()
+  await startTileMenu({ win: () => win, registry: () => registry, settings: () => settings, userData: app.getPath('userData'), addDevTile, dropData: (id) => (stores.delete(id), grants.delete(id)), smoke: SMOKE })
   core = await startSessions({
     win: () => win,
     door,

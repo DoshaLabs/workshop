@@ -16,6 +16,8 @@ export interface Settings {
   mascot: string | null
   /** The tile column (off, extra instances, heights). Absent until first saved: the window then migrates its old localStorage once. */
   column?: ColumnState
+  /** Where the + menu's Marketplace tab reads the tile index (`tiles.json`): an https URL, or a file on this Mac. Absent: none yet. */
+  index?: string
 }
 
 const DEFAULTS: Settings = { theme: DEFAULT_THEME_ID, appearance: 'system', devTiles: [], mascot: null }
@@ -28,7 +30,8 @@ export function cleanSettings(raw: unknown, base: Settings = DEFAULTS): Settings
     appearance: r.appearance === 'light' || r.appearance === 'dark' || r.appearance === 'system' ? r.appearance : base.appearance,
     devTiles: Array.isArray(r.devTiles) ? [...new Set(r.devTiles.filter((d): d is string => typeof d === 'string' && d.startsWith('/')))].slice(0, 50) : base.devTiles,
     mascot: r.mascot === null || (typeof r.mascot === 'string' && /^[a-z0-9][a-z0-9-]{0,39}$/.test(r.mascot)) ? (r.mascot as string | null) : base.mascot,
-    ...column(r.column, base.column)
+    ...column(r.column, base.column),
+    ...indexOf(r.index, base.index)
   }
 }
 
@@ -36,6 +39,13 @@ export function cleanSettings(raw: unknown, base: Settings = DEFAULTS): Settings
 function column(raw: unknown, base: ColumnState | undefined): { column?: ColumnState } {
   const c = cleanColumn(raw) ?? base
   return c ? { column: c } : {}
+}
+
+/** The index's address as saved; '' clears it. */
+function indexOf(raw: unknown, base: string | undefined): { index?: string } {
+  if (raw === '') return {}
+  if (typeof raw === 'string' && raw.length <= 500 && /^(https:\/\/|file:\/\/\/|\/)\S+$/.test(raw)) return { index: raw }
+  return base ? { index: base } : {}
 }
 
 export class SettingsStore {
