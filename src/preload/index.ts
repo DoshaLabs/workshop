@@ -10,6 +10,7 @@ import type { ActiveMascot } from '../shared/mascot'
 import { MENU, type IndexState, type InstallRecord, type InstallRequest, type PendingInstall } from '../shared/tile-menu'
 import type { PreviewDoc, PreviewRef, PreviewWrite } from '../shared/preview'
 import type { RecState } from '../shared/recorder'
+import type { AppUpdate } from '../shared/update'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
@@ -95,6 +96,12 @@ const core = {
     toggle: (): Promise<void> => ipcRenderer.invoke(CH.recToggle),
     state: (): Promise<RecState> => ipcRenderer.invoke(CH.recStateGet),
     onState: (fn: (s: RecState) => void) => on(CH.recState, fn)
+  },
+  /** Install update (main/updates.ts): whether the repo the app was built from has changed, and building and swapping in the new app. */
+  update: {
+    state: (): Promise<AppUpdate> => ipcRenderer.invoke(CH.updateGet),
+    install: (): Promise<void> => ipcRenderer.invoke(CH.updateInstall),
+    onState: (fn: (u: AppUpdate) => void) => on(CH.updateState, fn)
   },
   keepDrop: async (file: File): Promise<string> => {
     let path = ''

@@ -15,6 +15,10 @@ import { FONTS_PREFIX, FONT_FILES } from '@shared/fonts'
 import { ART_KEY_RE, MUSIC_ART_PREFIX } from '@shared/music'
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
+import { resourcePath } from './resources'
+
+/** One of core's own files (tiles/, assets/, bin/, …): the repo in dev, Contents/Resources packaged (main/resources.ts). */
+export const coreFile = (...parts: string[]): string => resourcePath({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() }, ...parts)
 
 /** Set by main: the file grants of a tile (main/files.ts). */
 let grantsOf: (id: string) => TileGrants = () => {
@@ -239,7 +243,7 @@ async function armOne(tile: Tile, ses: Session): Promise<void> {
     if (rel.startsWith(FONTS_PREFIX)) {
       const font = FONT_FILES.find((f) => f.file === rel.slice(FONTS_PREFIX.length))
       if (!font) return new Response('not found', { status: 404, headers: cors })
-      return new Response(await readFile(join(app.getAppPath(), 'assets', 'fonts', font.file)), { headers: { ...cors, 'Content-Type': 'font/woff2', 'Cache-Control': 'max-age=86400' } })
+      return new Response(await readFile(coreFile('assets', 'fonts', font.file)), { headers: { ...cors, 'Content-Type': 'font/woff2', 'Cache-Control': 'max-age=86400' } })
     }
     if (rel.startsWith(FILES_PREFIX)) {
       if (!permissions.files) return new Response('not found', { status: 404 })

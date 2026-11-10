@@ -18,7 +18,54 @@
     "smoke": "npm run build && electron . --smoke",
     "site": "vite build --config vite.site.config.ts",
     "readme-art": "node scripts/knot-svg.mjs",
+    "icon": "electron scripts/icon.mjs",
+    "dist": "npm run build && node scripts/stamp.mjs && electron-builder --mac",
+    "install-app": "node scripts/install-app.mjs",
     "postinstall": "electron-rebuild -f -w node-pty"
+  },
+  "build": {
+    "appId": "app.dosha.workshop",
+    "productName": "workshop",
+    "copyright": "Copyright © 2026 DoshaLabs",
+    "afterPack": "scripts/after-pack.cjs",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "out/**"
+    ],
+    "extraResources": [
+      "tmux.conf",
+      "bin",
+      "tiles",
+      "template",
+      "assets",
+      "plugin",
+      "native",
+      {
+        "from": "out/check",
+        "to": "out/check"
+      }
+    ],
+    "asarUnpack": [
+      "**/node_modules/node-pty/**"
+    ],
+    "mac": {
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dir"
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSAppleEventsUsageDescription": "Tiles that show what is playing read and control Music and Spotify.",
+        "NSMicrophoneUsageDescription": "The screen recorder records the Mac's sound (through BlackHole) and, if you ask, your microphone. A tile you have allowed the microphone may use it too.",
+        "NSCameraUsageDescription": "Only for a tile you have allowed the camera."
+      }
+    }
   },
   "dependencies": {
     "@xterm/addon-webgl": "^0.19.0",
@@ -36,6 +83,7 @@
     "@types/semver": "^7.7.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.3.0",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^5.0.0",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",

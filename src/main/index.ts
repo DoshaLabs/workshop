@@ -16,7 +16,7 @@ import { SettingsStore, type Settings } from './settings'
 import { Door } from './door'
 import { TileGrants } from './files'
 import { TileStore } from './storage'
-import { MAX_INSTANCES, TILE_SCHEME, armSession, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
+import { MAX_INSTANCES, TILE_SCHEME, armSession, coreFile, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
 import { runRestarted, runSmoke } from './smoke'
 import { scaffoldTile } from './scaffold'
 import { startSessions, type CoreSessions } from './core-sessions'
@@ -33,6 +33,8 @@ import { Recorder } from './recorder'
 import { REC, REC_DEFAULTS } from '@shared/recorder'
 import { launchRequest, type LaunchPrefill, type SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
+import { parseBuildInfo } from '@shared/update'
+import { Updater, bundleOf } from './updates'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
 const RESTARTED = process.argv.includes('--smoke-restarted')
@@ -47,11 +49,18 @@ const devTiles = devTilesIn(process.argv)
  * build inside the installed one. A smoke run gets a throwaway one.
  */
 const DEV = !!process.env.ELECTRON_RENDERER_URL
-const PROFILE = RESTARTED ? process.env.WORKSHOP_SMOKE_PROFILE! : SMOKE ? `workshop-smoke-${process.pid}` : DEV ? 'workshop-dev' : 'workshop'
+/**
+ * WORKSHOP_PROFILE=<name> runs on a profile of that name (its own tmux socket and its own folder
+ * beside the usual one): a look at a build without touching your sessions, e.g. the packaged app
+ * before it is installed (docs/progress/2026-11-10-dist.md).
+ */
+const NAMED = !SMOKE && /^[a-z0-9][a-z0-9-]{0,40}$/.test(process.env.WORKSHOP_PROFILE ?? '') ? process.env.WORKSHOP_PROFILE! : null
+const PROFILE = RESTARTED ? process.env.WORKSHOP_SMOKE_PROFILE! : SMOKE ? `workshop-smoke-${process.pid}` : NAMED ?? (DEV ? 'workshop-dev' : 'workshop')
 if (SMOKE) {
   app.setPath('userData', RESTARTED ? process.env.WORKSHOP_SMOKE_HOME! : mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
-} else if (DEV) app.setPath('userData', `${app.getPath('userData')}-dev`)
+} else if (NAMED) app.setPath('userData', join(app.getPath('appData'), NAMED))
+else if (DEV) app.setPath('userData', `${app.getPath('userData')}-dev`)
 /**
  * A trusted tile for the smoke test, loaded as if it shipped in tiles/ (the only place a backend is
  * allowed), so the trusted tier is exercised without a fake tile in the app. Smoke runs only.
@@ -71,6 +80,8 @@ let registry: Registry = { tiles: new Map(), problems: [] }
 let music: MusicBridge | null = null
 /** The screen recorder (main/recorder.ts): core's own, never a tile's. */
 let recorder: Recorder | null = null
+/** Install update (main/updates.ts). Offers nothing unless this is a packaged app built by `npm run dist`. */
+let updater: Updater | null = null
 
 interface Guest {
   tile: Tile
@@ -429,7 +440,7 @@ const newTilesDir = (): string => (SMOKE ? join(app.getPath('userData'), 'worksh
 async function createTile(name: string, idea: string): Promise<{ id: string; folder: string }> {
   if (!core) throw new Error('sessions are not running')
   const want = String(idea ?? '').trim().slice(0, 4000)
-  const made = await scaffoldTile(join(app.getAppPath(), 'template'), newTilesDir(), String(name ?? ''), want.split('\n')[0], (id) => registry.tiles.has(id))
+  const made = await scaffoldTile(coreFile('template'), newTilesDir(), String(name ?? ''), want.split('\n')[0], (id) => registry.tiles.has(id))
   await addDevTile(made.folder)
   const prompt = [
     `Build the workshop tile "${made.name}" in this folder.`,
@@ -764,11 +775,47 @@ function createWindow(): void {
   win.on('closed', () => (win = null))
 }
 
+/** What this app was built from, if it is a packaged app built by `npm run dist` on its usual profile. */
+function buildInfo() {
+  if (!app.isPackaged || SMOKE || NAMED) return null
+  try {
+    const info = parseBuildInfo(readFileSync(join(__dirname, '../build-info.json'), 'utf8'))
+    return info && existsSync(info.repo) ? info : null
+  } catch {
+    return null // an app built without the stamp
+  }
+}
+
+function startUpdater(): void {
+  updater = new Updater({
+    info: buildInfo(),
+    env: shellEnv,
+    logPath: join(app.getPath('userData'), 'update.log'),
+    onChange: (u) => win?.webContents.send(CH.updateState, u),
+    bundle: bundleOf(app.getPath('exe')) ?? '',
+    bundleName: `${app.getName()}.app`,
+    quit: () => app.quit()
+  })
+  const coreOnly = (e: IpcMainInvokeEvent): void => {
+    if (e.sender !== win?.webContents) throw new Error('not core')
+  }
+  ipcMain.handle(CH.updateGet, (e) => (coreOnly(e), updater!.get()))
+  ipcMain.handle(CH.updateInstall, async (e) => (coreOnly(e), await updater!.install()))
+  updater.start()
+  app.on('browser-window-focus', () => void updater?.check())
+}
+
 app.whenReady().then(async () => {
+  // The packaged app's icon is the bundle's (build/icon.icns); the dev build is Electron's own
+  // binary, so it is given the Knot here, or the Dock shows Electron's atom.
+  if (!app.isPackaged && process.platform === 'darwin') {
+    const icon = join(app.getAppPath(), 'build', 'icon.png')
+    if (existsSync(icon)) app.dock?.setIcon(icon)
+  }
   settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
   mascots = new MascotStore(join(app.getPath('userData'), 'mascots'))
   registry = await loadTiles([
-    { dir: join(app.getAppPath(), 'tiles'), source: 'core' },
+    { dir: coreFile('tiles'), source: 'core' },
     ...SMOKE_BUILTINS,
     { dir: join(app.getPath('userData'), 'tiles'), source: 'installed' }
   ])
@@ -799,7 +846,7 @@ app.whenReady().then(async () => {
   music = startMusic({ guest: guestOf, ...(SMOKE ? smokeMusicIo : { runner: osascriptRunner, fetchArt: fetchSpotifyArt }) })
   recorder = new Recorder({
     userData: app.getPath('userData'),
-    audioSource: join(app.getAppPath(), 'native', 'recaudio.swift'),
+    audioSource: coreFile('native', 'recaudio.swift'),
     env: shellEnv,
     page: { url: process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/recorder.html` : undefined, file: join(__dirname, '../renderer/recorder.html') },
     preload: join(__dirname, '../preload/recorder.js'),
@@ -815,9 +862,9 @@ app.whenReady().then(async () => {
     door,
     home: app.getPath('userData'),
     profile: PROFILE,
-    appPath: app.getAppPath(),
+    appPath: coreFile(),
     // Core's own plugin (its skills: workshop:doc) first, then every tile's.
-    pluginDirs: () => [join(app.getAppPath(), 'plugin'), ...[...registry.tiles.values()].map((t) => t.plugin).filter((p): p is string => !!p)],
+    pluginDirs: () => [coreFile('plugin'), ...[...registry.tiles.values()].map((t) => t.plugin).filter((p): p is string => !!p)],
     dark: isDark(settings.get()),
     poll: !SMOKE,
     pathFirst: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getAppPath(), 'test/fixtures/fake-claude') : undefined,
@@ -827,6 +874,7 @@ app.whenReady().then(async () => {
     // Which session made a commit (main/commits.ts): to the backends, whose History tab tags with it.
     onCommits: (all) => backends.setCommits(all)
   })
+  startUpdater()
   backends.setCommits(core.commits.store.all())
   // The backends start with the sessions they will be told about already listed.
   pushSessions(core.sessions.getState())
@@ -850,6 +898,7 @@ app.whenReady().then(async () => {
 
 // Sessions are parked, not killed: the next launch reattaches them.
 app.on('before-quit', () => {
+  updater?.stop()
   core?.stop()
   backends.stopAll()
   music?.host.stop()

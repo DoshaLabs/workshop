@@ -41,6 +41,7 @@ export interface Options {
   door: Door
   home: string
   profile: string
+  /** Where core's own files are (tmux.conf, bin/): the repo in dev, Contents/Resources packaged (main/resources.ts). */
   appPath: string
   /** Every tile's plugin/ folder. */
   pluginDirs: () => string[]
