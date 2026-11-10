@@ -11,6 +11,8 @@ import { join } from 'node:path'
 import { CH } from '@shared/ipc'
 import type { Door } from './door'
 import { installs } from './smoke-install'
+import { backendSmoke } from './smoke-backend'
+import type { Backends } from './backend'
 import { previewSmoke, reorderSmoke } from './smoke-preview'
 
 interface Ctx {
@@ -24,6 +26,8 @@ interface Ctx {
   core: import('./core-sessions').CoreSessions
   /** The profile's name (its tmux socket), for a second core started on it. */
   profile?: string
+  /** The trusted tier's processes (main/backend.ts). */
+  backends?: Backends
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -193,6 +197,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await sideDoors(check, ctx)
     await instances(check, ctx)
     await installs(check, ctx)
+    await backendSmoke(check, ctx)
     await knotClock(check, ctx)
     // Last: it stops this core's sessions.
     await restart(check, ctx)

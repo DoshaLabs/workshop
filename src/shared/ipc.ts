@@ -54,6 +54,8 @@ export interface TileHello {
   vars: Record<string, string>
   bridge: string
   permissions: Manifest['permissions']
+  /** The ops a built-in tile's backend answers (manifest `backend.ops`); absent without one. */
+  backendOps?: string[]
 }
 
 export interface DoorCall {
@@ -86,11 +88,14 @@ export const CH = {
   filesForget: 'ws:tile:files-forget',
   doorReady: 'ws:tile:door-ready', // send: the ops the page now answers
   doorReply: 'ws:tile:door-reply', // send
+  backendCall: 'ws:tile:backend-call',
+  backendStatus: 'ws:tile:backend-status',
   // main → tile page
   view: 'ws:tile:view',
   theme: 'ws:tile:theme',
   storageChanged: 'ws:tile:storage-changed',
   doorCall: 'ws:tile:door-call',
+  backendStatusChanged: 'ws:tile:backend-status-changed',
   // core window → main
   listTiles: 'ws:core:list-tiles',
   setView: 'ws:core:set-view',

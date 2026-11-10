@@ -82,6 +82,16 @@ describe('tile check', () => {
     expect((await checkTileFolder(folder({}, { permissions: { backend: true, storage: true } }))).errors).toHaveLength(1)
   })
 
+  it('takes a backend from a tile that ships with workshop, if its program is in the folder', async () => {
+    const decl = { backend: { entry: 'backend.mjs', ops: ['status'] } }
+    const ok = await checkTileFolder(folder({ 'backend.mjs': 'export default () => {}' }, decl), { builtin: true })
+    expect(ok.errors).toEqual([])
+    expect(ok.manifest?.backend?.ops).toEqual(['status'])
+    expect((await checkTileFolder(folder({}, decl), { builtin: true })).errors.join()).toMatch(/backend.entry: backend.mjs does not exist/)
+    expect((await checkTileFolder(resolve('test/fixtures/trusted'), { builtin: true })).errors).toEqual([])
+    expect((await checkTileFolder(resolve('test/fixtures/trusted'))).errors[0]).toMatch(/trusted tier/)
+  })
+
   it('warns about what install does differently: no symlinks, no submodules', async () => {
     const f = folder({ '.gitmodules': '' })
     symlinkSync('icon.svg', join(f, 'alias.svg'))

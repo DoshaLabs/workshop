@@ -41,6 +41,8 @@ export interface Tile {
   plugin: string | null
   /** A dev tile's dev server (`http://localhost:5173`), whose page is the tile's. Else null. */
   devOrigin: string | null
+  /** A built-in tile's backend program (real path), run by main/backend.ts. Null for every other tile. */
+  backend: string | null
   /** Bumped each time a dev tile is loaded again, so core's window makes a fresh page for it. */
   rev: number
 }
@@ -96,17 +98,23 @@ export async function readTile(folder: string, source: Tile['source']): Promise<
   }
   // The trusted tier is for tiles that ship with workshop: an installed or local tile asking for a
   // backend is refused here, with the reason, whatever the manifest validator would say.
-  const backend = source === 'core' ? null : wantsBackend(raw, await stat(join(folder, BACKEND_FILE)).then(() => true, () => false))
-  if (backend) return { folder, errors: [`backend: ${TRUSTED_ONLY}, and ${backend}`] }
-  const checked = checkManifest(raw, { dev: source === 'dev' })
+  const refused = source === 'core' ? null : wantsBackend(raw, await stat(join(folder, BACKEND_FILE)).then(() => true, () => false))
+  if (refused) return { folder, errors: [`backend: ${TRUSTED_ONLY}, and ${refused}`] }
+  const checked = checkManifest(raw, { dev: source === 'dev', builtin: source === 'core' })
   if (!checked.ok) return { folder, errors: checked.errors }
   const m = checked.manifest
   const root = await realpath(folder)
   const devOrigin = source === 'dev' ? devServerOrigin(m.entry) : null
   const plugin = await checkPlugin(root, m.id)
   if (!plugin.ok) return { folder, errors: plugin.errors }
+  let backend: string | null = null
+  if (m.backend) {
+    const file = await realpath(resolve(root, m.backend.entry)).catch(() => null)
+    if (!file || !inside(root, file) || !(await stat(file)).isFile()) return { folder, errors: [`backend.entry: ${m.backend.entry} is not a file inside the tile's folder`] }
+    backend = file
+  }
   const icon = await readIcon(root, m.icon)
-  const common = { manifest: m, root, source, partition: `persist:tile-${m.id}`, icon, plugin: plugin.dir }
+  const common = { manifest: m, root, source, partition: `persist:tile-${m.id}`, icon, plugin: plugin.dir, backend }
   if (devOrigin) return { ...common, serveRoot: root, src: m.entry, devOrigin }
   const entry = resolve(root, m.entry)
   let entryReal: string

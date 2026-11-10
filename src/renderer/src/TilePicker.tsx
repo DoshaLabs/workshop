@@ -12,7 +12,7 @@ import type { TileInfo } from '@shared/ipc'
 import type { Permissions } from '@shared/manifest'
 import type { IndexEntry } from '@shared/tile-index'
 import type { IndexState, InstallRecord, PendingInstall } from '@shared/tile-menu'
-import { permissionWords } from '@shared/permissions'
+import { FULL_ACCESS, permissionWords } from '@shared/permissions'
 
 type Tab = 'builtin' | 'yours' | 'market'
 const TABS: [Tab, string][] = [
@@ -120,7 +120,8 @@ export function TilePicker({
 
 /** One tile, the same on every tab. `children` are its buttons. */
 function TileRow({ icon, name, hint, permissions, badge, on, children }: { icon?: string; name: string; hint?: string; permissions: Permissions; badge?: string; on?: boolean; children?: ReactNode }) {
-  const words = permissionWords(permissions)
+  // Full access gets a line of its own, so it is never one more item in a list.
+  const words = permissionWords(permissions).filter((w) => w !== FULL_ACCESS)
   return (
     <div className="pick-row" data-on={on ? 'true' : 'false'}>
       {icon ? <img className="icon" src={icon} alt="" /> : <span className="icon letter">{name[0]}</span>}
@@ -131,7 +132,8 @@ function TileRow({ icon, name, hint, permissions, badge, on, children }: { icon?
           {on !== undefined && <span className={`pick-state ${on ? 'is-on' : ''}`}>{on ? 'on' : 'off'}</span>}
         </div>
         {hint && <span className="pick-hint">{hint}</span>}
-        <span className="pick-perms">{words.length ? `Can ${words.join(' · ')}` : 'Asks for nothing beyond its own page'}</span>
+        {permissions.backend && <span className="pick-full">Full access to this Mac: it runs its own program beside its page. Only tiles that ship with workshop may.</span>}
+        <span className="pick-perms">{words.length ? `Can ${words.join(' · ')}` : permissions.backend ? 'Asks for nothing else' : 'Asks for nothing beyond its own page'}</span>
       </div>
       <div className="pick-acts">{children}</div>
     </div>
