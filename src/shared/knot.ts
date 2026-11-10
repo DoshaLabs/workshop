@@ -20,7 +20,7 @@ export const Q = 4
 export type KnotMode = 'work' | 'rest' | 'needs' | 'start' | 'dead'
 
 export interface ModeLook {
-  /** Radius, as a share of full size. Inactive knots are much smaller, inside the same box. */
+  /** Radius, as a share of full size. Inactive knots are smaller, inside the same box. */
   size: number
   /** Seconds per loop (one turn of tilt and pulse); 0 holds still. */
   loop: number
@@ -35,11 +35,23 @@ export interface ModeLook {
  */
 export const MODES: Record<KnotMode, ModeLook> = {
   work: { size: 1, loop: 2.4, fps: 30 },
-  needs: { size: 0.85, loop: 7, fps: 15 },
-  start: { size: 0.75, loop: 5, fps: 15 },
-  rest: { size: 0.62, loop: 22, fps: 6 },
-  dead: { size: 0.62, loop: 0, fps: 0 }
+  needs: { size: 0.92, loop: 7, fps: 15 },
+  start: { size: 0.86, loop: 5, fps: 15 },
+  // At rest the knot stands as tall as Foxtrot does in deck (see BOX). deck's own fox swings
+  // from 56–60 px awake to 44 asleep, about this much; speed and colour carry the rest.
+  rest: { size: 0.8, loop: 22, fps: 6 },
+  dead: { size: 0.8, loop: 0, fps: 0 }
 }
+
+/**
+ * The Knot's square box, in CSS pixels, where core draws it. Measured against deck (Colin, 10 Nov
+ * 2026: "the knot takes up the same height as foxtrot"; docs/progress/2026-11-10-bar.md): Foxtrot
+ * stands 15 sheet pixels tall, drawn at 1× in a session's head (15 px) and at 4× in deck's 88 px
+ * top bar (60 px). A resting knot draws about 0.63 of its box tall, so 24 gives it his 15 px in a
+ * head (no taller than the head had it), and the bar's whole height, 88, gives it 55 px turning
+ * between 50 and 60. Working, it is a quarter taller again; a flare just fills the box.
+ */
+export const BOX = { head: 24, mark: 88 } as const
 
 export function knotMode(status: SessionStatus, attention: boolean): KnotMode {
   if (status === 'dead') return 'dead'

@@ -318,7 +318,7 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
   })()`)) as Record<string, number | string> | null
   check(
     'overlay: the page covers the window below core\'s strip',
-    !!cover && cover.left === 0 && cover.right === cover.w && cover.bottom === cover.h && cover.top === cover.strip && cover.strip === 56 && cover.name === 'Wikipedia',
+    !!cover && cover.left === 0 && cover.right === cover.w && cover.bottom === cover.h && cover.top === cover.strip && cover.strip === 88 && cover.name === 'Wikipedia',
     JSON.stringify(cover)
   )
   await waitFor('the large picture', async () => (await wjs(`(() => { const i = document.querySelector('.wikibox-img'); return !!i && i.complete && i.naturalWidth > 0 })()`)) === true, 15_000).catch(() => undefined)
