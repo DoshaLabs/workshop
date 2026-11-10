@@ -232,11 +232,45 @@ button {
   height: 100%;
   background: var(--ws-accent);
 }
-.meter.warm .meter-bar i {
+.meter.is-warn .meter-bar i {
   background: var(--ws-busy);
 }
-.meter.hot .meter-bar i {
+.meter.is-hot .meter-bar i {
   background: var(--ws-blocked);
+}
+.meter.is-hot .meter-pct {
+  color: var(--ws-blocked);
+}
+/* Not reported yet: an empty bar and a dash, said in the tooltip. */
+.meter.unknown {
+  opacity: 0.6;
+}
+.meter-pct {
+  min-width: 2.6em;
+}
+.meter-left {
+  opacity: 0.8;
+}
+/* A session's context and cost: quiet until the context fills. */
+.badge.ctx.is-warn {
+  border-color: var(--ws-busy);
+  color: var(--ws-busy);
+}
+.badge.ctx.is-hot {
+  border-color: var(--ws-blocked);
+  color: var(--ws-blocked);
+}
+.session-folder .badge {
+  margin-left: 4px;
+  padding: 0 5px;
+}
+.badge {
+  flex: none;
+  white-space: nowrap;
+}
+/* A long folder must not push the session's name out of its own head. */
+.pane > .head .session-folder {
+  max-width: 40%;
 }
 
 .center {

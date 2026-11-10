@@ -447,6 +447,10 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   const state = () => core.sessions.getState()
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'ws-project-')))
 
+  // A fresh profile: no window reported yet, and the meters are there anyway, empty, saying why.
+  const meters = (await js(`[...document.querySelectorAll('.topbar .meter')].map((m) => [m.className, m.textContent, m.title])`)) as string[][]
+  check('usage: both meters show before anything is known, empty, with why', meters.length === 2 && meters.every(([c, t, title]) => c.includes('unknown') && t.includes('—') && /first reply/.test(title)), JSON.stringify(meters))
+
   const made = await js(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, name: 'smoke-one', model: 'sonnet', permissionMode: 'plan' })`)
   const id = String(made.id)
   await waitFor('the session to start', async () => (await screen(id)).includes('FAKE CLAUDE READY'))
@@ -467,6 +471,10 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   const u = core.usage.get()
   check('sessions: the status line reaches usage', u.fiveHour?.pct === 42 && u.sessions[id]?.costUsd === 1.23 && u.sessions[id]?.context === 17, JSON.stringify(u))
   check('sessions: the window hears usage', (await js(`window.core.usage().then((u) => u.fiveHour && u.fiveHour.pct)`)) === 42)
+  await waitFor('the meter to fill', async () => (await js(`document.querySelector('.topbar .meter')?.textContent ?? ''`)).includes('42%'), 3000).catch(() => undefined)
+  check('usage: the 5-hour meter fills once a session reports', String(await js(`document.querySelector('.topbar .meter').textContent`)).includes('42%'))
+  const badges = (await js(`[...document.querySelectorAll('.pane .head .badge')].map((b) => b.textContent).join(' ')`)) as string
+  check('usage: the session shows its context and cost', badges.includes('ctx 17%') && badges.includes('$1.23'), badges)
 
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'door\\r'); true`)
   await waitFor('the door call from the session', async () => (await screen(id)).includes('DONE door'))

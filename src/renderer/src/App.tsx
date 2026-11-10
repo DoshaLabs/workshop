@@ -197,6 +197,7 @@ export function App() {
       </div>
       <SessionColumn
         state={sessions}
+        usage={usage}
         launcher={launcher || !focused}
         onNew={() => {
           setPane(null)
@@ -223,7 +224,7 @@ export function App() {
             </div>
           </section>
         ) : focused && !launcher ? (
-          <FocusPane session={focused} />
+          <FocusPane session={focused} usage={usage} />
         ) : (
           <div className="center-scroll">
             <Launcher recent={sessions?.recent ?? []} onStarted={() => setLauncher(false)} />

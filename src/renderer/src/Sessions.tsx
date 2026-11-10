@@ -4,12 +4,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MODELS, PERMISSION_MODES } from '@shared/models'
 import type { SessionView, SessionsState } from '@shared/sessions'
+import type { Usage } from '@shared/usage'
 import { fit, focusTerminal, mount, unmount } from './terminals'
+import { SessionUsage } from './UsageMeter'
 
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
 
-export function SessionColumn({ state, onNew, onPick, launcher }: { state: SessionsState | null; onNew: () => void; onPick: () => void; launcher: boolean }) {
+export function SessionColumn({ state, usage, onNew, onPick, launcher }: { state: SessionsState | null; usage: Usage | null; onNew: () => void; onPick: () => void; launcher: boolean }) {
   const [arm, setArm] = useState<string | null>(null)
   useEffect(() => {
     if (!arm) return
@@ -33,7 +35,9 @@ export function SessionColumn({ state, onNew, onPick, launcher }: { state: Sessi
       <span className={`dot ${s.status}`} />
       <span className="session-text">
         <span className="session-name">{s.name}</span>
-        <span className="session-folder">{base(s.cwd)}</span>
+        <span className="session-folder">
+          {base(s.cwd)} <SessionUsage id={s.id} usage={usage} />
+        </span>
       </span>
       {s.open ? (
         <button
@@ -178,7 +182,7 @@ export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: (
   )
 }
 
-export function FocusPane({ session }: { session: SessionView }) {
+export function FocusPane({ session, usage }: { session: SessionView; usage: Usage | null }) {
   const box = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const host = box.current!
@@ -199,6 +203,7 @@ export function FocusPane({ session }: { session: SessionView }) {
           {session.name}
           {session.title && session.title !== session.name && <span className="muted"> · {session.title}</span>}
         </span>
+        <SessionUsage id={session.id} usage={usage} />
         <span className="session-folder" title={session.cwd}>
           {tilde(session.cwd)}
         </span>
