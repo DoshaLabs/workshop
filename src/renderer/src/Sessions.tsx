@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MODELS, PERMISSION_MODES } from '@shared/models'
 import type { SessionView, SessionsState } from '@shared/sessions'
 import { fit, focusTerminal, mount, unmount } from './terminals'
+import { Mascot } from './Mascot'
 
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
@@ -30,7 +31,7 @@ export function SessionColumn({ state, onNew, onPick, launcher }: { state: Sessi
         void (s.open ? window.core.focusSession(s.id) : window.core.resume(s.id))
       }}
     >
-      <span className={`dot ${s.status}`} />
+      <Mascot id={s.id} status={s.status} attention={s.attention} />
       <span className="session-text">
         <span className="session-name">{s.name}</span>
         <span className="session-folder">{base(s.cwd)}</span>
@@ -194,7 +195,7 @@ export function FocusPane({ session }: { session: SessionView }) {
   return (
     <section className="pane">
       <header className="head">
-        <span className={`dot ${session.status}`} />
+        <Mascot id={session.id} status={session.status} attention={session.attention} />
         <span className="name" title={session.title ?? undefined}>
           {session.name}
           {session.title && session.title !== session.name && <span className="muted"> · {session.title}</span>}

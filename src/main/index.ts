@@ -18,6 +18,7 @@ import { MAX_INSTANCES, TILE_SCHEME, armSession, setGrants, instanceKey, instanc
 import { runSmoke } from './smoke'
 import { scaffoldTile } from './scaffold'
 import { startSessions, type CoreSessions } from './core-sessions'
+import { MascotStore } from './mascot'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 
@@ -71,6 +72,11 @@ const views = new Map<string, TileView>()
 const stores = new Map<string, TileStore>()
 const lastNotify = new Map<string, number>()
 const lastExternal = new Map<string, number>()
+/** The session that last called each tile through the door: a tile's bark goes to that session's mascot. */
+const lastCaller = new Map<string, { session: string; at: number }>()
+/** A call older than this no longer makes a session the one a tile's bark is about. */
+const CALLER_MS = 10 * 60_000
+let mascots: MascotStore
 /** The instance whose page is over the whole window, if any. Only one at a time. */
 let overlayKey: string | null = null
 /** How recent a click or key in the page must be for it to open its overlay (Chromium's own window for a user activation). */
@@ -126,6 +132,7 @@ const door = new Door({
   live: (id) => instancesOf(id).length > 0,
   answers: (id, op) => instancesOf(id).some((g) => g.ops.has(op)),
   deliver: (id, call: DoorCall) => {
+    if (call.session) lastCaller.set(id, { session: call.session, at: Date.now() })
     const g = instancesOf(id)
       .filter((x) => x.ops.has(call.op))
       .sort((a, b) => b.usedAt - a.usedAt)[0]
@@ -436,7 +443,7 @@ function bridge(): void {
     for (const g of instancesOf(id)) g.wc.send(CH.storageChanged, key, value ?? null)
   })
 
-  ipcMain.handle(CH.notify, (e, n: { text?: unknown }) => {
+  ipcMain.handle(CH.notify, (e, n: { text?: unknown; bark?: unknown }) => {
     const g = need(e, 'notify')
     const t = g.tile
     const text = typeof n?.text === 'string' ? n.text.slice(0, 200) : ''
@@ -445,6 +452,14 @@ function bridge(): void {
     if (now - (lastNotify.get(t.manifest.id) ?? 0) < 3000) return false
     lastNotify.set(t.manifest.id, now)
     win?.webContents.send(CH.tileNotify, g.key, text)
+    if (n?.bark === true) {
+      // The relevant mascot: the session that last called this tile through the door, else the one in focus.
+      const c = lastCaller.get(t.manifest.id)
+      const state = core?.sessions.getState()
+      const live = (id: string | null | undefined): boolean => !!id && !!state?.sessions.some((s) => s.id === id && s.open)
+      const target = c && now - c.at < CALLER_MS && live(c.session) ? c.session : live(state?.focus) ? state!.focus : null
+      if (target) win?.webContents.send(CH.mascotBark, target)
+    }
     if (!SMOKE && Notification.isSupported()) new Notification({ title: t.manifest.name, body: text, silent: true }).show()
     return true
   })
@@ -510,6 +525,28 @@ function bridge(): void {
     if (e.sender !== win?.webContents) throw new Error('core only')
     return forgetDevTile(String(id))
   })
+  // The mascot (§8). Only core's window may change it, never a tile.
+  ipcMain.handle(CH.mascotGet, (e) => {
+    if (e.sender !== win?.webContents) throw new Error('core only')
+    return mascots.load(settings.get().mascot)
+  })
+  ipcMain.handle(CH.mascotSave, async (e, pack: unknown, png: unknown, workerPng: unknown) => {
+    if (e.sender !== win?.webContents) throw new Error('core only')
+    const was = settings.get().mascot
+    const id = await mascots.save(pack, png, workerPng)
+    await settings.patch({ mascot: id })
+    if (was && was !== id) await mascots.remove(was)
+    const active = await mascots.load(id)
+    win?.webContents.send(CH.mascotChanged, active)
+    return active
+  })
+  ipcMain.handle(CH.mascotRemove, async (e) => {
+    if (e.sender !== win?.webContents) throw new Error('core only')
+    const was = settings.get().mascot
+    await settings.patch({ mascot: null })
+    await mascots.remove(was)
+    win?.webContents.send(CH.mascotChanged, null)
+  })
   ipcMain.handle(CH.setView, (e, key: string, view: TileView) => {
     if (e.sender !== win?.webContents || (view !== 'tile' && view !== 'pane' && view !== 'overlay')) return
     if (view === 'overlay' && !registry.tiles.get(key.replace(/\.\d$/, ''))?.manifest.permissions.overlay) return
@@ -572,6 +609,7 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
+  mascots = new MascotStore(join(app.getPath('userData'), 'mascots'))
   registry = await loadTiles([
     { dir: join(app.getAppPath(), 'tiles'), source: 'core' },
     { dir: join(app.getPath('userData'), 'tiles'), source: 'installed' }

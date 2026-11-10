@@ -15,6 +15,8 @@ import type { Usage } from '@shared/usage'
 import { UsageMeter } from './UsageMeter'
 import { TileLayer, type Instance } from './TileLayer'
 import { TilePicker } from './TilePicker'
+import { MascotSetup } from './MascotSetup'
+import { AppMark } from './Knot'
 
 const OFF_KEY = 'workshop.off'
 const EXTRA_KEY = 'workshop.extra'
@@ -82,6 +84,8 @@ export function App() {
   const [launcher, setLauncher] = useState(false)
   /** The tile column's + menu. */
   const [picker, setPicker] = useState(false)
+  /** The mascot's setup screen, in the center (the button beside the theme picker). */
+  const [mascotSetup, setMascotSetup] = useState(false)
   /** Heights the user set with ↕, by instance; a tile without one takes its manifest's `span`. */
   const [spans, setSpans] = useState<Record<string, number>>(readSpans)
   useEffect(() => {
@@ -133,6 +137,10 @@ export function App() {
       setPane(null)
       setLauncher(false)
     }
+  }, [focusId])
+
+  useEffect(() => {
+    if (focusId) setMascotSetup(false)
   }, [focusId])
 
   useEffect(() => writeList(OFF_KEY, off), [off])
@@ -191,8 +199,12 @@ export function App() {
 
   return (
     <div className={`app ${overInst ? 'overlaid' : ''}`}>
+      <AppMark working={!!sessions?.sessions.some((s) => s.open && s.status === 'busy')} />
       <div className="topbar">
         <UsageMeter usage={usage} />
+        <button className="ghost small" title="The mascot: a sprite in every session's head" onClick={() => setMascotSetup((v) => !v)}>
+          Mascot
+        </button>
         {theme && <ThemePicker theme={theme} />}
       </div>
       <SessionColumn
@@ -209,7 +221,11 @@ export function App() {
       />
 
       <main className="col center">
-        {paneInst ? (
+        {mascotSetup ? (
+          <div className="center-scroll">
+            <MascotSetup onClose={() => setMascotSetup(false)} />
+          </div>
+        ) : paneInst ? (
           <section className="pane">
             <header className="head">
               <Icon tile={paneInst.tile} />

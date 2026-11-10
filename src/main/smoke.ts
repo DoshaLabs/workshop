@@ -183,6 +183,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await sessions(check, ctx)
     await files(check, ctx)
     await themes(check, ctx)
+    await mascot(check, ctx)
     await instances(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
@@ -602,4 +603,165 @@ async function realClaude(check: (name: string, ok: boolean, detail?: string) =>
   check('real CLI: the status line reached usage', usage, JSON.stringify(core.usage.get()))
   check('real CLI: it answered', /\bOK\b/.test(text), text.slice(-600))
   await core.sessions.kill(made.id)
+}
+
+/**
+ * The status mark (CLAUDE.md §8). With no sprite pack a session shows the Knot, whose mode follows
+ * its status; a bark (a tile's notify, a turn finishing) flares it. A synthetic sprite pack (plain
+ * coloured frames drawn here, never a real sheet) replaces it with a sprite whose pose follows the
+ * status and which leaps on a bark; removing the pack brings the Knot back.
+ *
+ * WORKSHOP_SHOT_MASCOT=<folder>: pictures of the heads and the top-left mark in three themes, and
+ * of the setup screen. WORKSHOP_SMOKE_SHEET=<png>: a sheet to try in the setup screen and install,
+ * for looking at by eye (it stays in the throwaway profile).
+ */
+async function mascot(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile, core }: Ctx): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const shots = process.env.WORKSHOP_SHOT_MASCOT
+  const shot = async (name: string): Promise<void> => {
+    if (!shots) return
+    await sleep(900)
+    await mkdir(shots, { recursive: true })
+    await writeFile(join(shots, `${name}.png`), (await win.webContents.capturePage()).toPNG())
+  }
+  const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'ws-mascot-')))
+  const made = await js(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, name: 'mascot' })`)
+  const id = String(made.id)
+  const row = `[...document.querySelectorAll('.session')].find((r) => r.querySelector('.session-name')?.textContent === 'mascot')`
+  const mark = (sel: string): Promise<string | null> => js(`(() => { const r = ${row}; const m = r?.querySelector('${sel}'); return m ? (m.dataset.mode ?? m.dataset.pose ?? '') : null })()`)
+  const modeIs = (want: string) => waitFor(`the knot to read ${want}`, async () => (await mark('canvas.knot')) === want, 5000).then(() => true, () => false)
+  const flare = (): Promise<string | undefined> => js(`(${row}).querySelector('canvas.knot').dataset.flare`)
+  await waitFor('the session to start', async () => (await screen(id)).includes('FAKE CLAUDE READY'))
+
+  check('mark: no pack and no dot: the session shows the Knot', (await mark('canvas.knot')) !== null && (await mark('.dot')) === null)
+  check('mark: the Knot is drawn', (await js(`(() => { const c = (${row}).querySelector('canvas.knot'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n })()`)) > 20)
+  check('mark: the app mark is in the top bar, left', (await js(`(() => { const r = document.querySelector('.app-mark canvas.knot')?.getBoundingClientRect(); return !!r && r.left > 60 && r.left < 140 && r.top < 20 })()`)) === true)
+
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'hello\\r'); true`)
+  check('mark: a finished turn needs you (needs)', await modeIs('needs'))
+  check('mark: and flares once, a bark', (await waitFor('a flare', async () => (await flare()) === '1', 2000).then(() => true, () => false)))
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, ' '); true`)
+  check('mark: looked at, it rests (small, slow)', await modeIs('rest'))
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'spoof\\r'); true`)
+  check('mark: working (full size, fast)', await modeIs('work'))
+  check('mark: the app mark works while a session does', (await js(`document.querySelector('.app-mark canvas.knot').dataset.mode`)) === 'work')
+  await shot('knot-cosmos')
+  for (const [theme, appearance] of [['gruvbox', 'light'], ['nord', 'dark']]) {
+    await js(`window.core.setSettings({ theme: '${theme}', appearance: '${appearance}' }).then(() => true)`)
+    await shot(`knot-${theme}-${appearance}`)
+  }
+  await js(`window.core.setSettings({ theme: 'cosmos', appearance: 'system' }).then(() => true)`)
+
+  // A tile's bark goes to the session in focus (this one: no live session has called the probe lately).
+  await sleep(3200)
+  await js(`(${row}).querySelector('canvas.knot').dataset.flare = ''; true`)
+  const barked = await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.notify({ text: 'bark', bark: true })`)
+  const flared = await waitFor('the flare', async () => (await flare()) === '1', 3000).then(() => true, () => false)
+  check('mark: notify({ bark: true }) flares the session’s Knot', barked === true && flared, String(barked))
+
+  // A synthetic pack: 4 × 3 frames of 16 px, a colour per row, drawn on a canvas here.
+  const pack = { format: 1, name: 'Blocky', image: 'sheet.png', sheet: { w: 64, h: 48 }, frame: { w: 16, h: 16 }, box: { x: 2, y: 4, w: 12, h: 10 }, states: { run: { row: 0, from: 0, frames: 4, ms: 60 }, leap: { row: 1, from: 0, frames: 3, ms: 80 }, sleep: { row: 2, from: 0, frames: 2, ms: 300 } } }
+  const saved = await js(`(async () => {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 48
+    const g = c.getContext('2d')
+    ;['#e0663a', '#3a9be0', '#7a7a7a'].forEach((col, r) => { g.fillStyle = col; for (let i = 0; i < 4; i++) g.fillRect(i * 16 + 2, r * 16 + 4, 12, 10) })
+    const b = atob(c.toDataURL('image/png').split(',')[1]); const bytes = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i)
+    const m = await window.core.saveMascot(${JSON.stringify(pack)}, bytes)
+    return m && m.id
+  })()`)
+  check('pack: a synthetic pack saves', saved === 'blocky', String(saved))
+  const sprite = await waitFor('the sprite', async () => (await mark('.sprite')) !== null, 3000).then(() => true, () => false)
+  check('pack: it replaces the Knot on the session', sprite && (await mark('canvas.knot')) === null)
+  // (The tile's bark a moment ago may still be playing its leap.)
+  const running = await waitFor('the run pose', async () => (await mark('.sprite')) === 'run', 2000).then(() => true, () => false)
+  check('pack: the pose follows the status (working: run)', running, String(await mark('.sprite')))
+  check('pack: drawn crisp', (await js(`getComputedStyle((${row}).querySelector('.sprite')).imageRendering`)) === 'pixelated')
+  await sleep(3200) // past the last bark, which a new one this soon would be taken for
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'again\\r'); true`)
+  const leapt = await waitFor('the leap', async () => (await mark('.sprite')) === 'leap', 4000).then(() => true, () => false)
+  check('pack: a turn finishing plays Leap once', leapt)
+  const after = await waitFor('the leap to end', async () => (await mark('.sprite')) === 'look', 3000).then(() => true, () => false)
+  check('pack: then the pose for needing you (look, borrowed from the nearest mapped)', after, String(await mark('.sprite')))
+  check('pack: remembered', (await js(`window.core.mascot().then((m) => m && m.pack.name)`)) === 'Blocky')
+
+  await js(`window.core.removeMascot().then(() => true)`)
+  const back = await waitFor('the knot to come back', async () => (await mark('canvas.knot')) !== null, 3000).then(() => true, () => false)
+  check('pack: removing it brings the Knot back', back && (await mark('.sprite')) === null)
+
+  // The setup screen, with a sheet chosen through its file input as a person would.
+  await js(`[...document.querySelectorAll('.topbar button')].find((b) => b.textContent.includes('Mascot')).click(); true`)
+  await waitFor('the setup screen', async () => (await js(`!!document.querySelector('.mascot-setup')`)) === true)
+  check('setup: recommends Elthen’s fox, with the licence lines', (await js(`(() => { const t = document.querySelector('.mascot-reco').textContent; return t.includes('Elthen') && t.includes('redistribute') && t.includes('blockchain') && t.includes('Credit is not required') })()`)) === true)
+  const sheetFile = process.env.WORKSHOP_SMOKE_SHEET
+  const b64 = sheetFile ? (await readFile(sheetFile)).toString('base64') : ''
+  await js(`(async () => {
+    let bytes
+    if (${JSON.stringify(b64)}) { const b = atob(${JSON.stringify(b64)}); bytes = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i) }
+    else {
+      // The fox sheet's LAYOUT (448 × 224, 32-pixel frames, 5/14/8/11/5/6/7 frames a row) in plain blocks.
+      const c = document.createElement('canvas'); c.width = 448; c.height = 224
+      const g = c.getContext('2d'); g.fillStyle = '#c86a3a'
+      ;[5, 14, 8, 11, 5, 6, 7].forEach((n, r) => { for (let i = 0; i < n; i++) g.fillRect(i * 32 + 4, r * 32 + 14, 22, 18) })
+      const b = atob(c.toDataURL('image/png').split(',')[1]); bytes = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i)
+    }
+    const dt = new DataTransfer(); dt.items.add(new File([bytes], 'sheet.png', { type: 'image/png' }))
+    const input = document.querySelector('.mascot-drop input'); input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true }))
+    return true
+  })()`)
+  const known = await waitFor('the sheet to be read', async () => (await js(`!!document.querySelector('.mascot-known')`)) === true, 5000).then(() => true, () => false)
+  check('setup: a sheet laid out like Elthen’s fox is recognised, every pose mapped', known && (await js(`document.querySelectorAll('.mascot-preview .sprite').length`)) === 5)
+  await shot('setup')
+  if (shots) {
+    await js(`document.querySelector('.mascot-states').scrollIntoView(); true`)
+    await shot('setup-states')
+  }
+  if (sheetFile) {
+    await js(`[...document.querySelectorAll('.mascot-setup button.primary')].find((b) => b.textContent === 'Save').click(); true`)
+    await waitFor('the fox', async () => (await mark('.sprite')) !== null, 3000).catch(() => undefined)
+    await js(`document.querySelector('.mascot-setup .close').click(); true`)
+    await shot('fox-head')
+    await js(`window.core.removeMascot().then(() => true)`)
+  } else await js(`document.querySelector('.mascot-setup .close').click(); true`)
+  await js(`window.core.kill(${JSON.stringify(id)})`)
+  if (process.env.WORKSHOP_MEASURE_CPU) await measureCpu(ctx0(win, core))
+}
+
+const ctx0 = (win: BrowserWindow, core: Ctx['core']) => ({ win, core })
+
+/**
+ * WORKSHOP_MEASURE_CPU=1: the window's renderer CPU with ten sessions resting, then working, then
+ * with every Knot off screen (the cost of everything else), ten seconds each. Printed, not checked.
+ */
+async function measureCpu({ win, core }: { win: BrowserWindow; core: Ctx['core'] }): Promise<void> {
+  const { app } = await import('electron')
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const pid = win.webContents.getOSProcessId()
+  const sample = async (what: string): Promise<void> => {
+    app.getAppMetrics() // starts the interval
+    await sleep(10_000)
+    const m = app.getAppMetrics().find((x) => x.pid === pid)
+    console.log(`[cpu] ${what}: renderer ${m?.cpu.percentCPUUsage.toFixed(1)}% of one core`)
+  }
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'ws-cpu-')))
+  const ids: string[] = []
+  for (let i = 0; i < 10; i++) ids.push(String((await js(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, name: 'cpu-${i}' })`)).id))
+  await sleep(3000)
+  for (const id of ids) await js(`window.core.ptyInput(${JSON.stringify(id)}, 'x\\r'); true`)
+  await sleep(2000)
+  // Typing into a session is looking at it: no longer needing you, so resting.
+  for (const id of ids) await js(`window.core.ptyInput(${JSON.stringify(id)}, ' '); true`)
+  // The center shows the launcher, so no terminal is drawing: only the column and the mark.
+  await js(`window.core.focusSession(null)`)
+  await sleep(2000)
+  console.log(`[cpu] modes: ${JSON.stringify(await js(`[...document.querySelectorAll('.session canvas.knot')].map((c) => c.dataset.mode)`))}`)
+  await sample('10 sessions resting')
+  for (const id of ids) await js(`window.core.ptyInput(${JSON.stringify(id)}, 'spoof\\r'); true`)
+  await sleep(2000)
+  console.log(`[cpu] modes: ${JSON.stringify(await js(`[...document.querySelectorAll('.session canvas.knot')].map((c) => c.dataset.mode)`))}`)
+  await sample('10 sessions working')
+  await js(`document.querySelectorAll('canvas.knot').forEach((c) => (c.style.transform = 'translateX(-5000px)')); true`)
+  await sleep(1000)
+  await sample('10 sessions working, every Knot off screen')
+  for (const id of ids) await core.sessions.kill(id)
 }

@@ -127,5 +127,11 @@ export const CH = {
   tileSessionsChanged: 'ws:tile:sessions-changed', // main → tile
   tileSessionsPaste: 'ws:tile:sessions-paste',
   tileUsageGet: 'ws:tile:usage-get',
-  tileUsageChanged: 'ws:tile:usage-changed' // main → tile
+  tileUsageChanged: 'ws:tile:usage-changed', // main → tile
+  // the mascot (§8): core window ⇄ main
+  mascotGet: 'ws:core:mascot-get',
+  mascotSave: 'ws:core:mascot-save',
+  mascotRemove: 'ws:core:mascot-remove',
+  mascotChanged: 'ws:core:mascot', // main → window: the active pack, or null
+  mascotBark: 'ws:core:mascot-bark' // main → window: a session's mascot leaps once
 } as const
