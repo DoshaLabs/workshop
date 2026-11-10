@@ -317,11 +317,11 @@ function Market({ tiles, row, onOn }: { tiles: TileInfo[]; row: RowFn; onOn: (id
         const acts = (
           <>
             {newer && (
-              <button className="pick-act" disabled={!!busy} title={`${r.version} → ${e.version} (${short(e.commit)})`} onClick={() => void fetchTile(r.id, { repo: e.repo, commit: e.commit, expect: { id: e.id, permissions: e.permissions } })}>
+              <button className="pick-act" data-update={r.id} disabled={!!busy} title={`${r.version} → ${e.version} (${short(e.commit)})`} onClick={() => void fetchTile(r.id, { repo: e.repo, commit: e.commit, expect: { id: e.id, permissions: e.permissions } })}>
                 {busy === r.id ? 'Fetching…' : `Update to ${e.version}`}
               </button>
             )}
-            <button className="pick-act quiet" disabled={!!busy} onClick={() => (setRemoving(removing === r.id ? null : r.id), setDropData(false))}>
+            <button className="pick-act quiet" data-remove={r.id} disabled={!!busy} onClick={() => (setRemoving(removing === r.id ? null : r.id), setDropData(false))}>
               Remove
             </button>
           </>
@@ -334,7 +334,7 @@ function Market({ tiles, row, onOn }: { tiles: TileInfo[]; row: RowFn; onOn: (id
                 <label>
                   <input type="checkbox" checked={dropData} onChange={(ev) => setDropData(ev.target.checked)} /> Also delete what it stored
                 </label>
-                <button className="pick-act danger" disabled={!!busy} onClick={() => void remove(r.id)}>
+                <button className="pick-act danger" data-remove-confirm disabled={!!busy} onClick={() => void remove(r.id)}>
                   {busy === r.id ? 'Removing…' : 'Remove it'}
                 </button>
                 <button className="pick-act quiet" onClick={() => setRemoving(null)}>
@@ -361,7 +361,7 @@ function Market({ tiles, row, onOn }: { tiles: TileInfo[]; row: RowFn; onOn: (id
       ))}
       {index && index.errors.length > 0 && (
         <details className="pick-more">
-          <summary>{index.errors.length} entries were skipped</summary>
+          <summary>{index.errors.length === 1 ? '1 entry was skipped' : `${index.errors.length} entries were skipped`}</summary>
           <ul>
             {index.errors.map((x) => (
               <li key={x}>{x}</li>
@@ -441,7 +441,7 @@ function Prompt({ p, busy, onYes, onNo, problem }: { p: PendingInstall; busy: bo
       )}
       {p.warnings.length > 0 && (
         <details className="pick-more">
-          <summary>{p.warnings.length} notes from the check</summary>
+          <summary>{p.warnings.length === 1 ? '1 note from the check' : `${p.warnings.length} notes from the check`}</summary>
           <ul>
             {p.warnings.map((w) => (
               <li key={w}>{w}</li>

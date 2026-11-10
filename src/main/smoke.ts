@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CH } from '@shared/ipc'
 import type { Door } from './door'
+import { installs } from './smoke-install'
 
 interface Ctx {
   win: BrowserWindow
@@ -185,6 +186,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await themes(check, ctx)
     await mascot(check, ctx)
     await instances(check, ctx)
+    await installs(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
   }
@@ -687,7 +689,9 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   // new folder, live at once, and a session in that folder told what to build).
   await js(`document.querySelector('.tiles .tile-plus').click(); true`)
   await waitFor('the + menu', async () => (await js(`!!document.querySelector('.picker')`)) === true)
-  check('plus: the menu offers another instance of a tile that allows it', String(await js(`document.querySelector('.picker').textContent`)).includes('Another Probe'))
+  await js(`document.querySelector('.picker [data-tab="yours"]').click(); true`)
+  await sleep(100)
+  check('plus: the menu offers another instance of a tile that allows it', (await js(`!!document.querySelector('.picker [title="Another Probe"]')`)) === true)
   await js(`document.querySelector('.picker .head .ghost').click(); true`)
   await sleep(300)
   check('plus: closing the menu puts the + back and leaves the window standing', (await js(`!!document.querySelector('.app') && !!document.querySelector('.tiles .tile-plus') && !document.querySelector('.picker')`)) === true)
