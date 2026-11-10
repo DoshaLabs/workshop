@@ -603,24 +603,28 @@ A (3,4) torus knot turning in 3D on a small 2D canvas, strands back to front, a 
 riding the strand: workshop's own version of the "AlgoGlyph" in Colin's Cura app (a (3,5) knot
 there; no code is shared). `src/shared/knot.ts` holds the curve, the status language and the
 colour maths (pure, tested); `src/renderer/src/Knot.tsx` runs it. It sits in every session's head
-where the dot was (`Mascot.tsx` falls back to it), and larger at the top left of the window, right
-of the traffic lights (`AppMark`), where it is full size and fast while any session works.
+where the dot was (`Mascot.tsx` falls back to it), and in the top left of the window, right of
+the traffic lights (`AppMark`), where it is full size and fast while any session works. Its
+boxes (`BOX` in `knot.ts`) are measured against deck: at rest it stands as tall as Foxtrot (15
+px in a 24 px box in a session's head; about 56 in the 88 px top bar, against his 56–60), so
+the top bar is deck's 88 px (`--bar`) and the traffic lights sit at deck's `{ x: 14, y: 37 }`
+(`docs/progress/2026-11-10-bar.md`).
 
 | Status | Mode | Size | Loop | Frames/s | Colour |
 |---|---|---|---|---|---|
 | busy | work | 1 | 2.4 s | 30 | accent → busy |
-| idle, unknown | rest | 0.5 | 22 s | 6 | accent → starting |
-| needs you (blocked, or attention) | needs | 0.85 | 7 s | 15 | blocked → busy |
-| starting | start | 0.75 | 5 s | 15 | starting → accent |
-| dead | dead | 0.5 | still | 0 | dead → muted; the head dimmed |
+| idle, unknown | rest | 0.8 | 22 s | 6 | accent → starting |
+| needs you (blocked, or attention) | needs | 0.92 | 7 s | 15 | blocked → busy |
+| starting | start | 0.86 | 5 s | 15 | starting → accent |
+| dead | dead | 0.8 | still | 0 | dead → muted; the head dimmed |
 
-Size changes ease over a few hundred ms in the same box. The strand's width follows the box, not
-the radius, so a small knot stays a line. A call for attention flares the pulse and swells the knot once (0.9 s).
+Size changes ease over a few hundred ms in the same box. The strand thins with the radius, only
+part of the way and never below a pixel, so a small knot stays a line. A call for attention flares the pulse and swells the knot once (0.9 s).
 
 - **Colour is the theme's.** Every colour drawn is checked against the panel and the window's
   background and moved toward the ink until it reaches 3:1; far strands are pulled toward the
   panel, never made see-through (that washed out on light themes). `test/knot.test.ts` checks
-  every variant, every mode, both sizes, with and without a flare.
+  every variant, every mode, at rest and full size, in both boxes, with and without a flare.
 - **The curve closes after P = 3 loops** (the spin turns a third of the way per loop; the knot
   matches itself every quarter turn), so each knot's clock wraps at 3 loops and never jumps. A
   speed change keeps the phase: the clock advances by dt / loop.
