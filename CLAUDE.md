@@ -5,7 +5,7 @@ column of small apps ("tiles") beside them that anyone can write, share and inst
 in the DoshaLabs GitHub org. macOS and Claude Code first.
 
 **Status (10 Nov 2026): the tile host (roadmap step 1), sessions, the status mark (section 8), the three-tab
-`+` menu with install, and the preview pane are built; the rest of this
+`+` menu with install, the preview pane and the trusted tier are built; the rest of this
 file is still the plan.** Every section says what was decided and why, so that whoever starts building, person or
 Claude session, does not have to re-derive it. When code lands, rewrite the matching section to
 describe what exists and delete the plan wording.
@@ -86,6 +86,15 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   input in that page (`input-event` / `before-input-event`, used up per open) and takes Esc from
   every webContents before the page sees it (`index.ts` `escClosesOverlay`). Wikipedia's picture
   lightbox uses it.
+- The trusted tier (bridge 1.2, `docs/progress/2026-11-10-track-b.md`): a built-in tile (only
+  `tiles/`) may declare `"backend": { "entry": "backend.mjs", "ops": [...], "timeoutMs"? }`.
+  `src/main/backend.ts` runs one utility process per such tile while it is on (turned off or
+  quit stops it; restarts after 1, 3, 10 s, then gives up and tells the page), from
+  `backend-host.ts`, which hands the tile's default export `{ handle, sessions, onSessions }`.
+  The wire is `backend-protocol.ts`. The page calls `workshop.backend.call(op, body)` (JSON);
+  core refuses undeclared ops. The backend gets an allowlisted env (PATH, HOME, SSH_AUTH_SOCK…,
+  never WORKSHOP_*), the sessions as `{ id, name, folder, root }`, no token; its output goes to
+  `<profile>/logs/backend-<id>.log`. Smoke loads `test/fixtures/trusted` as built in.
 - Session tiles (phase 1, `docs/progress/2026-11-10-phase1.md`): the left column is a column of
   tiles, one per open session, each its live conversation (`ChatView.tsx`; prose as markdown in
   the serif face, parsed to a tree by `src/shared/markdown.ts`, never HTML), with ⌘n, the status
@@ -122,7 +131,7 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   --git-common-dir`, so worktrees of one repo share it; `workshop.sessions` gives it as `root`
   beside `project` (the start folder). A store that cannot be parsed is moved aside
   (`store.json.broken-<time>`), never written over. Long transcripts are read from the end.
-- Not yet: `transcripts` for tiles, the trusted tier, subagent tiles and the wolfpack, the leash
+- Not yet: `transcripts` for tiles, subagent tiles and the wolfpack, the leash
   and permission prompts in a tile.
 
 Terms used throughout:
@@ -296,7 +305,7 @@ my-tile/
   icon.svg
   plugin/.claude-plugin/plugin.json       optional: a Claude Code plugin, "name" = the tile's id
   plugin/skills/<skill>/SKILL.md          how a Claude session uses this tile
-  backend.mjs                             optional: trusted tier only
+  backend.mjs                             optional: built-in tiles only (trusted tier)
 ```
 
 `plugin/` is an ordinary Claude Code plugin (`claude plugin validate tiles/wikipedia/plugin`
@@ -337,13 +346,16 @@ permissions, which makes them the trusted tier.
   per tile and shared; a door call goes to the instance used most recently. A page knows which
   it is from `workshop.instance` (`<id>`, then `<id>.2`…).
 - `span`: default height in grid rows.
+- `backend` (built-in tiles only): `{ "entry": "backend.mjs", "ops": [...], "timeoutMs"?: n }`.
+  A top-level key, not a permission; core shows it as one ("full access to this Mac") and refuses
+  it, with the reason, from any installed, indexed or dev tile.
 
 ### Two trust tiers
 
 | Tier | What it is | Index treatment |
 |---|---|---|
 | **Sandboxed** | Page only, bridge only | Automated checks, listed on merge |
-| **Trusted** | Adds `backend.mjs`, a node process with full machine access | **Reserved for DoshaLabs' own tiles at launch** (Spotify, PS2, git). Later: manual review, a visible "full access" badge, a louder install prompt |
+| **Trusted** | Adds `backend.mjs`, a node process (Electron `utilityProcess`) with full machine access, run while the tile is on | **Reserved for DoshaLabs' own tiles at launch** (Spotify, PS2, git). Later: manual review, a visible "full access" badge, a louder install prompt |
 
 A marketplace of full-access code is the security problem. Keeping nearly every tile in the
 sandbox, and making the exception loud and rare, is the answer to it.
@@ -402,7 +414,7 @@ workshop.door.handle(op, fn)       // "door"              → fn(args, caller, {
 workshop.notify({ text, attention }) // "notify"          → needs-you chip, macOS notification, the mark flares
 workshop.files.pick/list/entries/read/url/forget  // "files" → only what the user picked for this tile
 workshop.media                     // "camera" / "microphone" → passed to the macOS prompt
-workshop.backend.call(op, body)    // trusted tier only
+workshop.backend.call(op, body) / status() / onStatus(fn)   // built-in tiles with a "backend" only (bridge ^1.2)
 ```
 
 **Not in version 1: `workshop.model`.** A model call is the tile's own page asking an AI for

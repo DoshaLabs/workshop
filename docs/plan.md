@@ -38,7 +38,7 @@ The `+` cell's menu (`TilePicker.tsx`) is one list today. It becomes:
 - This reverses one line of the old plan: Wikipedia and Reminders stay built in. They are still
   written the author's way (ground rule 9), they just ship in the app.
 
-## Track B: the trusted tier (M) · §5
+## Track B: the trusted tier (M) · §5 · built 10 Nov 2026 (`docs/progress/2026-11-10-track-b.md`)
 
 Blocks Git, Spotify and PS2. **Agreed by Colin, 10 Nov 2026**, as written here:
 
