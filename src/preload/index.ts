@@ -6,6 +6,7 @@ import type { Usage } from '../shared/usage'
 import type { Transcript } from '../shared/transcript'
 import type { Shortcut } from '../shared/shortcuts'
 import type { ColumnState } from '../shared/column'
+import type { ActiveMascot } from '../shared/mascot'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
@@ -53,7 +54,16 @@ const core = {
   onShortcut: (fn: (s: Shortcut) => void) => on(CH.shortcut, fn),
   /** The tile column's state, kept in core's settings; null until it has first been saved. */
   column: (): Promise<ColumnState | null> => ipcRenderer.invoke(CH.columnGet),
-  setColumn: (c: ColumnState): Promise<void> => ipcRenderer.invoke(CH.columnSet, c)
+  setColumn: (c: ColumnState): Promise<void> => ipcRenderer.invoke(CH.columnSet, c),
+  // the mascot
+  mascot: (): Promise<ActiveMascot | null> => ipcRenderer.invoke(CH.mascotGet),
+  /** Saves a pack made in the setup screen (its PNG as bytes) and makes it the active one. */
+  saveMascot: (pack: unknown, png: Uint8Array, workerPng?: Uint8Array): Promise<ActiveMascot | null> => ipcRenderer.invoke(CH.mascotSave, pack, png, workerPng),
+  /** Deletes the active pack: back to the plain status dot. */
+  removeMascot: (): Promise<void> => ipcRenderer.invoke(CH.mascotRemove),
+  onMascot: (fn: (m: ActiveMascot | null) => void) => on(CH.mascotChanged, fn),
+  /** A session's mascot should leap once (a tile's `notify({ bark: true })`). */
+  onBark: (fn: (sessionId: string) => void) => on(CH.mascotBark, fn)
 }
 
 export type CoreApi = typeof core

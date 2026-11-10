@@ -50,15 +50,20 @@ The four ✅ rows were done on 10 Nov 2026 (`docs/progress/2026-11-10-phase1.md`
 
 ## Phase 2: the mascot (M) · §8
 
-Independent of everything else; can run beside phase 1.
+Independent of everything else; can run beside phase 1. **Done 10 Nov 2026**
+(`docs/progress/2026-11-10-phase2.md`), with Colin's change of the same day: the Knot, not a dot
+or the fox, is the default mark.
 
-- The sprite-pack format: a PNG plus JSON mapping each state to a row or run of frames and a speed.
-- The setup screen: drop a PNG, guess the grid, map states with a live preview, save.
-- The Foxtrot mapping for Elthen's sheet (our data, not his art), the link to his page, the
+- [x] The Knot: the default status mark on every session and the app's mark, themed, tested for
+  contrast in every theme.
+- [x] The sprite-pack format: a PNG plus JSON mapping each state to a row or run of frames and a speed.
+- [x] The setup screen: drop a PNG, guess the grid, map states with a live preview, save.
+- [x] The Foxtrot mapping for Elthen's sheet (our data, not his art), the link to his page, the
   credit and licence lines. No sheet in the repo, no fetching it for the user.
-- The pose on every session head (idle, look around, run, leap, sleep); a dot when no pack is
-  installed; `notify({ bark })` wired to the leap.
-- Outside the code: commission the owned fox (brief in §8).
+- [x] The pose on every session head (idle, look around, run, leap, sleep); the Knot when no pack
+  is installed; `notify({ bark })` wired to the leap and the Knot's flare.
+- [x] The worker coat as a tested tint and a pack field (drawn nowhere until subagent tiles exist).
+- [ ] ~~Commission the owned fox~~: no longer needed for launch (§8).
 
 ## Phase 3: finish the author's path (L) · §5, §6
 

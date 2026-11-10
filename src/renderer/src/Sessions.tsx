@@ -7,6 +7,7 @@ import type { SessionView } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import { fit, focusTerminal, mount, unmount } from './terminals'
 import { SessionUsage } from './UsageMeter'
+import { Mascot } from './Mascot'
 
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
@@ -125,7 +126,7 @@ export function FocusPane({ session, usage }: { session: SessionView; usage: Usa
   return (
     <section className="pane">
       <header className="head">
-        <span className={`dot ${session.status}`} />
+        <Mascot id={session.id} status={session.status} attention={session.attention} />
         <span className="name" title={session.title ?? undefined}>
           {session.name}
           {session.title && session.title !== session.name && <span className="muted"> · {session.title}</span>}

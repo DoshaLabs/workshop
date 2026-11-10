@@ -4,7 +4,7 @@ A desktop app for people who use Claude Code: several Claude Code sessions in on
 column of small apps ("tiles") beside them that anyone can write, share and install. Open source,
 in the DoshaLabs GitHub org. macOS and Claude Code first.
 
-**Status (10 Nov 2026): the tile host (roadmap step 1) and sessions are built; the rest of this
+**Status (10 Nov 2026): the tile host (roadmap step 1), sessions and the status mark (section 8) are built; the rest of this
 file is still the plan.** Every section says what was decided and why, so that whoever starts building, person or
 Claude session, does not have to re-derive it. When code lands, rewrite the matching section to
 describe what exists and delete the plan wording.
@@ -86,8 +86,13 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   ⌘N. Main catches them in `before-input-event` on core's window and every tile's page.
 - The tile column's state (off, extra instances, heights) is `settings.column` in core's
   settings (`src/shared/column.ts`), migrated once from the window's old localStorage.
+- The status mark (section 8): the Knot (`src/shared/knot.ts`, `Knot.tsx`) on every session and
+  at the top left; sprite packs over it (`src/shared/mascot.ts`, `src/main/mascot.ts`,
+  `Mascot.tsx`, `MascotSetup.tsx`, `mascot-store.ts`); `notify({ bark })` flares or leaps it.
+  Smoke: `WORKSHOP_SHOT_MASCOT=<dir>` saves pictures, `WORKSHOP_SMOKE_SHEET=<png>` tries a sheet
+  in the setup screen (throwaway profile only), `WORKSHOP_MEASURE_CPU=1` prints renderer CPU.
 - Not yet: `transcripts` for tiles, the trusted tier, subagent tiles and the wolfpack, the leash
-  and permission prompts in a tile, the preview pane, drag to reorder, Foxtrot.
+  and permission prompts in a tile, the preview pane, drag to reorder.
 
 Terms used throughout:
 
@@ -182,7 +187,7 @@ are actually building tiles.
 | Git tile | One tile, four tabs (section 4) |
 | Files tile | A plain directory tree |
 | Web-app tiles | Any site registered by name and URL, as a tile |
-| Mascot | Foxtrot, a fox whose pose is each session's status (section 8) |
+| Status mark | The Knot, whose size, speed and colour are each session's status; a sprite pack (Foxtrot recommended) may replace it (section 8) |
 
 The phone remote (deck's second renderer over Tailscale) is **not** in the launch scope.
 
@@ -530,72 +535,89 @@ the working version.
 
 ---
 
-## 8. The mascot and sprite packs
+## 8. The status mark: the Knot, and sprite packs over it
 
-**Foxtrot** is a pixel-art fox, and he is the status indicator: every session's head shows him in
-a pose instead of a dot.
+**Decision (Colin, 10 Nov 2026): the Knot is the default status mark and the app's mark.** It
+replaces Foxtrot out of the box. A sprite pack, Foxtrot included, is what a user may install over
+it. The commissioned fox is no longer needed for launch.
 
-### The states
+### The Knot (built)
 
-| State | When | Reference row |
-|---|---|---|
-| Idle | Starting, and the default pose | Idle (tail wag), 5 frames |
-| Look around | The session needs you | Look around, 14 frames |
-| Run | Claude is working | Run, 8 frames |
-| Leap | A bark: the moment something needs you or a turn finishes | Leap, 11 frames |
-| Sleep | Resting, waiting for you | Sleep, 6 frames |
+A (3,4) torus knot turning in 3D on a small 2D canvas, strands back to front, a bright pulse
+riding the strand: workshop's own version of the "AlgoGlyph" in Colin's Cura app (a (3,5) knot
+there; no code is shared). `src/shared/knot.ts` holds the curve, the status language and the
+colour maths (pure, tested); `src/renderer/src/Knot.tsx` runs it. It sits in every session's head
+where the dot was (`Mascot.tsx` falls back to it), and larger at the top left of the window, right
+of the traffic lights (`AppMark`), where it is full size and fast while any session works.
 
-A session that died currently shows a "down" pose in deck. The commissioned sheet has no such
-row (see below), so until one exists a dead session shows Sleep with its tile dimmed. Deck never
-uses an "alert, tail up" pose: Colin's rule, it reads badly. Do not add one.
+| Status | Mode | Size | Loop | Frames/s | Colour |
+|---|---|---|---|---|---|
+| busy | work | 1 | 2.4 s | 30 | accent → busy |
+| idle, unknown | rest | 0.5 | 22 s | 6 | accent → starting |
+| needs you (blocked, or attention) | needs | 0.85 | 7 s | 15 | blocked → busy |
+| starting | start | 0.75 | 5 s | 15 | starting → accent |
+| dead | dead | 0.5 | still | 0 | dead → muted; the head dimmed |
 
-### Bring your own sprite sheet
+Size changes ease over a few hundred ms in the same box. The strand's width follows the box, not
+the radius, so a small knot stays a line. A bark flares the pulse and swells the knot once (0.9 s).
 
-The mascot is a **sprite pack**: a PNG plus a small JSON file mapping each state to a row or a
-run of frames and a speed. Workshop ships a setup screen for making one:
+- **Colour is the theme's.** Every colour drawn is checked against the panel and the window's
+  background and moved toward the ink until it reaches 3:1; far strands are pulled toward the
+  panel, never made see-through (that washed out on light themes). `test/knot.test.ts` checks
+  every variant, every mode, both sizes, with and without a flare.
+- **The curve closes after P = 3 loops** (the spin turns a third of the way per loop; the knot
+  matches itself every quarter turn), so each knot's clock wraps at 3 loops and never jumps. A
+  speed change keeps the phase: the clock advances by dt / loop.
+- **Cost.** One shared clock that wakes only when some visible knot is due (a timer, then one
+  rAF), nothing drawn off screen (IntersectionObserver) or while the window is hidden, one still
+  frame under reduced motion, about 60 segments at 20 px. 2D canvases only: terminals need WebGL.
 
-1. Drop in a PNG. Workshop guesses the frame grid; the user can correct the frame size.
-2. For each state, pick a row or a run of frames and a speed. A live preview plays beside it.
-3. Save. A pack is one folder, so it is easy to share, and packs are a category in the index.
+### Sprite packs (built)
 
-Only one state is required; anything unmapped falls back to the nearest one. The worker coat
-(subagents wear gold in deck) is a tint of whatever sheet is loaded, unless the pack supplies
-its own variant. The mascot's name is the user's to change; "Foxtrot" is the default.
+A pack is a folder in `<profile>/mascots/<id>/`: a PNG and `pack.json` (`src/shared/mascot.ts`
+validates it; `src/main/mascot.ts` stores it; core's settings name the active one):
 
-### The recommended mascot at launch: Foxtrot, downloaded by the user
+```json
+{ "format": 1, "name": "Foxtrot", "image": "sheet.png", "sheet": { "w": 448, "h": 224 },
+  "frame": { "w": 32, "h": 32 }, "box": { "x": 4, "y": 14, "w": 22, "h": 18 },
+  "states": { "idle": { "row": 0, "from": 0, "frames": 5, "ms": 280 }, "...": {} },
+  "worker": { "swap": [["#d67941", "#e5b843"]] }, "credit": { "by": "Elthen", "url": "https://…" } }
+```
 
-**Decision (10 Nov 2026).** The mascot is called Foxtrot, and the sprite-pack setup recommends
-the fox deck uses: Elthen's "2D Pixel Art Fox Sprites". Workshop does NOT contain the sheet. The
-setup screen links to https://elthen.itch.io/2d-pixel-art-fox-sprites , the user downloads the
-PNG themselves (name your own price, $0 allowed; the licence is the same either way) and drops
-it in. Workshop ships only the MAPPING for that sheet (which row is which state, frame counts,
-speeds: our data, not his art), so the drop is one step with nothing to configure.
+States: `idle` (starting, default), `look` (needs you), `run` (working), `leap` (a bark, played
+once), `sleep` (resting; a dead session sleeps, dimmed). One is required; the rest borrow the
+nearest (`FALLBACK`). Unknown fields and states are refused. **There is no "alert, tail up" pose:
+Colin's rule, it reads badly. Do not add one.** `box` crops each frame's empty margins; the art
+is fitted into 22 × 18 at whole-number scales, `image-rendering: pixelated`. `worker` is the
+subagent coat: its own sheet, or colours to swap, else `tintCoat`'s gold (built and tested, not
+drawn yet: there are no subagent tiles). Barks: a tile's `notify({ bark: true })` goes to the
+session that last called that tile through the door (10 minutes), else the focused one; a session
+also barks the moment it starts needing you or finishes a turn.
 
-Beside the link, the setup screen and the README say:
+The setup screen (top bar, "Mascot"; `MascotSetup.tsx`) is "use your own sprite sheet instead of
+the Knot": drop or choose a PNG, the grid is guessed (the smallest frame size whose grid lines
+never cut through art) and can be corrected, each pose gets a row, first frame, count and speed
+with a live preview, name it, save; Edit and Remove (back to the Knot).
+
+### Foxtrot: recommended, downloaded by the user
+
+The setup screen recommends Elthen's "2D Pixel Art Fox Sprites" and links to
+https://elthen.itch.io/2d-pixel-art-fox-sprites (opened in the browser). Workshop does NOT
+contain the sheet and never fetches it; the user downloads it (name your own price, $0 allowed)
+and drops it in. Workshop ships only the MAPPING (`FOXTROT` in `src/shared/mascot.ts`: rows,
+frame counts, speeds, the art box, the two coat colours for the worker swap), and recognises the
+sheet by its LAYOUT: 448 × 224, 32-pixel frames, and how many frames each row holds read from
+the transparent pixels (5, 14, 8, 11, 5, 6, 7). No pixels and no hash of the art. Beside the link:
 
 - The art is Elthen's, under his own licence, not this project's.
 - Credit is not required by his licence but he appreciates it; workshop credits him by name with
   a link, and suggests a tip.
 - You may not redistribute the sheet, use it in anything blockchain-related, or train AI on it.
 
-Do not fetch the file for the user from itch, and do not mirror it, without Elthen's say-so.
-First run with no sheet shows a plain status dot.
-
-### The owned default: a commissioned fox
-
-**Decision (10 Nov 2026): DoshaLabs commissions a new, original fox** and owns it outright, so it
-can live in this repo under the project's licence.
-
-- The artist's reference is `~/Downloads/Fox Sprite Sheet - labelled.png` on Colin's machine:
-  five labelled rows (Idle, Look around, Run, Leap, Sleep). It shows which states and how many
-  frames, not what to draw. **The commission must be an original design, not a trace or redraw of
-  the reference**, or it inherits the reference's licence problem.
-- Brief: cute and cartoonish, big head and big tail, reads clearly at about 22 × 18 pixels inside
-  a 32 × 32 frame, side view facing right, hard pixel edges with a dark outline.
-- Ask for the coat in exactly two ramp colours, so a recolour (the gold worker coat) is a palette
-  swap.
-- Ask for a written assignment of rights, or a CC0 dedication.
-- Nice to have: a sixth row for a session that died.
+Tests and smoke use synthetic sheets of plain blocks. A commissioned, owned fox (brief: original
+design, cute, big head and tail, 22 × 18 in a 32 × 32 frame, two coat ramp colours, a written
+assignment or CC0, a row for a dead session) could still ship as a pack one day; it no longer
+blocks anything.
 
 ### Why not the fox deck uses
 
@@ -677,8 +699,8 @@ already uses most of them:
 5. **The counter and rankings.**
 6. **Hosted marketplace extras**, only if strangers are building tiles.
 
-The mascot no longer blocks the first public push: workshop ships with no sheet and the setup
-screen points at Foxtrot's download (section 8). The commissioned fox replaces that when it exists.
+The mascot does not block the first public push: the Knot is the default mark, and the setup
+screen points at Foxtrot's download for anyone who wants the fox (section 8).
 
 ---
 
@@ -689,7 +711,8 @@ screen points at Foxtrot's download (section 8). The commissioned fox replaces t
   the public app exists. Other candidates raised: foxtrots-workshop, foxden, skulk, tilework.
 - **The bridge's name.** This document uses `window.workshop`, `"workshop": "^1"` and
   `workshop tile dev`. Not confirmed; follows the public name.
-- **The dead-session pose** until the commissioned sheet has one.
+- **The worker swap's two coat colours** in `FOXTROT` are read off Elthen's sheet (deck had them).
+  Two hex values are not his art, but Colin should confirm; without them the default gold tint applies.
 - **Does the tile index work as a Claude Code plugin marketplace** as is?
 - **Permission prompts in a tile**: confirm the PreToolUse route can carry an approve / deny.
 - **When to open the trusted tier** to outside authors, and what its review looks like.

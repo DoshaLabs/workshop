@@ -12,11 +12,13 @@ export interface Settings {
   appearance: Appearance
   /** Folders of tiles under development (`workshop tile dev`, or made from the + menu): loaded again at every start. */
   devTiles: string[]
+  /** The active sprite pack (a folder under `<profile>/mascots/`), or null for the plain status dot. */
+  mascot: string | null
   /** The tile column (off, extra instances, heights). Absent until first saved: the window then migrates its old localStorage once. */
   column?: ColumnState
 }
 
-const DEFAULTS: Settings = { theme: DEFAULT_THEME_ID, appearance: 'system', devTiles: [] }
+const DEFAULTS: Settings = { theme: DEFAULT_THEME_ID, appearance: 'system', devTiles: [], mascot: null }
 
 /** Drops anything that is not a known value, so a hand-edited file cannot break the window. */
 export function cleanSettings(raw: unknown, base: Settings = DEFAULTS): Settings {
@@ -25,6 +27,7 @@ export function cleanSettings(raw: unknown, base: Settings = DEFAULTS): Settings
     theme: typeof r.theme === 'string' && THEMES.some((t) => t.id === r.theme) ? r.theme : base.theme,
     appearance: r.appearance === 'light' || r.appearance === 'dark' || r.appearance === 'system' ? r.appearance : base.appearance,
     devTiles: Array.isArray(r.devTiles) ? [...new Set(r.devTiles.filter((d): d is string => typeof d === 'string' && d.startsWith('/')))].slice(0, 50) : base.devTiles,
+    mascot: r.mascot === null || (typeof r.mascot === 'string' && /^[a-z0-9][a-z0-9-]{0,39}$/.test(r.mascot)) ? (r.mascot as string | null) : base.mascot,
     ...column(r.column, base.column)
   }
 }

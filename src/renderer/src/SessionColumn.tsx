@@ -4,6 +4,7 @@
 // saying so. A + for a new session, then the parked sessions as a card at the foot. deck's grid
 // tile (components/Tile.tsx) without slots, the wolfpack or the leash.
 
+import { Mascot } from './Mascot'
 import { useEffect, useState } from 'react'
 import { MODELS } from '@shared/models'
 import { shortcutOrder, type SessionView, type SessionsState } from '@shared/sessions'
@@ -74,7 +75,7 @@ function CenterLine({ s, n, usage }: { s: SessionView; n?: number; usage: Usage 
     <div className={`session-center ${s.attention ? 'attention' : ''}`} data-session={s.id} title={tilde(s.cwd)}>
       <header className="head">
         {n && <span className="key">⌘{n}</span>}
-        <span className={`dot ${s.status}`} />
+        <Mascot id={s.id} status={s.status} attention={s.attention} />
         <span className="name">{s.name}</span>
         <SessionUsage id={s.id} usage={usage} />
         <span className="muted">in the center</span>
@@ -116,7 +117,7 @@ function SessionTile({ s, n, usage, onPick }: { s: SessionView; n?: number; usag
     >
       <header className="head">
         {n && <span className="key">⌘{n}</span>}
-        <span className={`dot ${s.status}`} />
+        <Mascot id={s.id} status={s.status} attention={s.attention} />
         <span className="name" title={tilde(s.cwd)}>
           {s.name}
         </span>
@@ -207,7 +208,7 @@ function ParkedCard({ parked, onPick }: { parked: SessionView[]; onPick: (s: Ses
       </header>
       {parked.map((s) => (
         <div key={s.id} className="session" data-session={s.id} title={`${s.title ? `${s.title}\n` : ''}${tilde(s.cwd)}\nClick to bring it back`} onClick={() => onPick(s)}>
-          <span className={`dot ${s.status}`} />
+          <Mascot id={s.id} status={s.status} attention={s.attention} />
           <span className="session-text">
             <span className="session-name">{s.name}</span>
             <span className="session-folder">{base(s.cwd)}</span>

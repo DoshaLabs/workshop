@@ -135,5 +135,11 @@ export const CH = {
   shortcut: 'ws:core:shortcut', // main → window
   // the tile column's state (off, extra instances, heights), kept in core's settings
   columnGet: 'ws:core:column-get',
-  columnSet: 'ws:core:column-set'
+  columnSet: 'ws:core:column-set',
+  // the mascot (§8): core window ⇄ main
+  mascotGet: 'ws:core:mascot-get',
+  mascotSave: 'ws:core:mascot-save',
+  mascotRemove: 'ws:core:mascot-remove',
+  mascotChanged: 'ws:core:mascot', // main → window: the active pack, or null
+  mascotBark: 'ws:core:mascot-bark' // main → window: a session's mascot leaps once
 } as const

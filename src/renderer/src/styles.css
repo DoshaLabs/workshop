@@ -1193,3 +1193,197 @@ button {
   opacity: 0.5;
   cursor: default;
 }
+
+/* ---- The status mark (CLAUDE.md §8): the Knot (Knot.tsx) by default, or an installed sprite
+   pack's mascot (Mascot.tsx). Both sit where the status dot was, in the same box. ---- */
+.knot {
+  display: block;
+  flex: none;
+}
+/* A dead session: the mark holds still and its head is dimmed. */
+.knot.dead,
+.sprite.dead {
+  opacity: 0.6;
+}
+.session:has(> .knot.dead),
+.session:has(> .sprite.dead),
+.head:has(> .knot.dead),
+.head:has(> .sprite.dead) {
+  opacity: 0.6;
+}
+.sprite {
+  display: inline-block;
+  flex: none;
+  background-repeat: no-repeat;
+  /* Pixel art is never smoothed. */
+  image-rendering: pixelated;
+}
+/* The app's mark: top left, right of the window's buttons (hiddenInset puts them at about x 12–70).
+   Not a control, so the window can still be dragged by it. */
+.app-mark {
+  position: fixed;
+  top: 7px;
+  left: 80px;
+  width: 26px;
+  height: 26px;
+  z-index: 10;
+  pointer-events: none;
+  -webkit-app-region: drag;
+}
+
+/* ---- The mascot's setup screen (MascotSetup.tsx) ---- */
+.mascot-setup h1 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.mascot-setup .close {
+  font-size: 18px;
+}
+.mascot-setup p {
+  margin: 0;
+}
+.mascot-setup .muted {
+  color: var(--ws-muted);
+}
+.mascot-setup input[type='number'] {
+  font: inherit;
+  font-size: 13px;
+  color: var(--ws-ink);
+  background: var(--ws-bg);
+  border: 1px solid var(--ws-line);
+  border-radius: 7px;
+  padding: 5px 7px;
+  width: 100%;
+}
+.mascot-setup input[type='number']:disabled {
+  opacity: 0.4;
+}
+.mascot-setup .row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.mascot-reco {
+  border: 1px solid var(--ws-line);
+  border-radius: 9px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ws-ink);
+}
+.mascot-reco ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+.mascot-reco button {
+  align-self: flex-start;
+}
+.mascot-drop {
+  border: 1px dashed var(--ws-line);
+  border-radius: 9px;
+  padding: 18px;
+  text-align: center;
+  color: var(--ws-muted);
+}
+.mascot-drop.over {
+  border-color: var(--ws-accent);
+  color: var(--ws-accent);
+}
+.mascot-known {
+  color: var(--ws-accent);
+}
+.mascot-sheet {
+  overflow: auto;
+  max-height: 320px;
+  border: 1px solid var(--ws-line);
+  border-radius: 7px;
+  background: var(--ws-bg);
+}
+.mascot-sheet canvas {
+  display: block;
+  image-rendering: pixelated;
+  color: var(--ws-accent);
+}
+.mascot-states {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mascot-state {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.4fr) 1.6fr 0.7fr 0.7fr 0.9fr 56px;
+  gap: 8px;
+  align-items: end;
+}
+.mascot-state-name {
+  display: flex;
+  flex-direction: column;
+  color: var(--ws-ink);
+  align-self: center;
+}
+.mascot-state-name small,
+.mascot-pose small {
+  color: var(--ws-muted);
+  font-size: 10px;
+}
+.mascot-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  border: 1px solid var(--ws-line);
+  border-radius: 7px;
+}
+.mascot-current {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--ws-ink);
+}
+.mascot-current a {
+  color: var(--ws-accent);
+}
+.mascot-poses {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.mascot-pose {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.mascot-setup button.danger {
+  color: var(--ws-blocked);
+  border-color: var(--ws-blocked);
+}
+.mascot-setup button.link {
+  border: none;
+  padding: 0;
+  color: var(--ws-accent);
+  background: none;
+  cursor: pointer;
+}
+.mascot-setup .error {
+  color: var(--ws-blocked);
+  margin: 0;
+}
+.mascot-setup {
+  min-width: 0;
+}
+.mascot-setup .mascot-state {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 0.9fr) 56px;
+}
+.mascot-setup select {
+  min-width: 0;
+  width: 100%;
+}
+.mascot-sheet canvas {
+  max-width: 100%;
+  height: auto;
+}
