@@ -682,8 +682,9 @@ function createWindow(): void {
     show: !SMOKE,
     title: 'workshop',
     titleBarStyle: 'hiddenInset',
-    // The window's buttons sit at the middle of the top bar (`--bar` in styles.css, 56 px).
-    trafficLightPosition: { x: 18, y: 20 },
+    // The window's buttons sit at the middle of the top bar (`--bar` in styles.css, 88 px): they
+    // are 14 px tall, so 37 from the top, where deck puts them in a bar of the same height.
+    trafficLightPosition: { x: 14, y: 37 },
     backgroundColor: vars()['--ws-bg'],
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

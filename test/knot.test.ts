@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MIN_CONTRAST, MODES, P, TAU, contrast, drawKnot, ensureContrast, knotMode, knotPalette, knotPoints, parseColor, wrapClock, type KnotCtx, type KnotMode, type KnotTheme } from '@shared/knot'
+import { BOX, MIN_CONTRAST, MODES, P, TAU, contrast, drawKnot, ensureContrast, knotMode, knotPalette, knotPoints, parseColor, wrapClock, type KnotCtx, type KnotMode, type KnotTheme } from '@shared/knot'
 import { THEMES } from '@shared/themes'
 
 /** A canvas context that only records what it was asked to draw with. */
@@ -67,12 +67,64 @@ describe('the status language', () => {
     expect(knotMode('blocked', false)).toBe('needs')
     expect(knotMode('dead', true)).toBe('dead')
   })
-  it('is full size and fast at work, much smaller and slow at rest, still when dead', () => {
+  it('is full size and fast at work, smaller and slow at rest, still when dead', () => {
     expect(MODES.work.size).toBe(1)
-    expect(MODES.rest.size).toBeLessThanOrEqual(0.65)
+    expect(MODES.rest.size).toBeLessThanOrEqual(0.8)
+    expect(MODES.rest.size).toBeLessThan(MODES.start.size)
+    expect(MODES.start.size).toBeLessThan(MODES.needs.size)
+    expect(MODES.needs.size).toBeLessThan(MODES.work.size)
     expect(MODES.work.loop).toBeLessThan(MODES.rest.loop / 5)
     expect(MODES.rest.fps).toBeLessThanOrEqual(8)
     expect(MODES.dead.loop).toBe(0)
+  })
+})
+
+/** The knot's drawn height in a box of side S, averaged over a whole cycle, with the strand's width. */
+function drawnHeight(S: number, size: number, flare = 0): { mean: number; max: number } {
+  let sum = 0
+  let max = 0
+  const steps = 60
+  for (let i = 0; i < steps; i++) {
+    let lo = Infinity
+    let hi = -Infinity
+    let y = 0
+    const ctx: KnotCtx = {
+      strokeStyle: '',
+      lineWidth: 1,
+      lineCap: 'butt',
+      beginPath() {},
+      moveTo(_x, y0) {
+        y = y0
+      },
+      lineTo(_x, y1) {
+        const w = ctx.lineWidth / 2
+        lo = Math.min(lo, y - w, y1 - w)
+        hi = Math.max(hi, y + w, y1 + w)
+      },
+      stroke() {}
+    }
+    drawKnot(ctx, { S, ph: (i / steps) * P * TAU, palette: knotPalette(variants[0].theme, 'rest'), size, flare })
+    sum += hi - lo
+    max = Math.max(max, hi - lo)
+  }
+  return { mean: sum / steps, max }
+}
+
+// Colin, 10 Nov 2026: "the knot takes up the same height as foxtrot". In deck Foxtrot stands 15
+// sheet pixels tall: 15 px in a session's head (1×), 60 px in the 88 px top bar (4×); asleep, 11 and 44.
+describe("the knot stands as tall as Foxtrot", () => {
+  it('in a session head, at rest: his 15 px, in a box no taller than before', () => {
+    expect(BOX.head).toBeLessThanOrEqual(24)
+    expect(drawnHeight(BOX.head, MODES.rest.size).mean).toBeGreaterThanOrEqual(14.5)
+    expect(drawnHeight(BOX.head, MODES.rest.size).mean).toBeLessThanOrEqual(15.5)
+  })
+  it('in the top bar, at rest: between his 44 asleep and 60 standing, and never over 60', () => {
+    const rest = drawnHeight(BOX.mark, MODES.rest.size)
+    expect(rest.mean).toBeGreaterThanOrEqual(52)
+    expect(rest.max).toBeLessThanOrEqual(61)
+  })
+  it('working and flaring, still inside its box', () => {
+    for (const S of [BOX.head, BOX.mark]) expect(drawnHeight(S, 1, 1).max).toBeLessThanOrEqual(S)
   })
 })
 
@@ -100,9 +152,9 @@ describe('contrast, every theme, every mode, both sizes', () => {
         const palette = knotPalette(theme, mode)
         for (const size of [MODES.rest.size, 1]) {
           for (const flare of [0, 1]) {
-            for (const ph of [0.4, 2.5, 7]) {
+            for (const [S, ph] of [[BOX.head, 0.4], [BOX.head, 2.5], [BOX.mark, 7]]) {
               const r = recorder()
-              drawKnot(r, { S: 20, ph, palette, size, flare })
+              drawKnot(r, { S, ph, palette, size, flare })
               expect(r.strokes).toBeGreaterThan(0)
               for (const s of r.styles) {
                 const c = parseColor(s)!

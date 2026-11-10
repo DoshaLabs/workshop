@@ -8,7 +8,7 @@
 // draws one still frame per change. 2D canvases only: terminals need the WebGL contexts.
 
 import { useEffect, useRef, useState } from 'react'
-import { FLARE_MS, MODES, TAU, drawKnot, knotMode, knotPalette, wrapClock, type KnotMode, type KnotPalette, type KnotTheme } from '@shared/knot'
+import { BOX, FLARE_MS, MODES, TAU, drawKnot, knotMode, knotPalette, wrapClock, type KnotMode, type KnotPalette, type KnotTheme } from '@shared/knot'
 import type { SessionStatus } from '@shared/sessions'
 import { useAttentionCalls } from './mascot-store'
 
@@ -213,14 +213,14 @@ const LABEL: Record<KnotMode, string> = {
 /** A session's status as a Knot. */
 export function SessionKnot({ id, status, attention }: { id?: string; status: SessionStatus; attention: boolean }) {
   const mode = knotMode(status, attention)
-  return <KnotCanvas mode={mode} size={24} attentionOf={id} status={status} className={`session-knot ${status}`} title={LABEL[mode]} />
+  return <KnotCanvas mode={mode} size={BOX.head} attentionOf={id} status={status} className={`session-knot ${status}`} title={LABEL[mode]} />
 }
 
-/** The app's mark, top left beside the window's buttons: full size and fast while any session works. */
+/** The app's mark, top left beside the window's buttons, the top bar's full height: full size and fast while any session works. */
 export function AppMark({ working }: { working: boolean }) {
   return (
     <div className="app-mark" aria-hidden="true">
-      <KnotCanvas mode={working ? 'work' : 'rest'} size={44} attentionOf="*" title={working ? 'A session is working' : 'No session is working'} />
+      <KnotCanvas mode={working ? 'work' : 'rest'} size={BOX.mark} attentionOf="*" title={working ? 'A session is working' : 'No session is working'} />
     </div>
   )
 }

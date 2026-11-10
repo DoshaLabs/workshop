@@ -48,8 +48,10 @@ button {
   /* Thirds, as in deck: sessions, what you are on now, tiles. */
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
-  /* The top bar: tall enough for the app's mark (the Knot) to turn at a size it reads at. */
-  --bar: 56px;
+  /* The top bar: deck's height (88 px, measured), which deck chose to hold Foxtrot at 4×; the
+     app's mark (the Knot) fills it at his height. main's trafficLightPosition centres the
+     window's buttons in it. */
+  --bar: 88px;
   height: 100%;
   padding: var(--bar) 8px 8px;
   -webkit-app-region: drag;
@@ -1224,10 +1226,10 @@ button {
    Not a control, so the window can still be dragged by it. */
 .app-mark {
   position: fixed;
-  top: calc((var(--bar) - 44px) / 2);
+  top: 0;
   left: 84px;
-  width: 44px;
-  height: 44px;
+  width: var(--bar);
+  height: var(--bar);
   z-index: 10;
   pointer-events: none;
   -webkit-app-region: drag;
