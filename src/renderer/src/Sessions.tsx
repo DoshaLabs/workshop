@@ -53,7 +53,7 @@ export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: (
     <section className="launcher launch">
       <div className="launch-hero">
         <KnotCanvas mode="rest" size={112} className="launch-knot" />
-        <h1>What should Claude work on?</h1>
+        <h1>What are you working on?</h1>
       </div>
 
       <div className="launch-compose">
@@ -62,7 +62,7 @@ export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: (
           onChange={(e) => setPrompt(e.target.value)}
           rows={4}
           autoFocus
-          placeholder="Describe the task, or leave this empty and talk to Claude once it opens."
+          placeholder="Describe the task, or leave this empty and start talking once the session opens."
           onKeyDown={(e) => {
             if (e.key === 'Enter' && e.metaKey) void start()
           }}
