@@ -40,7 +40,7 @@ The `+` cell's menu (`TilePicker.tsx`) is one list today. It becomes:
 
 ## Track B: the trusted tier (M) · §5 · built 10 Nov 2026 (`docs/progress/2026-11-10-track-b.md`)
 
-Blocks Git, Spotify and PS2. **Agreed by Colin, 10 Nov 2026**, as written here:
+Blocks Git and PS2. **Agreed by Colin, 10 Nov 2026**, as written here:
 
 - A trusted tile adds `backend.mjs`. Core runs it as its own process (Electron `utilityProcess`),
   started when the tile is turned on and stopped when it is turned off or core quits.
@@ -130,7 +130,8 @@ sprite packs as a second category, the tile template as its own repo with `npm c
 | Web-app tiles (a site by name and URL) | Core | a decision: how a site fits the sandbox |
 | Posture | Marketplace, sandboxed | camera tested; install |
 | Game Boy, PS1 | Marketplace, own repos | install; the GPL core stays out of this repo |
-| Spotify, PS2 | Trusted | track B, and the trusted tier opened beyond built-ins |
+| Spotify | Marketplace, sandboxed | the `music` permission (Colin, 10 Nov 2026: Spotify is built the author's way, as anyone could, not as a trusted tile); Colin builds it with "make one with Claude" |
+| PS2 | Trusted | the trusted tier opened beyond built-ins |
 
 ## Track H: something a stranger can install (M) · §10
 

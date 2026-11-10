@@ -235,7 +235,7 @@ The phone remote (deck's second renderer over Tailscale) is **not** in the launc
 
 | Tile | What it does | Tier (section 5) |
 |---|---|---|
-| Spotify | Now playing, transport, playlists, driving Spotify.app | Trusted |
+| Spotify | Now playing and transport, driving Spotify.app through core's `music` permission | Sandboxed |
 | Reminders / notes | To-dos, notes and a log by project; sessions can write to it | Sandboxed |
 | Posture | Camera-based slouch alert with a streak; off by default, all on-device | Sandboxed |
 | Spend / usage | What each project and session cost; the 5-hour and weekly windows | Sandboxed |
@@ -355,7 +355,7 @@ permissions, which makes them the trusted tier.
 | Tier | What it is | Index treatment |
 |---|---|---|
 | **Sandboxed** | Page only, bridge only | Automated checks, listed on merge |
-| **Trusted** | Adds `backend.mjs`, a node process (Electron `utilityProcess`) with full machine access, run while the tile is on | **Reserved for DoshaLabs' own tiles at launch** (Spotify, PS2, git). Later: manual review, a visible "full access" badge, a louder install prompt |
+| **Trusted** | Adds `backend.mjs`, a node process (Electron `utilityProcess`) with full machine access, run while the tile is on | **Reserved for DoshaLabs' own tiles at launch** (PS2, git). Later: manual review, a visible "full access" badge, a louder install prompt |
 
 A marketplace of full-access code is the security problem. Keeping nearly every tile in the
 sandbox, and making the exception loud and rare, is the answer to it.
@@ -474,7 +474,7 @@ This generalizes what deck does by hand for each tile (`/deck:mol`, `/deck:remin
 | Spend | Sandboxed | usage |
 | Game Boy | Sandboxed | files (the games folder), storage, door |
 | PS1 | Sandboxed | files, storage |
-| Spotify | Trusted | backend (AppleScript), net (album art) |
+| Spotify | Sandboxed | music (core drives Spotify.app and Music.app by AppleScript; art through the tile's origin) |
 | PS2 | Trusted | backend (PCSX2) |
 | Git (core) | Trusted | backend (`git`, `gh`), sessions read |
 
