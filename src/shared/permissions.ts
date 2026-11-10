@@ -17,6 +17,7 @@ export function permissionWords(p: Permissions): string[] {
   if (p.microphone) out.push('use the microphone')
   if (p.sessions === 'write') out.push('see your sessions and type into them')
   else if (p.sessions === 'read') out.push('see your sessions (names, folders, status)')
+  if (p.music) out.push('see and control what Spotify or Music is playing')
   if (p.files) out.push('read files and folders you pick for it')
   if (p.door) out.push(`answer Claude sessions (${p.door.ops.join(', ')})`)
   if (p.usage) out.push('see your usage and costs')
@@ -33,7 +34,7 @@ export function permissionWords(p: Permissions): string[] {
  */
 export function permissionKeys(p: Permissions): string[] {
   const keys: string[] = []
-  for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'backend'] as const) if (p[k]) keys.push(k)
+  for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'music', 'backend'] as const) if (p[k]) keys.push(k)
   if (p.sessions) keys.push(`sessions:${p.sessions}`)
   for (const op of p.door?.ops ?? []) keys.push(`door:${op}`)
   for (const h of p.net ?? []) keys.push(`net:${h}`)

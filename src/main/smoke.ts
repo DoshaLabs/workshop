@@ -14,6 +14,8 @@ import { installs } from './smoke-install'
 import { backendSmoke } from './smoke-backend'
 import type { Backends } from './backend'
 import { previewSmoke, reorderSmoke } from './smoke-preview'
+import { musicSmoke } from './smoke-music'
+import type { MusicHost } from './music'
 
 interface Ctx {
   win: BrowserWindow
@@ -28,6 +30,8 @@ interface Ctx {
   profile?: string
   /** The trusted tier's processes (main/backend.ts). */
   backends?: Backends
+  /** `workshop.music`, driven by a stand-in for osascript (smoke-music.ts). */
+  music?: MusicHost
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -198,6 +202,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await instances(check, ctx)
     await installs(check, ctx)
     await backendSmoke(check, ctx)
+    await musicSmoke(check, ctx)
     await knotClock(check, ctx)
     // Last: it stops this core's sessions.
     await restart(check, ctx)

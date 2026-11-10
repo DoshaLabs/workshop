@@ -6,8 +6,8 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). */
-export const BRIDGE_VERSION = '1.2.0'
+/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). */
+export const BRIDGE_VERSION = '1.3.0'
 
 /** A tile's own origin is tile://<id>/. */
 export const TILE_SCHEME = 'tile'
@@ -52,6 +52,12 @@ export interface Permissions {
    * it at install, and a core that does not know it refuses the tile.
    */
   overlay?: boolean
+  /**
+   * `workshop.music`: what Spotify or Music is playing, and play, pause, skip, seek, volume. Core
+   * drives the apps (main/music.ts) and serves the artwork on the tile's own origin, so a music
+   * tile needs no `net` and no backend.
+   */
+  music?: boolean
   /** Hosts the page may reach: `example.com` or `*.example.com`. Nothing else gets through. */
   net?: string[]
   /**
@@ -89,7 +95,7 @@ export const DOOR_TIMEOUT_MAX = 120_000
 export const BACKEND_TIMEOUT_DEFAULT = 10_000
 export const BACKEND_TIMEOUT_MAX = 120_000
 
-const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'net', 'backend'])
+const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'music', 'net', 'backend'])
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -203,7 +209,7 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
   if (!isObj(p)) errors.push('permissions: must be an object')
   else {
     for (const k of Object.keys(p)) if (!KNOWN.has(k)) errors.push(`permissions.${k}: not a permission this core knows`)
-    for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay'] as const) {
+    for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'music'] as const) {
       if (p[k] === undefined) continue
       if (typeof p[k] !== 'boolean') errors.push(`permissions.${k}: must be true or false`)
       else if (p[k]) permissions[k] = true
