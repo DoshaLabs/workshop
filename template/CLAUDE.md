@@ -155,7 +155,21 @@ plugin/skills/<skill>/SKILL.md        frontmatter (name, description), then the 
 Only skills are accepted there (no hooks, MCP servers, agents or commands). A session that was
 already running does not see a skill added later; a new session does.
 
+## Check it
+
+Run the same checks workshop runs before it loads a tile, from this folder:
+
+```bash
+node "$(dirname "$WORKSHOP_TILE")/workshop.mjs" tile check .     # add --json for a machine-readable report
+```
+
+It checks `tile.json`, that the page and icon exist inside the folder, that `plugin/` holds only
+skills, and that nothing asks for the trusted tier (a `backend`: only tiles that ship with
+workshop may have one). Exit 0 means the tile will load; every error says what to fix. Warnings
+are things that load but probably not as you meant (no CSP, a symlink, which install turns into a
+plain file). Run it after every change to `tile.json` and before you say you are done.
+
 ## When you are done
 
-Tell the user what the tile does, which permissions it asks for and why, and anything it could not
-do inside the sandbox.
+Run `tile check` (above) and fix what it reports. Then tell the user what the tile does, which
+permissions it asks for and why, and anything it could not do inside the sandbox.

@@ -356,6 +356,8 @@ export function App() {
                 another(t)
                 setPicker(false)
               }}
+              onOff={close}
+              onOn={(id) => setOff((o) => o.filter((x) => x !== id))}
               onClose={() => setPicker(false)}
             />
           ) : (

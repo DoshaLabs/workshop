@@ -10,8 +10,8 @@
     "workshop-tile": "bin/workshop-tile.mjs"
   },
   "scripts": {
-    "dev": "vite build --config vite.tile-preload.config.ts --logLevel warn && electron-vite dev --watch",
-    "build": "electron-vite build && vite build --config vite.tile-preload.config.ts --logLevel warn",
+    "dev": "vite build --config vite.tile-preload.config.ts --logLevel warn && vite build --config vite.check.config.ts --logLevel warn && electron-vite dev --watch",
+    "build": "electron-vite build && vite build --config vite.tile-preload.config.ts --logLevel warn && vite build --config vite.check.config.ts --logLevel warn",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",

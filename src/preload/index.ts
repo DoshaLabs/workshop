@@ -7,6 +7,7 @@ import type { Transcript } from '../shared/transcript'
 import type { Shortcut } from '../shared/shortcuts'
 import type { ColumnState } from '../shared/column'
 import type { ActiveMascot } from '../shared/mascot'
+import { MENU, type IndexState, type InstallRecord, type InstallRequest, type PendingInstall } from '../shared/tile-menu'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
@@ -63,7 +64,17 @@ const core = {
   removeMascot: (): Promise<void> => ipcRenderer.invoke(CH.mascotRemove),
   onMascot: (fn: (m: ActiveMascot | null) => void) => on(CH.mascotChanged, fn),
   /** A session's mascot should leap once (a tile's `notify({ bark: true })`). */
-  onBark: (fn: (sessionId: string) => void) => on(CH.mascotBark, fn)
+  onBark: (fn: (sessionId: string) => void) => on(CH.mascotBark, fn),
+  /** The + menu: installed tiles, the index, install / update / remove, load a folder (main/tile-menu.ts). */
+  menu: {
+    state: (): Promise<{ installed: InstallRecord[]; index: IndexState }> => ipcRenderer.invoke(MENU.state),
+    setIndex: (source: string): Promise<IndexState> => ipcRenderer.invoke(MENU.setIndex, source),
+    prepare: (req: InstallRequest): Promise<PendingInstall> => ipcRenderer.invoke(MENU.prepare, req),
+    confirm: (token: string): Promise<{ id: string }> => ipcRenderer.invoke(MENU.confirm, token),
+    cancel: (token: string): Promise<void> => ipcRenderer.invoke(MENU.cancel, token),
+    remove: (id: string, opts: { storage: boolean }): Promise<void> => ipcRenderer.invoke(MENU.remove, id, opts),
+    loadFolder: (): Promise<{ folder: string; message: string } | null> => ipcRenderer.invoke(MENU.loadFolder)
+  }
 }
 
 export type CoreApi = typeof core
