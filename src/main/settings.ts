@@ -5,12 +5,15 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DEFAULT_THEME_ID, THEMES, type Appearance } from '@shared/themes'
+import { cleanColumn, type ColumnState } from '@shared/column'
 
 export interface Settings {
   theme: string
   appearance: Appearance
   /** Folders of tiles under development (`workshop tile dev`, or made from the + menu): loaded again at every start. */
   devTiles: string[]
+  /** The tile column (off, extra instances, heights). Absent until first saved: the window then migrates its old localStorage once. */
+  column?: ColumnState
 }
 
 const DEFAULTS: Settings = { theme: DEFAULT_THEME_ID, appearance: 'system', devTiles: [] }
@@ -21,8 +24,15 @@ export function cleanSettings(raw: unknown, base: Settings = DEFAULTS): Settings
   return {
     theme: typeof r.theme === 'string' && THEMES.some((t) => t.id === r.theme) ? r.theme : base.theme,
     appearance: r.appearance === 'light' || r.appearance === 'dark' || r.appearance === 'system' ? r.appearance : base.appearance,
-    devTiles: Array.isArray(r.devTiles) ? [...new Set(r.devTiles.filter((d): d is string => typeof d === 'string' && d.startsWith('/')))].slice(0, 50) : base.devTiles
+    devTiles: Array.isArray(r.devTiles) ? [...new Set(r.devTiles.filter((d): d is string => typeof d === 'string' && d.startsWith('/')))].slice(0, 50) : base.devTiles,
+    ...column(r.column, base.column)
   }
+}
+
+/** The column as saved, or the base's; left out altogether while it has never been saved. */
+function column(raw: unknown, base: ColumnState | undefined): { column?: ColumnState } {
+  const c = cleanColumn(raw) ?? base
+  return c ? { column: c } : {}
 }
 
 export class SettingsStore {

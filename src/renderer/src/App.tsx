@@ -14,43 +14,15 @@ import { Guard } from './Guard'
 import { setPalette } from './terminals'
 import { shortcutOrder, type SessionsState } from '@shared/sessions'
 import { stepFrom } from '@shared/shortcuts'
+import { LEGACY_KEYS, legacyColumn, type ColumnState } from '@shared/column'
 import type { Usage } from '@shared/usage'
 import { UsageMeter } from './UsageMeter'
 import { TileLayer, type Instance } from './TileLayer'
 import { TilePicker } from './TilePicker'
 
-const OFF_KEY = 'workshop.off'
-const EXTRA_KEY = 'workshop.extra'
 const MAX_INSTANCES = 4
-const SPAN_KEY = 'workshop.span'
 /** The tile column is this many rows tall, as deck's is by default: a tile is one row unless it asks for more or ↕ made it taller. */
 const ROWS = 4
-
-function readSpans(): Record<string, number> {
-  try {
-    const v = JSON.parse(localStorage.getItem(SPAN_KEY) ?? '{}') as unknown
-    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, number>) : {}
-  } catch {
-    return {}
-  }
-}
-
-function readList(key: string): string[] {
-  try {
-    const v = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
-  } catch {
-    return []
-  }
-}
-
-function writeList(key: string, list: string[]): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(list))
-  } catch {
-    // the column still works, it just forgets
-  }
-}
 
 /** Paints the window: the variables, and the attributes the stylesheet keys the wall and dark mode on. */
 function applyTheme(t: ThemeState): void {
@@ -70,9 +42,9 @@ export function App() {
   const [tiles, setTiles] = useState<TileInfo[]>([])
   const [problems, setProblems] = useState<TileProblem[]>([])
   /** Tiles whose first instance is turned off. */
-  const [off, setOff] = useState<string[]>(() => readList(OFF_KEY))
+  const [off, setOff] = useState<string[]>([])
   /** Second and later instances that are on: `<id>.<n>`. */
-  const [extra, setExtra] = useState<string[]>(() => readList(EXTRA_KEY))
+  const [extra, setExtra] = useState<string[]>([])
   const [pane, setPane] = useState<string | null>(null)
   /** The instance whose page is over the whole window (permissions.overlay), if any. */
   const [overlay, setOverlay] = useState<string | null>(null)
@@ -86,14 +58,53 @@ export function App() {
   /** The tile column's + menu. */
   const [picker, setPicker] = useState(false)
   /** Heights the user set with ↕, by instance; a tile without one takes its manifest's `span`. */
-  const [spans, setSpans] = useState<Record<string, number>>(readSpans)
+  const [spans, setSpans] = useState<Record<string, number>>({})
+  /**
+   * The column's state is core's (main/settings.ts), so clearing the window's storage cannot reset it.
+   * No tile is drawn until it has arrived: a page mounted for a tile that turns out to be off would
+   * be made and thrown away. A profile that has never saved one takes what the window's
+   * localStorage held, once, and the old keys go.
+   */
+  const [columnReady, setColumnReady] = useState(false)
   useEffect(() => {
-    try {
-      localStorage.setItem(SPAN_KEY, JSON.stringify(spans))
-    } catch {
-      // the column still works, it just forgets
+    let live = true
+    const apply = (c: ColumnState): void => {
+      if (!live) return
+      setOff(c.off)
+      setExtra(c.extra)
+      setSpans(c.spans)
+      setColumnReady(true)
     }
-  }, [spans])
+    window.core
+      .column()
+      .then(async (saved) => {
+        if (saved) return apply(saved)
+        let legacy: ColumnState
+        try {
+          legacy = legacyColumn((k) => localStorage.getItem(k))
+        } catch {
+          legacy = { off: [], extra: [], spans: {} }
+        }
+        await window.core.setColumn(legacy)
+        try {
+          for (const k of Object.values(LEGACY_KEYS)) localStorage.removeItem(k)
+        } catch {
+          // gone or not, settings has it now
+        }
+        apply(legacy)
+      })
+      .catch((err) => {
+        // Settings unreachable: the column still draws, it just will not remember.
+        console.error('[window] the tile column could not be read:', err)
+        apply({ off: [], extra: [], spans: {} })
+      })
+    return () => {
+      live = false
+    }
+  }, [])
+  useEffect(() => {
+    if (columnReady) window.core.setColumn({ off, extra, spans }).catch((err) => console.error('[window] the tile column could not be saved:', err))
+  }, [columnReady, off, extra, spans])
   const spanOf = (i: Instance): number => {
     const n = spans[i.key] ?? i.tile.manifest.span
     return Number.isInteger(n) && n >= 1 && n <= ROWS ? n : 1
@@ -163,12 +174,11 @@ export function App() {
     []
   )
 
-  useEffect(() => writeList(OFF_KEY, off), [off])
-  useEffect(() => writeList(EXTRA_KEY, extra), [extra])
 
   /** Every instance that is on, each tile's together, in the catalog's order. */
   const instances = useMemo<Instance[]>(() => {
     const out: Instance[] = []
+    if (!columnReady) return out
     for (const tile of tiles) {
       const id = tile.manifest.id
       if (!off.includes(id)) out.push({ key: id, n: 1, tile })
@@ -176,7 +186,7 @@ export function App() {
       for (const key of extra.filter((k) => tileIdOf(k) === id).sort()) out.push({ key, n: instanceN(key), tile })
     }
     return out
-  }, [tiles, off, extra])
+  }, [tiles, off, extra, columnReady])
 
   const viewOf = useCallback((key: string): TileView => (overlay === key ? 'overlay' : pane === key ? 'pane' : 'tile'), [overlay, pane])
   // An overlay whose instance went away (turned off, its tile unloaded) goes with it.

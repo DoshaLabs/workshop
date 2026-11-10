@@ -343,14 +343,25 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
 }
 
 /** `multiple`: a second probe, its own page and web storage, the same workshop.storage, and the door. */
-async function instances(check: (name: string, ok: boolean, detail?: string) => void, { win, door, liveByTile }: Ctx): Promise<void> {
+async function instances(check: (name: string, ok: boolean, detail?: string) => void, { win, door, liveByTile, userData }: Ctx): Promise<void> {
   const js = (key: string, code: string): Promise<unknown> => liveByTile.get(key)!.wc.executeJavaScript(code)
   await js('probe', `localStorage.setItem('mine', 'first'); true`)
   // Open a second probe the way the column's + does, then reload the window (every page remounts).
-  await win.webContents.executeJavaScript(`localStorage.setItem('workshop.extra', '["probe.2"]'); true`)
+  // The column's state is core's (settings.json), so the window's own storage is wiped first: the
+  // second probe must come back from settings alone.
+  await win.webContents.executeJavaScript(`(async () => { const c = await window.core.column(); await window.core.setColumn({ ...c, extra: ['probe.2'], spans: { ...c.spans, probe: 2 } }); return true })()`)
+  await win.webContents.session.clearStorageData({ storages: ['localstorage'] })
   win.webContents.reload()
   await waitFor('the second probe', async () => !!liveByTile.get('probe.2') && (await js('probe.2', 'window.probeReady === true').catch(() => false)) === true)
   await waitFor('the first probe again', async () => !!liveByTile.get('probe')?.ops.has('echo'))
+  check('column: extra instances and heights come back from core\'s settings with the window\'s storage cleared', !!liveByTile.get('probe.2'))
+  await waitFor('the probe to be drawn', async () => (await win.webContents.executeJavaScript(`!!document.querySelector('[data-face="probe"]')`)) === true, 3000).catch(() => undefined)
+  check('column: a height set with ↕ is kept', (await win.webContents.executeJavaScript(`document.querySelector('[data-face="probe"]').closest('.tile').style.getPropertyValue('--span')`)) === '2')
+  // ↕ and × in the column write through to settings.json.
+  await win.webContents.executeJavaScript(`(() => { const t = document.querySelector('[data-face="probe"]').closest('.tile'); [...t.querySelectorAll('.head .ghost')].find((b) => b.textContent.includes('↕')).click(); return true })()`)
+  await waitFor('the height to be saved', async () => JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8')).column?.spans?.probe === 3, 3000).catch(() => undefined)
+  const savedColumn = JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8')).column
+  check('column: ↕ is saved in settings.json, not the window\'s storage', savedColumn?.spans?.probe === 3 && savedColumn?.extra?.includes('probe.2') && (await win.webContents.executeJavaScript(`localStorage.getItem('workshop.span')`)) === null, JSON.stringify(savedColumn))
   check('instances: the second page knows it is probe.2', (await js('probe.2', 'workshop.instance')) === 'probe.2')
   check('instances: web storage is per instance', (await js('probe.2', `localStorage.getItem('mine')`)) === null)
   check('instances: workshop.storage is per tile', JSON.stringify(await js('probe.2', `workshop.storage.get('k')`)) === '{"a":1,"list":[1,2]}')

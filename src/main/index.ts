@@ -10,6 +10,7 @@ import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type
 import { BRIDGE_VERSION } from '@shared/manifest'
 import { FONT_VARS } from '@shared/fonts'
 import { shortcutOf } from '@shared/shortcuts'
+import { cleanColumn } from '@shared/column'
 import { COSMOS_ID, forcesDark, resolveVariant, seeThrough, themeVars } from '@shared/themes'
 import { SettingsStore, type Settings } from './settings'
 import { Door } from './door'
@@ -517,6 +518,21 @@ function bridge(): void {
     await settings.patch(patch && typeof patch === 'object' ? patch : {})
     pushTheme()
     return themeState()
+  })
+  // The tile column's state, in settings (null until first saved: the window then migrates its old
+  // localStorage). Writes are queued, so two quick changes cannot race on the settings file.
+  let columnWrites: Promise<unknown> = Promise.resolve()
+  ipcMain.handle(CH.columnGet, (e) => {
+    if (e.sender !== win?.webContents) throw new Error('core only')
+    return settings.get().column ?? null
+  })
+  ipcMain.handle(CH.columnSet, (e, c: unknown) => {
+    if (e.sender !== win?.webContents) throw new Error('core only')
+    const column = cleanColumn(c)
+    if (!column) throw new Error('not a column')
+    const write = columnWrites.then(() => settings.patch({ column }))
+    columnWrites = write.catch(() => undefined)
+    return write.then(() => undefined)
   })
   ipcMain.handle(CH.tileCreate, (e, name: string, idea: string) => {
     if (e.sender !== win?.webContents) throw new Error('core only')

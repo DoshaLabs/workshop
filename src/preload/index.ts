@@ -5,6 +5,7 @@ import type { NewSessionOpts, SessionsState } from '../shared/sessions'
 import type { Usage } from '../shared/usage'
 import type { Transcript } from '../shared/transcript'
 import type { Shortcut } from '../shared/shortcuts'
+import type { ColumnState } from '../shared/column'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
@@ -49,7 +50,10 @@ const core = {
   transcript: (id: string): Promise<Transcript | null> => ipcRenderer.invoke(CH.transcriptGet, id),
   onTranscript: (fn: (t: Transcript) => void) => on(CH.transcriptChanged, fn),
   /** ⌘1–9, ⌘[ ⌘], ⌘N, caught by main wherever the focus is. */
-  onShortcut: (fn: (s: Shortcut) => void) => on(CH.shortcut, fn)
+  onShortcut: (fn: (s: Shortcut) => void) => on(CH.shortcut, fn),
+  /** The tile column's state, kept in core's settings; null until it has first been saved. */
+  column: (): Promise<ColumnState | null> => ipcRenderer.invoke(CH.columnGet),
+  setColumn: (c: ColumnState): Promise<void> => ipcRenderer.invoke(CH.columnSet, c)
 }
 
 export type CoreApi = typeof core

@@ -132,5 +132,8 @@ export const CH = {
   transcriptGet: 'ws:core:transcript-get',
   transcriptChanged: 'ws:core:transcript', // main → window
   // ⌘1–9, ⌘[ ⌘], ⌘N, caught by main wherever the focus is (shared/shortcuts.ts)
-  shortcut: 'ws:core:shortcut' // main → window
+  shortcut: 'ws:core:shortcut', // main → window
+  // the tile column's state (off, extra instances, heights), kept in core's settings
+  columnGet: 'ws:core:column-get',
+  columnSet: 'ws:core:column-set'
 } as const
