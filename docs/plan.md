@@ -56,7 +56,7 @@ Blocks Git and PS2. **Agreed by Colin, 10 Nov 2026**, as written here:
 - One process per tile. A backend stops when its tile is turned off; there is no background flag
   (Colin, 10 Nov 2026).
 
-## Track C: the Git tile, written fresh (L) · §4 · Changes and Worktrees built 10 Nov 2026 (`docs/progress/2026-11-10-git.md`, `-worktrees.md`)
+## Track C: the Git tile, written fresh (L) · §4 · Changes, Worktrees and History built 10 Nov 2026 (`docs/progress/2026-11-10-git.md`, `-worktrees.md`, `-history.md`); PRs next
 
 Not a port of deck's `git.ts`. Built in, trusted tier, on the contract, from the starter.
 

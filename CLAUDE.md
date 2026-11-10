@@ -79,6 +79,12 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   is the session's name) and a hook naming another session's id is ignored; hooks read core's
   port from `<profile>/port`, so a session that outlived a restart still finds core. Profiles:
   `workshop` (userData `workshop`), `workshop-dev` under `npm run dev` (its own socket and folder).
+- Commits (`src/main/commits.ts`): a PostToolUse hook on Bash posts to core when the call
+  mentions git; when it made commits (the CLI's `gitOperation`, or git commit / merge /
+  cherry-pick / rebase / revert / am / pull), core reads HEAD's reflog over the call's window and
+  records sha → session id and name in `<profile>/commits.json` (atomic, 90 days, 5,000; never
+  the command). Backends get the records (`commits` message) and may `emit` events to their pages
+  (`workshop.backend.onEvent`).
 - Bridge: `sessions.list/watch/paste` (no titles: they quote the conversation) and
   `usage.get/watch` (the two windows, and per session context % and cost, from the status line).
 - `sessions: "launch"` (bridge 1.4; read < launch < write): `workshop.sessions.launch({ folder,
@@ -116,8 +122,12 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   (origin/HEAD, else main, else master), clean or dirty, a stale filter and a warning when two touch
   one file; diff against main, rebase, merge into main (where main is checked out) and remove once
   merged, each destructive one two clicks, refused while a session there is busy or the tree is
-  dirty, a conflict aborted at once (`docs/progress/2026-11-10-worktrees.md`). History and PRs say
-  "Coming".
+  dirty, a conflict aborted at once (`docs/progress/2026-11-10-worktrees.md`).
+  History: the log across every branch of each open session's project (300, then more), each
+  commit tagged with its session: exact when core saw the session make it, "probably <name>" when
+  it is on that session's worktree branch and made in its lifetime, else nothing; a click unfolds
+  the diff; "Today, by session" groups the last 24 hours (`docs/progress/2026-11-10-history.md`).
+  PRs says "Coming".
 - Theme variables include `--ws-green` and `--ws-red` (the terminal's, at 4.5:1 on the panel).
 - Session tiles (phase 1, `docs/progress/2026-11-10-phase1.md`): the left column is a column of
   tiles, one per open session, each its live conversation (`ChatView.tsx`; prose as markdown in
@@ -314,7 +324,7 @@ built ON the tile contract (trusted tier) so that tier is exercised before stran
   rebase onto main, merge into main, open a PR, remove the worktree once merged. A "stale" filter
   for worktrees whose session is gone. A warning when two worktrees touch the same file. "New
   chat in a worktree" creates the worktree, the branch and the session in one step.
-- **History.** The commit log across all branches, each commit tagged with the session that made
+- **History** (built: exact from a PostToolUse hook, else a visible guess; the filter is "Today, by session"). The commit log across all branches, each commit tagged with the session that made
   it; click one for its diff. A "what did Claude do today" filter (24 hours, by session).
 - **PRs and CI.** Your open pull requests and whether checks pass, through the `gh` CLI.
 
@@ -742,7 +752,7 @@ already uses most of them:
 | Extension point | What workshop uses it for |
 |---|---|
 | `--settings <file>` | Our hooks, env vars, status line and theme, merged over the user's own |
-| Hooks | Status (Notification, Stop, UserPromptSubmit), subagent tiles (SubagentStart / Stop), the leash (PreToolUse), session context (SessionStart) |
+| Hooks | Status (Notification, Stop, UserPromptSubmit), which session made a commit (PostToolUse on Bash), subagent tiles (SubagentStart / Stop), the leash (PreToolUse), session context (SessionStart) |
 | `--plugin-dir` (repeatable) | Core's own skills, and each installed tile's `plugin/` folder |
 | `statusLine` | The account's rate-limit windows and each session's context percentage |
 | `--session-id` | Our own UUID, which is how hooks and poll rows are matched to a tile |
