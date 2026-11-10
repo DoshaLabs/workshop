@@ -82,6 +82,23 @@ function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify'): Tile {
 
 const isHttp = (url: string): boolean => /^https?:\/\//i.test(url)
 
+/** URLs a smoke run would have opened in the browser (it never opens one). */
+export const smokeOpened: string[] = []
+
+/**
+ * The one way a tile's URL reaches the browser: openExternal, a popup, or a link that leaves the
+ * page all come here. http(s) only, and one a second per tile, so a page cannot open tabs in a loop.
+ */
+function openForTile(id: string, url: string): boolean {
+  if (!isHttp(url)) return false
+  const now = Date.now()
+  if (now - (lastExternal.get(id) ?? 0) < 1000) return false
+  lastExternal.set(id, now)
+  if (SMOKE) smokeOpened.push(url)
+  else void shell.openExternal(url)
+  return true
+}
+
 /** Every webview core's window attaches must be a registered tile, and gets core's sandbox. */
 function guardWebviews(w: BrowserWindow): void {
   w.webContents.on('will-attach-webview', (e, prefs, params) => {
@@ -115,14 +132,14 @@ function guardWebviews(w: BrowserWindow): void {
     wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
     // Popups go to the browser. The page itself stays on its own origin.
     wc.setWindowOpenHandler(({ url }) => {
-      if (isHttp(url)) void shell.openExternal(url)
+      openForTile(id, url)
       return { action: 'deny' }
     })
     const own = (url: string): boolean => url.startsWith(`${TILE_SCHEME}://${id}/`)
     wc.on('will-navigate', (ev, url) => {
       if (own(url)) return
       ev.preventDefault()
-      if (isHttp(url)) void shell.openExternal(url)
+      openForTile(id, url)
     })
     wc.on('will-redirect', (ev, url) => {
       if (!own(url)) ev.preventDefault()
@@ -166,10 +183,7 @@ function bridge(): void {
   ipcMain.handle(CH.external, (e, url: string) => {
     const t = need(e)
     if (typeof url !== 'string' || !isHttp(url)) throw new Error('openExternal: http(s) URLs only')
-    const now = Date.now()
-    if (now - (lastExternal.get(t.manifest.id) ?? 0) < 1000) throw new Error('openExternal: one a second')
-    lastExternal.set(t.manifest.id, now)
-    void shell.openExternal(url)
+    if (!openForTile(t.manifest.id, url)) throw new Error('openExternal: one a second')
   })
 
   ipcMain.handle(CH.storageGet, (e, key: string) => storeOf(need(e, 'storage').manifest.id).get(key))
@@ -277,7 +291,7 @@ app.whenReady().then(async () => {
   })
 
   if (SMOKE) {
-    const code = await runSmoke({ win: win!, door, liveByTile, userData: app.getPath('userData') })
+    const code = await runSmoke({ win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened })
     door.stop()
     app.exit(code)
   }

@@ -13,6 +13,8 @@ interface Ctx {
   door: Door
   liveByTile: Map<string, { wc: WebContents; ops: Set<string> }>
   userData: string
+  /** What the tiles asked the browser to open (a smoke run never opens one). */
+  opened: string[]
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -73,7 +75,7 @@ async function post(port: number, path: string, body: unknown, headers: Record<s
   return { status: res.status, json: await res.json() }
 }
 
-export async function runSmoke({ win, door, liveByTile, userData }: Ctx): Promise<number> {
+export async function runSmoke({ win, door, liveByTile, userData, opened }: Ctx): Promise<number> {
   const results: [string, boolean, string?][] = []
   const check = (name: string, ok: boolean, detail?: string): void => void results.push([name, ok, detail])
   try {
@@ -103,6 +105,10 @@ export async function runSmoke({ win, door, liveByTile, userData }: Ctx): Promis
     await probe.executeJavaScript(`location.href = 'https://example.com/'`)
     await sleep(800)
     check('probe page: cannot navigate away', probe.getURL().startsWith('tile://probe/'), probe.getURL())
+
+    // The popup and the navigation were refused in the page and handed to the browser, but only
+    // the first within the second: a page cannot open tabs in a loop.
+    check('probe page: popups and links go to the browser, rate limited', opened.length === 1 && opened[0].startsWith('https://example.com'), JSON.stringify(opened))
 
     const auth = { Authorization: `Bearer ${door.token}` }
     const echo = await post(door.port, '/tile/probe', { op: 'echo', args: ['hi'], caller: 'evil' }, auth)
