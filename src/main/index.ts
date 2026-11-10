@@ -9,7 +9,7 @@ import { join, resolve } from 'node:path'
 import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
 import { BRIDGE_VERSION } from '@shared/manifest'
 import { FONT_VARS } from '@shared/fonts'
-import { shortcutOf } from '@shared/shortcuts'
+import { isRecorderKey, shortcutOf } from '@shared/shortcuts'
 import { EMPTY_COLUMN, cleanColumn } from '@shared/column'
 import { COSMOS_ID, forcesDark, resolveVariant, seeThrough, themeVars } from '@shared/themes'
 import { SettingsStore, type Settings } from './settings'
@@ -26,6 +26,8 @@ import { ProjectRoots } from './project'
 import { Backends, utilitySpawn, type BackendTile, type UtilityProcessLike } from './backend'
 import { backendEnv } from './backend-protocol'
 import { shellEnv } from './env'
+import { Recorder } from './recorder'
+import { REC, REC_DEFAULTS } from '@shared/recorder'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 
@@ -62,6 +64,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: TILE_SCHEME, privileges: { stand
 let win: BrowserWindow | null = null
 let core: CoreSessions | null = null
 let registry: Registry = { tiles: new Map(), problems: [] }
+/** The screen recorder (main/recorder.ts): core's own, never a tile's. */
+let recorder: Recorder | null = null
 
 interface Guest {
   tile: Tile
@@ -123,6 +127,11 @@ function escClosesOverlay(wc: WebContents): void {
  */
 function coreShortcuts(wc: WebContents): void {
   wc.on('before-input-event', (ev, input) => {
+    if (isRecorderKey(input)) {
+      ev.preventDefault()
+      recorder?.toggle()
+      return
+    }
     const s = shortcutOf(input)
     if (!s) return
     ev.preventDefault()
@@ -152,6 +161,7 @@ function pushTheme(): void {
   win?.setBackgroundColor(v['--ws-bg'])
   core?.settings.setDark(isDark(settings.get()))
   win?.webContents.send(CH.themeChanged, themeState())
+  recorder?.page()?.send(REC.theme, v)
   for (const g of liveByTile.values()) g.wc.send(CH.theme, v)
 }
 
@@ -752,6 +762,18 @@ app.whenReady().then(async () => {
   writeFileSync(join(app.getPath('userData'), 'door.json'), JSON.stringify({ port: door.port, token: door.token }), { mode: 0o600 })
 
   bridge()
+  recorder = new Recorder({
+    userData: app.getPath('userData'),
+    audioSource: join(app.getAppPath(), 'native', 'recaudio.swift'),
+    env: shellEnv,
+    page: { url: process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/recorder.html` : undefined, file: join(__dirname, '../renderer/recorder.html') },
+    preload: join(__dirname, '../preload/recorder.js'),
+    core: () => win,
+    hello: () => ({ vars: vars(), prefs: settings.get().recorder ?? REC_DEFAULTS }),
+    savePrefs: async (recorderPrefs) => void (await settings.patch({ recorder: recorderPrefs })),
+    outDir: SMOKE ? join(app.getPath('userData'), 'recordings') : join(homedir(), 'Movies', 'workshop'),
+    smoke: SMOKE
+  })
   await startTileMenu({ win: () => win, registry: () => registry, settings: () => settings, userData: app.getPath('userData'), addDevTile, dropData: (id) => (stores.delete(id), grants.delete(id)), smoke: SMOKE })
   core = await startSessions({
     win: () => win,
@@ -776,7 +798,7 @@ app.whenReady().then(async () => {
   nativeTheme.on('updated', pushTheme)
 
   if (SMOKE) {
-    const ctx = { win: win!, door, liveByTile, backends, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core!, profile: PROFILE }
+    const ctx = { win: win!, door, liveByTile, backends, recorder: recorder!, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core!, profile: PROFILE }
     const code = RESTARTED ? await runRestarted(ctx) : await runSmoke(ctx)
     core?.stop()
     backends.stopAll()

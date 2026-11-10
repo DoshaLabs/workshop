@@ -9,6 +9,7 @@ import type { ColumnState } from '../shared/column'
 import type { ActiveMascot } from '../shared/mascot'
 import { MENU, type IndexState, type InstallRecord, type InstallRequest, type PendingInstall } from '../shared/tile-menu'
 import type { PreviewDoc, PreviewRef, PreviewWrite } from '../shared/preview'
+import type { RecState } from '../shared/recorder'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
@@ -86,6 +87,13 @@ const core = {
   /** A session ran `node "$WORKSHOP_DOC" open <path>`. */
   onOpenDoc: (fn: (ref: PreviewRef, sessionId: string) => void) => on(CH.previewOpen, fn),
   /** A pasted or dropped file, kept where a session can read it; its path. A Finder file keeps its own path. */
+  /** The screen recorder (main/recorder.ts): the top bar's button. */
+  recorder: {
+    /** Open the frame; while it is up, stop the take or close it (⌘⇧O does the same). */
+    toggle: (): Promise<void> => ipcRenderer.invoke(CH.recToggle),
+    state: (): Promise<RecState> => ipcRenderer.invoke(CH.recStateGet),
+    onState: (fn: (s: RecState) => void) => on(CH.recState, fn)
+  },
   keepDrop: async (file: File): Promise<string> => {
     let path = ''
     try {
