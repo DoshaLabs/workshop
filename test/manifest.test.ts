@@ -50,7 +50,16 @@ describe('checkManifest', () => {
   it('says which bridge an overlay tile needs', () => {
     expect(checkManifest({ ...base, workshop: '^1.1', permissions: { overlay: true } }).ok).toBe(true)
     expect(checkManifest({ ...base, workshop: '^1.2' }).ok).toBe(true)
-    expect(errs({ ...base, workshop: '^1.3' })[0]).toMatch(/does not accept/)
+    expect(errs({ ...base, workshop: '^1.4' })[0]).toMatch(/does not accept/)
+  })
+
+  it('takes music as a permission (bridge 1.3): true or false, never a typo of it', () => {
+    const r = checkManifest({ ...base, workshop: '^1.3', permissions: { music: true } })
+    expect(r.ok && r.manifest.permissions.music).toBe(true)
+    const off = checkManifest({ ...base, permissions: { music: false } })
+    expect(off.ok && off.manifest.permissions.music).toBeUndefined()
+    expect(errs({ ...base, permissions: { music: 'spotify' } })[0]).toMatch(/permissions.music: must be true or false/)
+    expect(errs({ ...base, permissions: { spotify: true } })[0]).toMatch(/spotify: not a permission/)
   })
 
   it('refuses the trusted tier for any tile not built in, however it is asked for', () => {

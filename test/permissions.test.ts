@@ -16,6 +16,12 @@ describe('permissions in words', () => {
     expect(needsAsking({ storage: true }, { storage: true, backend: true })).toBe(true)
   })
 
+  it('says music in words, and asks again when an update adds it', () => {
+    expect(permissionWords({ music: true })).toEqual(['see and control what Spotify or Music is playing'])
+    expect(permissionKeys({ music: true, storage: true })).toEqual(['music', 'storage'])
+    expect(permissionChange({ storage: true }, { storage: true, music: true }).added).toEqual(['see and control what Spotify or Music is playing'])
+  })
+
   it('a door timeout is not a permission; its ops are', () => {
     expect(permissionKeys({ door: { ops: ['b', 'a'], timeoutMs: 1 } })).toEqual(permissionKeys({ door: { ops: ['a', 'b'], timeoutMs: 99 } }))
     expect(needsAsking({ door: { ops: ['a'], timeoutMs: 1 } }, { door: { ops: ['a'], timeoutMs: 5000 } })).toBe(false)

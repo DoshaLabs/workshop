@@ -6,6 +6,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { FONTS_PREFIX, FONT_FILES } from '../shared/fonts'
 import { CH, type DoorCall, type TileHead, type TileHello, type TileView } from '../shared/ipc'
+import { badSeek, badUri, badVolume } from '../shared/music'
 
 const hello = ipcRenderer.sendSync(CH.hello) as TileHello | null
 
@@ -88,6 +89,11 @@ if (hello) {
   ipcRenderer.on(CH.backendStatusChanged, (_e, st: unknown) => {
     for (const fn of backendSubs) call(() => fn(st))
   })
+  const musicSubs = new Set<(s: unknown) => void>()
+  ipcRenderer.on(CH.musicChanged, (_e, s: unknown) => {
+    for (const fn of musicSubs) call(() => fn(s))
+  })
+
   ipcRenderer.on(CH.doorCall, async (_e, c: DoorCall) => {
     const fn = doorHandlers.get(c.op)
     if (!fn) return ipcRenderer.send(CH.doorReply, c.callId, { ok: false, error: `no handler for "${c.op}"` })
@@ -111,6 +117,37 @@ if (hello) {
           /** { state: 'starting' | 'running' | 'restarting' | 'failed' | 'stopped', error? } */
           status: (): Promise<unknown> => ipcRenderer.invoke(CH.backendStatus),
           onStatus: (fn: (s: unknown) => void) => sub(backendSubs, fn)
+        }
+      }
+    : {}
+
+  // Spotify and Music (bridge 1.3): only on a tile whose manifest asks for "music". Values are
+  // checked here for a clear error early, and again in main, which is what counts.
+  const control = (op: string, arg?: unknown, bad?: string | null): Promise<void> => (bad ? Promise.reject(new Error(bad)) : ipcRenderer.invoke(CH.musicControl, op, arg))
+  const music = perms.music
+    ? {
+        music: {
+          /** { player: 'spotify' | 'music' | null, state, track: { title, artist, album, durationMs, art } | null, positionMs, volume, shuffle?, repeat?, error?, message? } */
+          get: (): Promise<unknown> => ipcRenderer.invoke(CH.musicGet),
+          /** Calls fn with the state whenever it changes (and once at once). Core reads the apps only while some page watches. */
+          watch: (fn: (s: unknown) => void): (() => void) => {
+            const first = musicSubs.size === 0
+            const stop = sub(musicSubs, fn)
+            if (first) ipcRenderer.send(CH.musicWatch, true)
+            return () => {
+              stop()
+              if (musicSubs.size === 0) ipcRenderer.send(CH.musicWatch, false)
+            }
+          },
+          play: (): Promise<void> => control('play'),
+          pause: (): Promise<void> => control('pause'),
+          toggle: (): Promise<void> => control('toggle'),
+          next: (): Promise<void> => control('next'),
+          previous: (): Promise<void> => control('previous'),
+          seek: (ms: number): Promise<void> => control('seek', ms, badSeek(ms)),
+          setVolume: (v: number): Promise<void> => control('volume', v, badVolume(v)),
+          /** Spotify only: a URI as Spotify's share menu gives it (spotify:track:…, album, playlist, artist, episode, show). */
+          playUri: (uri: string): Promise<void> => control('uri', uri, badUri(uri))
         }
       }
     : {}
@@ -207,7 +244,8 @@ if (hello) {
         ipcRenderer.send(CH.doorReady, [...doorHandlers.keys()])
       }
     },
-    ...backend
+    ...backend,
+    ...music
   }
 
   contextBridge.executeInMainWorld({

@@ -57,6 +57,7 @@ user is shown the list.
 | `"files": true` | `workshop.files`: read what the user picks, nothing else |
 | `"camera": true`, `"microphone": true` | `navigator.mediaDevices.getUserMedia` |
 | `"overlay": true` | `workshop.openOverlay()`: the page over the whole window, e.g. a lightbox. Needs `"workshop": "^1.1"` |
+| `"music": true` | `workshop.music`: what Spotify or Music is playing, with its artwork, and play, pause, skip, seek, volume. Needs `"workshop": "^1.3"`. No `net` needed for the artwork |
 
 There is no permission for running programs, writing files, or reading a path the user did not
 pick. If the tile needs one of those, say so plainly instead of working around it.
@@ -115,6 +116,19 @@ workshop.door.handle('add', async (args, caller, { session }) => result)
 // args: string[] exactly as typed. caller: the session's name, or 'outside'.
 // session: the caller's id as workshop.sessions lists it, or null. Return JSON; throw to refuse.
 
+// "music": true. Only there when declared.
+const now = await workshop.music.get()
+// { player: 'spotify' | 'music' | null,       the app in use: the one playing, else the one open; null if neither is open
+//   state: 'playing' | 'paused' | 'stopped',
+//   track: { title, artist, album, durationMs, art } | null,
+//   positionMs, volume (0–100, or null), shuffle?, repeat? ('off' | 'one' | 'all'),
+//   error?: 'denied' | 'failed', message? }    show `message` when there is an error (below)
+const stop = workshop.music.watch((now) => {})  // fires at once, then on every change; call stop() when hidden for good
+await workshop.music.toggle()                  // also play(), pause(), next(), previous()
+await workshop.music.seek(90_000)              // milliseconds, a whole number
+await workshop.music.setVolume(60)             // the app's own volume, 0 to 100
+await workshop.music.playUri('spotify:track:4uLU6hMCjMI75M1A2tKUQC')  // Spotify only; see below
+
 const picked = await workshop.files.pick({ folder: true, title: 'Your games' })  // { handle, name, kind } or null
 await workshop.files.list()                 // what was picked before (kept across restarts)
 await workshop.files.entries(handle, 'sub/folder')   // [{ name, kind, size }]
@@ -122,6 +136,36 @@ await workshop.files.read(handle, 'a/b.txt', 'text') // or 'bytes'
 workshop.files.url(handle, 'a/b.png')       // for <img>, <audio>, fetch (streamed)
 await workshop.files.forget(handle)
 ```
+
+**Music, in practice.** A now-playing tile is a few lines:
+
+```js
+const img = document.querySelector('img'), title = document.querySelector('.title'), btn = document.querySelector('button')
+workshop.music.watch((m) => {
+  if (m.error) return void (title.textContent = m.message)       // e.g. macOS said no: it says where to allow it
+  if (!m.player) return void (title.textContent = 'Open Spotify or Music')
+  title.textContent = m.track ? `${m.track.title} · ${m.track.artist}` : 'Nothing playing'
+  img.src = m.track?.art ?? ''                                     // tile://<your id>/~music/art/…: your own origin
+  btn.textContent = m.state === 'playing' ? 'Pause' : 'Play'
+})
+btn.onclick = () => workshop.music.toggle().catch((e) => (title.textContent = e.message))
+```
+
+- Workshop drives the apps for you; it **never opens one**. With neither open, `player` is null and
+  a control rejects. Ask the user to open the app.
+- The first time, macOS asks the user whether workshop may control Spotify (or Music). If they
+  say no, `error` is `'denied'` and `message` says where to turn it on (System Settings › Privacy &
+  Security › Automation); controls reject with the same words. Show it; don't retry in a loop.
+- Workshop reads the app about once a second while playing and only while some page watches.
+  `positionMs` is as of that reading: to draw a smooth progress bar, count forward yourself
+  between updates while `state` is `'playing'`.
+- `art` is null until workshop has the picture, then the watcher fires again with it. It is on your
+  tile's own origin, so the CSP needs only `img-src 'self'`.
+- `playUri` takes only the form Spotify's "Share › Copy Spotify URI" gives:
+  `spotify:track|album|playlist|artist|episode|show:<22 letters and digits>`. There is no search
+  and no playlist listing (that is Spotify's web API, which needs an account key): a tile can keep
+  URIs the user pastes in `workshop.storage`.
+- Shuffle and repeat are read, not set.
 
 Web storage (`localStorage`, IndexedDB) works and is the tile's own, but `workshop.storage` is
 what survives a reinstall and is shared between instances. Keep real data there.
@@ -143,7 +187,7 @@ what survives a reinstall and is shared between instances. Keep real data there.
 
 ### Why there is no backend for this tile
 
-Workshop has a second, trusted tier: a tile that ships with workshop itself (Git, Spotify) may add
+Workshop has a second, trusted tier: a tile that ships with workshop itself (Git) may add
 a `backend`, a node program of its own with full access to the Mac, which its page reaches
 through `workshop.backend`. Your tile cannot have one. Workshop refuses to load, install or list
 any other tile that declares a `backend` or carries a `backend.mjs`, and `tile check` says so.

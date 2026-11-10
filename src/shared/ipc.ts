@@ -90,12 +90,16 @@ export const CH = {
   doorReply: 'ws:tile:door-reply', // send
   backendCall: 'ws:tile:backend-call',
   backendStatus: 'ws:tile:backend-status',
+  musicGet: 'ws:tile:music-get',
+  musicWatch: 'ws:tile:music-watch', // send: true when the page starts watching, false when it stops
+  musicControl: 'ws:tile:music-control',
   // main → tile page
   view: 'ws:tile:view',
   theme: 'ws:tile:theme',
   storageChanged: 'ws:tile:storage-changed',
   doorCall: 'ws:tile:door-call',
   backendStatusChanged: 'ws:tile:backend-status-changed',
+  musicChanged: 'ws:tile:music-changed',
   // core window → main
   listTiles: 'ws:core:list-tiles',
   setView: 'ws:core:set-view',

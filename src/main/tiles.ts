@@ -12,6 +12,7 @@ import { checkPlugin } from './plugin'
 import { BACKEND_FILE, TRUSTED_ONLY, wantsBackend } from './tile-check'
 import { FILES_PREFIX, type TileGrants } from './files'
 import { FONTS_PREFIX, FONT_FILES } from '@shared/fonts'
+import { ART_KEY_RE, MUSIC_ART_PREFIX } from '@shared/music'
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
 
@@ -21,6 +22,12 @@ let grantsOf: (id: string) => TileGrants = () => {
 }
 export function setGrants(fn: (id: string) => TileGrants): void {
   grantsOf = fn
+}
+
+/** Set by main: the artwork core holds for `workshop.music` (main/music.ts), by key. */
+let musicArtOf: (key: string) => { type: string; body: Buffer } | undefined = () => undefined
+export function setMusicArt(fn: typeof musicArtOf): void {
+  musicArtOf = fn
 }
 
 export { TILE_SCHEME }
@@ -242,6 +249,13 @@ async function armOne(tile: Tile, ses: Session): Promise<void> {
       if (!found || !st?.isFile()) return new Response('not found', { status: 404, headers: cors })
       const body = Readable.toWeb(createReadStream(found.path)) as ReadableStream
       return new Response(body, { headers: { ...cors, 'Content-Type': MIME[extname(found.path).toLowerCase()] ?? 'application/octet-stream', 'Content-Length': String(st.size), 'X-Content-Type-Options': 'nosniff' } })
+    }
+    // The playing track's picture, fetched by core, on this tile's origin: only for a tile with "music".
+    if (rel.startsWith(MUSIC_ART_PREFIX)) {
+      const key = rel.slice(MUSIC_ART_PREFIX.length)
+      const art = permissions.music && ART_KEY_RE.test(key) ? musicArtOf(key) : undefined
+      if (!art) return new Response('not found', { status: 404, headers: cors })
+      return new Response(new Uint8Array(art.body), { headers: { ...cors, 'Content-Type': art.type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'max-age=3600' } })
     }
     const wanted = resolve(tile.serveRoot, '.' + (rel === '/' ? '/' + basename(tile.src) : rel))
     try {

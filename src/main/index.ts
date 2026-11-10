@@ -26,6 +26,9 @@ import { ProjectRoots } from './project'
 import { Backends, utilitySpawn, type BackendTile, type UtilityProcessLike } from './backend'
 import { backendEnv } from './backend-protocol'
 import { shellEnv } from './env'
+import { startMusic, type MusicBridge } from './music-bridge'
+import { fetchSpotifyArt, osascriptRunner } from './music'
+import { smokeMusicIo } from './smoke-music'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 
@@ -62,6 +65,8 @@ protocol.registerSchemesAsPrivileged([{ scheme: TILE_SCHEME, privileges: { stand
 let win: BrowserWindow | null = null
 let core: CoreSessions | null = null
 let registry: Registry = { tiles: new Map(), problems: [] }
+/** `workshop.music` (main/music.ts). A smoke run gets a stand-in for osascript and never touches the real apps. */
+let music: MusicBridge | null = null
 
 interface Guest {
   tile: Tile
@@ -481,6 +486,7 @@ function bridge(): void {
     // Every new document says hello first, so a reloaded page starts with no door ops until it registers them again.
     const g = guests.get(e.sender.id)!
     g.ops = new Set()
+    music?.forget(e.sender.id)
     const hello: TileHello = { id: t.manifest.id, instance: g.key, view: views.get(g.key) ?? 'tile', vars: vars(), bridge: BRIDGE_VERSION, permissions: t.manifest.permissions }
     if (t.backend && t.manifest.backend) hello.backendOps = [...t.manifest.backend.ops]
     e.returnValue = hello
@@ -752,6 +758,7 @@ app.whenReady().then(async () => {
   writeFileSync(join(app.getPath('userData'), 'door.json'), JSON.stringify({ port: door.port, token: door.token }), { mode: 0o600 })
 
   bridge()
+  music = startMusic({ guest: guestOf, ...(SMOKE ? smokeMusicIo : { runner: osascriptRunner, fetchArt: fetchSpotifyArt }) })
   await startTileMenu({ win: () => win, registry: () => registry, settings: () => settings, userData: app.getPath('userData'), addDevTile, dropData: (id) => (stores.delete(id), grants.delete(id)), smoke: SMOKE })
   core = await startSessions({
     win: () => win,
@@ -776,10 +783,11 @@ app.whenReady().then(async () => {
   nativeTheme.on('updated', pushTheme)
 
   if (SMOKE) {
-    const ctx = { win: win!, door, liveByTile, backends, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core!, profile: PROFILE }
+    const ctx = { win: win!, door, liveByTile, backends, music: music.host, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core!, profile: PROFILE }
     const code = RESTARTED ? await runRestarted(ctx) : await runSmoke(ctx)
     core?.stop()
     backends.stopAll()
+    music.host.stop()
     // The run that started this one cleans up the tmux server it still needs.
     if (!RESTARTED) await core?.tmux.killServer()
     door.stop()
@@ -791,6 +799,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   core?.stop()
   backends.stopAll()
+  music?.host.stop()
 })
 
 // The CLI reads door.json to find a running app; a stale one would point at a closed port.
