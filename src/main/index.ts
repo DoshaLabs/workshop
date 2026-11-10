@@ -17,7 +17,7 @@ import { Door } from './door'
 import { TileGrants } from './files'
 import { TileStore } from './storage'
 import { MAX_INSTANCES, TILE_SCHEME, armSession, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
-import { runSmoke } from './smoke'
+import { runRestarted, runSmoke } from './smoke'
 import { scaffoldTile } from './scaffold'
 import { startSessions, type CoreSessions } from './core-sessions'
 import { MascotStore } from './mascot'
@@ -25,7 +25,9 @@ import { ProjectRoots } from './project'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 
-const SMOKE = process.argv.includes('--smoke')
+/** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
+const RESTARTED = process.argv.includes('--smoke-restarted')
+const SMOKE = process.argv.includes('--smoke') || RESTARTED
 const devTilesIn = (argv: string[], cwd = process.cwd()): string[] =>
   argv.filter((a) => a.startsWith('--dev-tile=')).map((a) => resolve(cwd, a.slice('--dev-tile='.length)))
 const devTiles = devTilesIn(process.argv)
@@ -36,9 +38,9 @@ const devTiles = devTilesIn(process.argv)
  * build inside the installed one. A smoke run gets a throwaway one.
  */
 const DEV = !!process.env.ELECTRON_RENDERER_URL
-const PROFILE = SMOKE ? `workshop-smoke-${process.pid}` : DEV ? 'workshop-dev' : 'workshop'
+const PROFILE = RESTARTED ? process.env.WORKSHOP_SMOKE_PROFILE! : SMOKE ? `workshop-smoke-${process.pid}` : DEV ? 'workshop-dev' : 'workshop'
 if (SMOKE) {
-  app.setPath('userData', mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
+  app.setPath('userData', RESTARTED ? process.env.WORKSHOP_SMOKE_HOME! : mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
 } else if (DEV) app.setPath('userData', `${app.getPath('userData')}-dev`)
 
@@ -707,9 +709,11 @@ app.whenReady().then(async () => {
   nativeTheme.on('updated', pushTheme)
 
   if (SMOKE) {
-    const code = await runSmoke({ win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core! })
+    const ctx = { win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core!, profile: PROFILE }
+    const code = RESTARTED ? await runRestarted(ctx) : await runSmoke(ctx)
     core?.stop()
-    await core?.tmux.killServer()
+    // The run that started this one cleans up the tmux server it still needs.
+    if (!RESTARTED) await core?.tmux.killServer()
     door.stop()
     app.exit(code)
   }

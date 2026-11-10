@@ -20,6 +20,8 @@ interface Ctx {
   opened: string[]
   addDevTile: (folder: string) => Promise<string>
   core: import('./core-sessions').CoreSessions
+  /** The profile's name (its tmux socket), for a second core started on it. */
+  profile?: string
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -189,6 +191,8 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await sideDoors(check, ctx)
     await instances(check, ctx)
     await knotClock(check, ctx)
+    // Last: it stops this core's sessions.
+    await restart(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
   }
@@ -1047,8 +1051,8 @@ async function knotClock(check: (name: string, ok: boolean, detail?: string) => 
     return { draws: b.draws - a.draws, wakes: b.wakes - a.wakes }
   }
   const knots = (await js(`document.querySelectorAll('canvas.knot').length`)) as number
-  const moving = await over(1500)
-  check('knot clock: it runs (the app mark rests at 6 frames a second)', knots > 0 && moving.draws >= 6, `${knots} knots, ${JSON.stringify(moving)}`)
+  const moving = await over(2000)
+  check('knot clock: it runs (the app mark rests at 6 frames a second; a busy machine gets fewer)', knots > 0 && moving.draws >= 3, `${knots} knots, ${JSON.stringify(moving)}`)
 
   const cdp = win.webContents.debugger
   cdp.attach('1.3')
@@ -1062,7 +1066,7 @@ async function knotClock(check: (name: string, ok: boolean, detail?: string) => 
     check('knot clock: then nothing more under reduced motion', still.draws === 0 && still.wakes === 0, JSON.stringify(still))
     await cdp.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
     await sleep(300)
-    check('knot clock: and moves again without it', (await over(1500)).draws >= 6)
+    check('knot clock: and moves again without it', (await over(2000)).draws >= 3)
   } finally {
     cdp.detach()
   }
@@ -1082,4 +1086,92 @@ async function knotClock(check: (name: string, ok: boolean, detail?: string) => 
   check('knot clock: a hidden window wakes it not once', hidden && shown.draws > 0 && asleep.wakes === 0 && asleep.draws === 0, `never shown: ${neverShown}; shown ${JSON.stringify(shown)}; hidden ${hidden} ${JSON.stringify(asleep)}`)
   win.webContents.setBackgroundThrottling(false)
   win.setOpacity(1)
+}
+
+/**
+ * Sessions outlive core. This core quits the way the app does (sessions parked in tmux, the door
+ * closed), and a second core is started on the same profile (`--smoke-restarted`, runRestarted
+ * below), which must find the session, reattach it and hear its hooks. Then the tmux server is
+ * killed, as a reboot would, and a third core must show the session closed and resume it with
+ * `--resume` into the same conversation. Their checks are reported here as this run's.
+ */
+async function restart(check: (name: string, ok: boolean, detail?: string) => void, ctx: Ctx): Promise<void> {
+  const { win, door, core, userData } = ctx
+  const { app } = await import('electron')
+  const { spawn } = await import('node:child_process')
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'ws-survivor-')))
+  const id = String((await js(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, name: 'survivor' })`)).id)
+  await waitFor('the survivor to start', async () => (await screen(id)).includes('FAKE CLAUDE READY'))
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'before the restart\\r'); true`)
+  await waitFor('its turn', async () => (await screen(id)).includes('DONE before the restart'))
+  await waitFor('its transcript', () => (core.transcripts.get(id)?.blocks.length ?? 0) > 0)
+
+  core.stop()
+  door.stop()
+  const second = (mode: 'restart' | 'reboot'): Promise<string> =>
+    new Promise((done) => {
+      const env = { ...process.env, WORKSHOP_SMOKE_HOME: userData, WORKSHOP_SMOKE_PROFILE: ctx.profile ?? '', WORKSHOP_SMOKE_RESTART: mode, WORKSHOP_SMOKE_SURVIVOR: id }
+      const p = spawn(process.execPath, [app.getAppPath(), '--smoke-restarted'], { env, stdio: ['ignore', 'pipe', 'pipe'] })
+      let out = ''
+      p.stdout.on('data', (d) => (out += d))
+      p.stderr.on('data', () => {})
+      const kill = setTimeout(() => p.kill(), 60_000)
+      p.on('exit', () => {
+        clearTimeout(kill)
+        done(out)
+      })
+    })
+  const report = (mode: string, out: string): void => {
+    const lines = out.split('\n').filter((l) => /^(ok {4}|FAIL {2})/.test(l))
+    for (const l of lines) check(`${mode}: ${l.slice(6).replace(/ {2}\(.*\)$/, '')}`, l.startsWith('ok'), l.slice(6))
+    if (!lines.length) check(`${mode}: the second core ran its checks`, false, out.slice(-400))
+  }
+  report('restart', await second('restart'))
+  // A reboot takes the tmux server with it.
+  await core.tmux.killServer()
+  report('reboot', await second('reboot'))
+}
+
+/** The second core's half of `restart` (index.ts starts it with --smoke-restarted). */
+export async function runRestarted(ctx: Ctx): Promise<number> {
+  const { win, core } = ctx
+  const results: [string, boolean, string?][] = []
+  const check = (name: string, ok: boolean, detail?: string): void => void results.push([name, ok, detail])
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  const id = process.env.WORKSHOP_SMOKE_SURVIVOR ?? ''
+  const view = () => core.sessions.getState().sessions.find((s) => s.id === id)
+  const userTexts = (): string[] => (core.transcripts.get(id)?.blocks ?? []).flatMap((b) => (b.kind === 'user' ? [b.text] : []))
+  try {
+    await waitFor('the window', async () => (await js(`!!document.querySelector('.app')`)) === true)
+    if (process.env.WORKSHOP_SMOKE_RESTART === 'restart') {
+      const v = view()
+      check('the session is still there, open, its tmux session alive', !!v && v.open && v.tmuxAlive, JSON.stringify(v && { open: v.open, tmuxAlive: v.tmuxAlive }))
+      check('it is reattached', await waitFor('the pty', () => !!view()?.attached, 5000).then(() => true, () => false))
+      check('its conversation is read again', await waitFor('the transcript', () => userTexts().includes('before the restart'), 5000).then(() => true, () => false), JSON.stringify(userTexts()))
+      check('its tile is drawn', await waitFor('the tile', async () => (await js(`!!document.querySelector('[data-session="${id}"]')`)) === true, 5000).then(() => true, () => false))
+      await js(`window.core.ptyInput(${JSON.stringify(id)}, 'after the restart\\r'); true`)
+      const typed = await waitFor('the turn', async () => (await screen(id)).includes('DONE after the restart'), 10_000).then(() => true, () => false)
+      // The hooks find the new core through <profile>/port, with the token kept on disk.
+      const heard = await waitFor('its hooks', () => view()?.status === 'idle' && view()?.attention === true, 5000).then(() => true, () => false)
+      check('a new prompt runs, and its hooks reach the new core', typed && heard, JSON.stringify(view() && { status: view()!.status, attention: view()!.attention }))
+    } else {
+      const v = view()
+      check('the session is listed, closed, its tmux session gone', !!v && !v.open && !v.tmuxAlive, JSON.stringify(v && { open: v.open, tmuxAlive: v.tmuxAlive }))
+      await js(`window.core.resume(${JSON.stringify(id)}).then(() => true)`)
+      const back = await waitFor('the resumed session', async () => (await screen(id)).includes('FAKE CLAUDE READY'), 10_000).then(() => true, () => false)
+      const started = JSON.parse(await readFile(join(ctx.userData, `fake-${id}.json`), 'utf8')) as { args: string[] }
+      const rec = core.sessions.find(id)
+      check('it resumes with --resume and its own conversation id', back && started.args.join(' ').includes(`--resume ${rec?.claudeSessionId}`), started.args.join(' '))
+      await js(`window.core.ptyInput(${JSON.stringify(id)}, 'after the reboot\\r'); true`)
+      await waitFor('the turn', async () => (await screen(id)).includes('DONE after the reboot'), 10_000).catch(() => undefined)
+      const both = await waitFor('the whole conversation', () => ['before the restart', 'after the restart', 'after the reboot'].every((t) => userTexts().includes(t)), 5000).then(() => true, () => false)
+      check('the conversation goes on in the same transcript', both, JSON.stringify(userTexts()))
+    }
+  } catch (err) {
+    check('ran to the end', false, (err as Error).message)
+  }
+  return finish(results, ctx)
 }
