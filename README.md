@@ -31,7 +31,7 @@ tile is fun, and that fun is the point.
 <p align="center">
   <img src="docs/assets/app.png" width="100%" alt="The workshop window in Deep Space: a session's conversation on the left, the new-session form in the middle, and the Git, Reminders and Wikipedia tiles on the right">
 </p>
-<p align="center"><sub>From the app's own test run, in Deep Space. Wikipedia's picture of the day is by Andreas F. Borchert, from Wikimedia Commons.</sub></p>
+<p align="center"><sub>From the app's own test run, in Deep Space. Wikipedia's picture of the day: <a href="https://commons.wikimedia.org/wiki/File:D%C3%BClmen,_Kirchspiel,_BMW_Mini_--_2016_--_5065-71.jpg">BMW Mini at night in Dülmen</a> by Dietmar Rabich, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, so this screenshot is CC BY-SA 4.0 too.</sub></p>
 
 ## What is in it today
 
