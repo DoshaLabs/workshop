@@ -19,7 +19,11 @@ export interface DoorHost {
   live(id: string): boolean
   /** The ops the live page has registered a handler for. */
   answers(id: string, op: string): boolean
-  /** Hands the call to one of the tile's live pages; returns which instance took it. */
+  /**
+   * Hands the call to one of the tile's live pages; returns a name for THAT PAGE (not the
+   * instance: an instance that reloads gets a new page, and the old one going away must not fail
+   * calls the new one took).
+   */
   deliver(id: string, call: DoorCall): string | undefined
   /**
    * POST /hook/<name> from a session's Claude Code hooks (main/hooks.ts), with the session's token.
@@ -33,14 +37,14 @@ type Reply = { ok: true; result: unknown } | { ok: false; error: string }
 export class Door {
   private server: Server | null = null
   /** token → who the caller is: 'outside', or a session's name (read when the call arrives). */
-  private readonly callers = new Map<string, () => string>()
-  private readonly pending = new Map<string, { tile: string; instance: string; resolve: (r: Reply) => void; timer: NodeJS.Timeout }>()
+  private readonly callers = new Map<string, { who: () => string; session: string | null }>()
+  private readonly pending = new Map<string, { tile: string; page: string; resolve: (r: Reply) => void; timer: NodeJS.Timeout }>()
   port = 0
   /** The token for callers outside any session (a terminal, the smoke test). */
   readonly token = randomBytes(24).toString('hex')
 
   constructor(private readonly host: DoorHost) {
-    this.callers.set(this.token, () => 'outside')
+    this.callers.set(this.token, { who: () => 'outside', session: null })
   }
 
   /** A new token whose calls are attributed to `caller`. */
@@ -50,10 +54,10 @@ export class Door {
     return t
   }
 
-  /** Accept a token core made elsewhere (a session's, which outlives a restart of the app). */
-  register(token: string, who: () => string): void {
+  /** Accept a token core made elsewhere (a session's, which outlives a restart of the app). `session` is that session's id. */
+  register(token: string, who: () => string, session: string | null = null): void {
     if (!/^[0-9a-f]{48}$/.test(token)) throw new Error('bad token')
-    this.callers.set(token, who)
+    this.callers.set(token, { who, session })
   }
 
   revoke(token: string): void {
@@ -96,19 +100,19 @@ export class Door {
     this.pending.clear()
   }
 
-  /** A tile's page answered a call. Only the page (instance) the call went to may answer it. */
-  answer(instance: string, callId: string, reply: Reply): void {
+  /** A tile's page answered a call. Only the page the call went to may answer it. */
+  answer(page: string, callId: string, reply: Reply): void {
     const p = this.pending.get(callId)
-    if (!p || p.instance !== instance) return
+    if (!p || p.page !== page) return
     clearTimeout(p.timer)
     this.pending.delete(callId)
     p.resolve(reply)
   }
 
   /** A tile's page went away: everything it owed fails now rather than at its timeout. */
-  dropInstance(instance: string): void {
+  dropPage(page: string): void {
     for (const [id, p] of this.pending) {
-      if (p.instance !== instance) continue
+      if (p.page !== page) continue
       clearTimeout(p.timer)
       this.pending.delete(id)
       p.resolve({ ok: false, error: 'the tile closed before answering' })
@@ -125,7 +129,8 @@ export class Door {
     if (req.method !== 'POST') return send(404, { ok: false, error: 'POST /tile/<id>' })
     const token = this.tokenOf(req)
     if (!token) return send(401, { ok: false, error: 'no valid token (WORKSHOP_AUTH)' })
-    const caller = this.callers.get(token)!()
+    const from = this.callers.get(token)!
+    const caller = from.who()
 
     const hook = /^\/hook\/([a-z-]{1,32})$/.exec(req.url ?? '')
     if (hook) {
@@ -166,9 +171,9 @@ export class Door {
         this.pending.delete(callId)
         resolve({ ok: false, error: `the ${man.name} tile did not answer within ${door.timeoutMs} ms` })
       }, door.timeoutMs)
-      const entry = { tile: id, instance: '', resolve, timer }
+      const entry = { tile: id, page: '', resolve, timer }
       this.pending.set(callId, entry)
-      entry.instance = this.host.deliver(id, { callId, op, args: args as string[], caller }) ?? ''
+      entry.page = this.host.deliver(id, { callId, op, args: args as string[], caller, session: from.session }) ?? ''
     })
     if (reply.ok) {
       let json: string

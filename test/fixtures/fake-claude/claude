@@ -3,7 +3,8 @@
 // --settings file, puts its `env` into its own environment, and runs its hook and status-line
 // commands through the shell with JSON on stdin. Each line typed into it is a "turn":
 //   prompt hook → (the line's action) → status line → Stop hook → prints "DONE <line>".
-// Actions: `door` calls the probe tile through $WORKSHOP_TILE; `spoof` sends a Stop hook that
+// Actions: `door` calls the probe tile through $WORKSHOP_TILE; `tile <id> <op> [args]` calls any
+// tile the same way (as a skill would); `spoof` sends a Stop hook that
 // claims another session's id. It writes what it was started with to $WORKSHOP_HOME/fake-<id>.json.
 const { execSync } = require('node:child_process')
 const fs = require('node:fs')
@@ -39,6 +40,7 @@ process.stdin.on('data', (chunk) => {
     if (!line) continue
     hook('UserPromptSubmit', { prompt: line })
     if (line === 'door') console.log(run(`node "$WORKSHOP_TILE" probe echo from-session`, {}).replace(/\s+/g, ' '))
+    if (line.startsWith('tile ')) console.log(run(`node "$WORKSHOP_TILE" ${line.slice(5)} 2>&1`, {}).replace(/\s+/g, ' '))
     run(settings.statusLine.command, { session_id: sid, rate_limits: { five_hour: { used_percentage: 42, resets_at: Math.floor(Date.now() / 1000) + 3600 } }, cost: { total_cost_usd: 1.23 }, context_window: { used_percentage: 17 } })
     if (line === 'spoof') {
       for (const group of settings.hooks.Stop || []) for (const h of group.hooks) run(h.command, { session_id: '00000000-0000-0000-0000-000000000000', hook_event_name: 'Stop' })

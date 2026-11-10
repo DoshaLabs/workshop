@@ -4,7 +4,8 @@
 import type { Manifest } from './manifest'
 import type { TermPalette } from './themes'
 
-export type TileView = 'tile' | 'pane'
+/** Where a tile's page is showing: its cell in the column, the center pane, or over the whole window. */
+export type TileView = 'tile' | 'pane' | 'overlay'
 
 /** The theme as core's window paints it. */
 export interface ThemeState {
@@ -61,6 +62,12 @@ export interface DoorCall {
   args: string[]
   /** Who called, as core knows it. Never read from the request body. */
   caller: string
+  /**
+   * The calling session's id (the one `workshop.sessions` lists), or null from outside a session.
+   * Names are not unique ("new session" twice); a tile that must know WHICH session called, to
+   * find its project folder, matches this id.
+   */
+  session: string | null
 }
 
 export const CH = {
@@ -68,6 +75,7 @@ export const CH = {
   hello: 'ws:tile:hello', // sendSync
   head: 'ws:tile:head',
   pane: 'ws:tile:pane',
+  overlay: 'ws:tile:overlay',
   external: 'ws:tile:external',
   storageGet: 'ws:tile:storage-get',
   storageSet: 'ws:tile:storage-set',
@@ -86,10 +94,13 @@ export const CH = {
   // core window → main
   listTiles: 'ws:core:list-tiles',
   setView: 'ws:core:set-view',
+  tileCreate: 'ws:core:tile-create',
+  tileForget: 'ws:core:tile-forget',
   // main → core window
   tilesChanged: 'ws:core:tiles-changed',
   tileHead: 'ws:core:tile-head',
   tilePane: 'ws:core:tile-pane',
+  tileOverlay: 'ws:core:tile-overlay',
   tileNotify: 'ws:core:tile-notify',
   themeChanged: 'ws:core:theme',
   setSettings: 'ws:core:set-settings',

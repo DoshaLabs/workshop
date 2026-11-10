@@ -30,7 +30,23 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   cross as functions and are rebuilt into properties with `executeInMainWorld`.
 - `src/main/storage.ts`, `src/main/door.ts`, `bin/workshop-tile.mjs`: storage (5 MB, atomic) and
   the door (127.0.0.1, bearer token, caller from the token, browser `Origin` refused).
-- `tiles/wikipedia/`: the reference tile, plain JS with no build step.
+- `tiles/wikipedia/`: deck's Wikipedia tile ported onto the contract, plain JS with no build
+  step: the picture of the day full bleed (cycling every 2 minutes, today's then two from the
+  archive), a clock and the weather (Open-Meteo; asks for a city on first run, places kept in
+  `workshop.storage`) top left, search and an in-tile article over the picture. A click opens it as
+  a pane, which shows the picture whole. Rules in `dist/wiki.js`, tested as shipped.
+- `tiles/reminders/`: deck's Reminders ported onto the contract (storage, sessions read, door,
+  notify): to-dos, notes and a log by project. Its rules are `dist/model.js` (tested as shipped by
+  `test/reminders.test.ts`), its page `dist/tile.js`. It lives here until the index exists, then
+  moves to its own repo (section 3). What the port changed in core and what it could not do:
+  `docs/progress/2026-11-10.md` section 8.
+- Layout: three equal columns, as in deck. The tile column is four rows tall: a tile is one row
+  (its manifest's `span`, 1 for every core tile) and ↕ on its head steps it taller.
+- The `+` is the tile column's last cell (`TilePicker.tsx`): turn a tile on, open another
+  instance, or "make one with Claude", which copies the starter in `template/` to
+  `~/workshop-tiles/<id>` (`src/main/scaffold.ts`), loads it as a dev tile and starts a session
+  there. `template/CLAUDE.md` is the tile contract written for the Claude that builds the tile.
+  Dev tile folders are remembered in settings (`devTiles`) and loaded at every start.
 - `bin/workshop.mjs tile dev <folder>`: loads a tile under development (reload on change, or a
   dev-server `entry`); hands the folder to the app if it is already running.
 - Themes: deck's whole catalog (`src/shared/themes.ts`), saved by main (`src/main/settings.ts`),
@@ -47,6 +63,11 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   `workshop` (userData `workshop`), `workshop-dev` under `npm run dev` (its own socket and folder).
 - Bridge: `sessions.list/watch/paste` (no titles: they quote the conversation) and
   `usage.get/watch` (the two windows, and per session context % and cost, from the status line).
+- Overlay (bridge 1.1, `permissions.overlay`): `openOverlay()` lays the tile's own webview over
+  the window below a strip core draws (`App.tsx`, `TileLayer.tsx`). Main opens it only after real
+  input in that page (`input-event` / `before-input-event`, used up per open) and takes Esc from
+  every webContents before the page sees it (`index.ts` `escClosesOverlay`). Wikipedia's picture
+  lightbox uses it.
 - Not yet: `transcripts`, the trusted tier, session tiles (conversations as tiles), the leash and
   permission prompts in a tile, Foxtrot.
 
@@ -87,6 +108,11 @@ These were decided in the planning conversation and are not open for re-litigati
 7. **No games, ROMs, discs or BIOS files, ever**, in this repo, the index, or any tile listing.
 8. **Third-party tiles are untrusted code.** They run in a sandbox with declared permissions
    (section 5). Nothing a stranger wrote gets node, the file system, or the network by default.
+9. **Our own tiles walk the author's path** (Colin, 10 Nov 2026). A tile DoshaLabs writes is
+   built the way a stranger's is: from the starter (`template/`), loaded with `workshop tile dev`
+   or the `+` menu, against the contract as `template/CLAUDE.md` states it. When a tile needs
+   something the contract lacks, the contract changes (and that file with it), for every author;
+   a core tile never gets a private way in. Wikipedia and Reminders predate this rule.
 
 ---
 
@@ -282,6 +308,11 @@ sandbox, and making the exception loud and rare, is the answer to it.
 - Core draws the tile's head (icon, name, drag grip, expand, close), so tiles look consistent
   and cannot imitate a session.
 - Popups go to the browser. Camera, microphone and file access go through the bridge.
+- **Overlay** (`permissions.overlay`, a permission rather than a layout flag like `pane`, so it is
+  shown at install and an older core refuses the tile): the same page, repositioned over the
+  window under a 40 px strip core draws (icon, name, Esc, ×). The page cannot reach the strip.
+  Opening needs real input in that page in the last 5 s, one open per input; Esc from any
+  webContents closes it in main and never reaches the page. The page draws its own dim backdrop.
 - **Files** (`src/main/files.ts`): `pick()` opens the macOS chooser; what the user picks is a grant
   for that tile, remembered across restarts. The page gets a handle and a name, never the path, and
   reads through its own origin at `tile://<id>/~files/<handle>/<path>`, streamed (a disc image
@@ -292,11 +323,17 @@ sandbox, and making the exception loud and rare, is the answer to it.
 Always available:
 
 ```ts
-workshop.view                      // 'tile' | 'pane', plus onViewChange
+workshop.view                      // 'tile' | 'pane' | 'overlay', plus onViewChange
 workshop.theme                     // colors as CSS variables, already applied; onChange
 workshop.head.set({ title, badge })
 workshop.openPane() / workshop.closePane()
 workshop.openExternal(url)         // http(s) only
+```
+
+Behind a permission:
+
+```ts
+workshop.openOverlay() / closeOverlay()  // "overlay" → the page over the whole window (bridge ^1.1)
 ```
 
 Behind a permission:
@@ -307,7 +344,7 @@ workshop.sessions.list/watch       // "sessions": "read"  → name, project fold
 workshop.sessions.transcript(id)   // "transcripts"       → the conversation (see the safeguard)
 workshop.sessions.paste(id, text)  // "sessions": "write" → type into a session
 workshop.usage.get/watch           // "usage"             → costs and rate-limit windows, computed by core
-workshop.door.handle(op, fn)       // "door"              → answer calls from Claude sessions
+workshop.door.handle(op, fn)       // "door"              → fn(args, caller, { session }) answers a Claude session
 workshop.notify({ text, bark })    // "notify"            → needs-you chip, macOS notification, mascot bark
 workshop.files.pick/list/entries/read/url/forget  // "files" → only what the user picked for this tile
 workshop.media                     // "camera" / "microphone" → passed to the macOS prompt
@@ -335,6 +372,9 @@ This generalizes what deck does by hand for each tile (`/deck:mol`, `/deck:remin
   [args]`, which POSTs to `/tile/<id>` on core's local hooks server.
 - Only ops declared in the manifest are delivered. Anything else is refused before it reaches
   the page.
+- A call also carries the calling session's id (`{ session }`, null from outside a session):
+  names are not unique, so a tile that must know which session called matches the id against
+  `workshop.sessions`.
 - The caller's identity (the session's name) is attached by core. It is never read from the
   request body.
 - A tile that is turned off refuses at once with "turn on the X tile".
@@ -396,6 +436,10 @@ How it works:
   index may double as a Claude Code plugin marketplace. The current marketplace file format must
   be checked before this is promised.
 - **Sprite packs** (section 8) are a second category in the same index.
+- **Profiles** (Colin, 10 Nov 2026): an optional sign-up that gives an author a page linking
+  their tiles in the marketplace. It is never required: anyone can write a tile, share it on
+  GitHub and submit it to the index without one. Not designed yet (what a profile holds, and
+  whether sign-in is GitHub's).
 
 There is no hosted backend at launch beyond the counter and a static site. A WoW-style hosted
 marketplace is step 6 of the roadmap and happens only if strangers are building tiles.

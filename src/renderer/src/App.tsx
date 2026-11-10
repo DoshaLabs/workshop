@@ -4,8 +4,8 @@
 // The column holds tile INSTANCES. A tile's first instance is keyed by its id; a tile with
 // `multiple: true` may have more, keyed `<id>.<n>` (n up to 4), each its own page and partition.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { ThemeState, TileHead, TileInfo, TileProblem } from '@shared/ipc'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import type { ThemeState, TileHead, TileInfo, TileProblem, TileView } from '@shared/ipc'
 import { syncCosmos } from './cosmos'
 import { ThemePicker } from './ThemePicker'
 import { FocusPane, Launcher, SessionColumn } from './Sessions'
@@ -14,10 +14,23 @@ import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import { UsageMeter } from './UsageMeter'
 import { TileLayer, type Instance } from './TileLayer'
+import { TilePicker } from './TilePicker'
 
 const OFF_KEY = 'workshop.off'
 const EXTRA_KEY = 'workshop.extra'
 const MAX_INSTANCES = 4
+const SPAN_KEY = 'workshop.span'
+/** The tile column is this many rows tall, as deck's is by default: a tile is one row unless it asks for more or ↕ made it taller. */
+const ROWS = 4
+
+function readSpans(): Record<string, number> {
+  try {
+    const v = JSON.parse(localStorage.getItem(SPAN_KEY) ?? '{}') as unknown
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, number>) : {}
+  } catch {
+    return {}
+  }
+}
 
 function readList(key: string): string[] {
   try {
@@ -58,6 +71,8 @@ export function App() {
   /** Second and later instances that are on: `<id>.<n>`. */
   const [extra, setExtra] = useState<string[]>(() => readList(EXTRA_KEY))
   const [pane, setPane] = useState<string | null>(null)
+  /** The instance whose page is over the whole window (permissions.overlay), if any. */
+  const [overlay, setOverlay] = useState<string | null>(null)
   const [heads, setHeads] = useState<Record<string, TileHead>>({})
   const [chips, setChips] = useState<Record<string, string>>({})
   const [theme, setTheme] = useState<ThemeState | null>(null)
@@ -65,6 +80,21 @@ export function App() {
   const [usage, setUsage] = useState<Usage | null>(null)
   /** The launcher asked for (the + in the session column), over the focused session. */
   const [launcher, setLauncher] = useState(false)
+  /** The tile column's + menu. */
+  const [picker, setPicker] = useState(false)
+  /** Heights the user set with ↕, by instance; a tile without one takes its manifest's `span`. */
+  const [spans, setSpans] = useState<Record<string, number>>(readSpans)
+  useEffect(() => {
+    try {
+      localStorage.setItem(SPAN_KEY, JSON.stringify(spans))
+    } catch {
+      // the column still works, it just forgets
+    }
+  }, [spans])
+  const spanOf = (i: Instance): number => {
+    const n = spans[i.key] ?? i.tile.manifest.span
+    return Number.isInteger(n) && n >= 1 && n <= ROWS ? n : 1
+  }
 
   useEffect(() => {
     const load = () =>
@@ -87,6 +117,7 @@ export function App() {
       }),
       window.core.onTileHead((key, head) => setHeads((h) => ({ ...h, [key]: head }))),
       window.core.onTilePane((key, open) => setPane((p) => (open ? key : p === key ? null : p))),
+      window.core.onTileOverlay((key, open) => setOverlay((o) => (open ? key : o === key ? null : o))),
       window.core.onTileNotify((key, text) => {
         setChips((c) => ({ ...c, [key]: text }))
         window.setTimeout(() => setChips((c) => (c[key] === text ? { ...c, [key]: '' } : c)), 8000)
@@ -119,9 +150,14 @@ export function App() {
     return out
   }, [tiles, off, extra])
 
+  const viewOf = useCallback((key: string): TileView => (overlay === key ? 'overlay' : pane === key ? 'pane' : 'tile'), [overlay, pane])
+  // An overlay whose instance went away (turned off, its tile unloaded) goes with it.
   useEffect(() => {
-    for (const i of instances) void window.core.setView(i.key, pane === i.key ? 'pane' : 'tile')
-  }, [pane, instances])
+    if (overlay && !instances.some((i) => i.key === overlay)) setOverlay(null)
+  }, [overlay, instances])
+  useEffect(() => {
+    for (const i of instances) void window.core.setView(i.key, viewOf(i.key))
+  }, [viewOf, instances])
 
   useEffect(() => {
     if (!pane) return
@@ -132,6 +168,7 @@ export function App() {
 
   const close = useCallback((key: string) => {
     setPane((p) => (p === key ? null : p))
+    setOverlay((o) => (o === key ? null : o))
     if (instanceN(key) === 1) setOff((o) => [...o, key])
     else setExtra((x) => x.filter((k) => k !== key))
   }, [])
@@ -147,13 +184,13 @@ export function App() {
   }
   const countOf = (id: string): number => instances.filter((i) => i.tile.manifest.id === id).length
 
-  const offTiles = tiles.filter((t) => countOf(t.manifest.id) === 0)
   const paneInst = instances.find((i) => i.key === pane)
+  const overInst = instances.find((i) => i.key === overlay)
   const focused = sessions?.sessions.find((s) => s.id === sessions.focus && s.open) ?? null
   const label = (i: Instance): string => heads[i.key]?.title || (i.n > 1 ? `${i.tile.manifest.name} ${i.n}` : i.tile.manifest.name)
 
   return (
-    <div className="app">
+    <div className={`app ${overInst ? 'overlaid' : ''}`}>
       <div className="topbar">
         <UsageMeter usage={usage} />
         {theme && <ThemePicker theme={theme} />}
@@ -181,7 +218,9 @@ export function App() {
                 ×
               </button>
             </header>
-            <div className="face pane-face" data-pane={paneInst.key} />
+            <div className="face pane-face" data-pane={paneInst.key}>
+              {overlay === paneInst.key && <span className="away">open over the window</span>}
+            </div>
           </section>
         ) : focused && !launcher ? (
           <FocusPane session={focused} />
@@ -213,7 +252,7 @@ export function App() {
             const t = i.tile
             const head = heads[i.key]
             return (
-              <article key={i.key} className={`tile ${pane === i.key ? 'in-pane' : ''}`}>
+              <article key={i.key} className={`tile ${pane === i.key ? 'in-pane' : ''}`} style={{ '--span': spanOf(i) } as CSSProperties}>
                 <header className="head">
                   <Icon tile={t} />
                   <span className="name" title={t.manifest.hint}>
@@ -231,6 +270,9 @@ export function App() {
                       +
                     </button>
                   )}
+                  <button className="ghost" title={spanOf(i) < ROWS ? `Make it taller: ${spanOf(i) + 1} rows of ${ROWS}` : 'Back to one row'} onClick={() => setSpans((s) => ({ ...s, [i.key]: spanOf(i) < ROWS ? spanOf(i) + 1 : 1 }))}>
+                    ↕
+                  </button>
                   {t.manifest.pane && (
                     <button className="ghost" title="Open large" onClick={() => setPane(pane === i.key ? null : i.key)}>
                       ⤢
@@ -240,25 +282,52 @@ export function App() {
                     ×
                   </button>
                 </header>
-                <div className="face" data-face={i.key} style={{ height: t.manifest.span * 190 }}>
-                  {pane === i.key && <span className="away">open in the center</span>}
+                <div className="face" data-face={i.key}>
+                  {overlay === i.key ? <span className="away">open over the window</span> : pane === i.key && <span className="away">open in the center</span>}
                 </div>
               </article>
             )
           })}
-          {offTiles.length > 0 && (
-            <div className="plus">
-              {offTiles.map((t) => (
-                <button key={t.manifest.id} onClick={() => another(t)}>
-                  + {t.manifest.name}
-                </button>
-              ))}
-            </div>
+          {/* The + is the column's last cell, as in deck. Its menu opens in its place: every tile's
+              page is a webview laid over the window, so nothing core draws can sit on top of one. */}
+          {picker ? (
+            <TilePicker
+              tiles={tiles}
+              countOf={countOf}
+              max={MAX_INSTANCES}
+              onAdd={(t) => {
+                another(t)
+                setPicker(false)
+              }}
+              onClose={() => setPicker(false)}
+            />
+          ) : (
+            <button className="tile tile-plus" title="Add a tile, or make one with Claude" onClick={() => setPicker(true)}>
+              +
+            </button>
           )}
         </div>
       </aside>
 
-      <TileLayer instances={instances} pane={pane} />
+      <TileLayer instances={instances} viewOf={viewOf} />
+
+      {/* A tile's page over the whole window, below a strip that is core's alone: the page cannot
+          draw on it (it is outside the webview, which core places) and so cannot hide the way out
+          or pass itself off as core. Esc closes it too, from main, wherever the focus is. */}
+      {overInst && (
+        <>
+          <div className="overlay-strip" role="toolbar" aria-label={`${overInst.tile.manifest.name}, over the window`}>
+            <Icon tile={overInst.tile} />
+            <span className="name">{overInst.tile.manifest.name}</span>
+            <span className="muted">{overInst.tile.source === 'core' ? 'is showing over the window' : `is showing over the window · ${overInst.tile.manifest.author}`}</span>
+            <span className="overlay-hint">Esc</span>
+            <button className="overlay-close" title={`Close ${overInst.tile.manifest.name} (Esc)`} onClick={() => setOverlay(null)}>
+              ×
+            </button>
+          </div>
+          <div className="overlay-box" data-overlay={overInst.key} />
+        </>
+      )}
     </div>
   )
 }

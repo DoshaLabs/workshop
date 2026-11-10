@@ -36,6 +36,20 @@ describe('checkManifest', () => {
     expect(errs({ ...base, permissions: { storgae: true } })[0]).toMatch(/storgae/)
   })
 
+  it('takes overlay as a permission: true or false, never a typo of it', () => {
+    const r = checkManifest({ ...base, permissions: { overlay: true } })
+    expect(r.ok && r.manifest.permissions.overlay).toBe(true)
+    const off = checkManifest({ ...base, permissions: { overlay: false } })
+    expect(off.ok && off.manifest.permissions.overlay).toBeUndefined()
+    expect(errs({ ...base, permissions: { overlay: 'yes' } })[0]).toMatch(/permissions.overlay: must be true or false/)
+    expect(errs({ ...base, permissions: { overlays: true } })[0]).toMatch(/overlays: not a permission/)
+  })
+
+  it('says which bridge an overlay tile needs', () => {
+    expect(checkManifest({ ...base, workshop: '^1.1', permissions: { overlay: true } }).ok).toBe(true)
+    expect(errs({ ...base, workshop: '^1.2' })[0]).toMatch(/does not accept/)
+  })
+
   it('refuses the trusted tier', () => {
     expect(errs({ ...base, permissions: { backend: true } })[0]).toMatch(/trusted tier/)
   })

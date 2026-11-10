@@ -16,7 +16,7 @@ if (hello) {
   const storageSubs = new Map<string, Set<(v: unknown) => void>>()
   const sessionSubs = new Set<(list: unknown) => void>()
   const usageSubs = new Set<(u: unknown) => void>()
-  const doorHandlers = new Map<string, (args: string[], caller: string) => unknown>()
+  const doorHandlers = new Map<string, (args: string[], caller: string, from: { session: string | null }) => unknown>()
   const perms = hello.permissions
 
   // The theme as CSS variables on :root, before the page's own styles can need them.
@@ -76,7 +76,7 @@ if (hello) {
     const fn = doorHandlers.get(c.op)
     if (!fn) return ipcRenderer.send(CH.doorReply, c.callId, { ok: false, error: `no handler for "${c.op}"` })
     try {
-      const result = await fn([...c.args], c.caller)
+      const result = await fn([...c.args], c.caller, { session: c.session })
       // Only plain JSON crosses back.
       ipcRenderer.send(CH.doorReply, c.callId, { ok: true, result: result === undefined ? null : JSON.parse(JSON.stringify(result)) })
     } catch (err) {
@@ -102,6 +102,13 @@ if (hello) {
     },
     openPane: (): Promise<void> => ipcRenderer.invoke(CH.pane, true),
     closePane: (): Promise<void> => ipcRenderer.invoke(CH.pane, false),
+    /**
+     * This page over the whole window, under a strip core draws (the tile's name, a close button).
+     * Needs "overlay" in permissions and a click or key in this page in the last few seconds. Esc
+     * closes it whatever the page does; `workshop.view` is 'overlay' while it is open.
+     */
+    openOverlay: (): Promise<void> => gate('overlay', () => ipcRenderer.invoke(CH.overlay, true)),
+    closeOverlay: (): Promise<void> => ipcRenderer.invoke(CH.overlay, false),
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CH.external, String(url)),
     storage: {
       get: (key: string): Promise<unknown> => gate('storage', () => ipcRenderer.invoke(CH.storageGet, key)),
@@ -156,8 +163,12 @@ if (hello) {
     },
     notify: (n: { text: string; bark?: boolean }): Promise<boolean> => gate('notify', () => ipcRenderer.invoke(CH.notify, { text: n?.text })),
     door: {
-      /** Answer `op` when a Claude session calls it. The op must be listed under permissions.door.ops. */
-      handle: (op: string, fn: (args: string[], caller: string) => unknown): void => {
+      /**
+       * Answer `op` when a Claude session calls it: `fn(args, caller, { session })`. `caller` is the
+       * session's name (or "outside"); `session` is its id as `workshop.sessions` lists it, or null.
+       * The op must be listed under permissions.door.ops.
+       */
+      handle: (op: string, fn: (args: string[], caller: string, from: { session: string | null }) => unknown): void => {
         needs('door')
         if (!perms.door!.ops.includes(op)) throw new Error(`"${op}" is not in permissions.door.ops in tile.json`)
         if (typeof fn !== 'function') throw new TypeError('expected a function')

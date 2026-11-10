@@ -3,8 +3,8 @@
 // (main/core-sessions.ts).
 
 import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protocol, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import { mkdtempSync, readFileSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, mkdtempSync, readFileSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
 import { BRIDGE_VERSION } from '@shared/manifest'
@@ -15,6 +15,7 @@ import { TileGrants } from './files'
 import { TileStore } from './storage'
 import { MAX_INSTANCES, TILE_SCHEME, armSession, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
 import { runSmoke } from './smoke'
+import { scaffoldTile } from './scaffold'
 import { startSessions, type CoreSessions } from './core-sessions'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
@@ -55,16 +56,44 @@ interface Guest {
   ops: Set<string>
   /** When the user last worked in it: door calls go to the most recent instance. */
   usedAt: number
+  /** When the user last clicked or typed in this page (0 once an overlay has used it up). */
+  gestureAt: number
 }
 /** Live tile pages by webContents id, and by instance key. A tile's first instance's key is its id. */
 const guests = new Map<number, Guest>()
 const liveByTile = new Map<string, Guest>()
+/** One page of an instance, for the door: a reload gives the instance a new page, and a call belongs to the page it went to. */
+const pageOf = (g: Guest): string => `${g.key}@${g.wc.id}`
 const instancesOf = (id: string): Guest[] => [...liveByTile.values()].filter((g) => g.tile.manifest.id === id)
 /** Keyed by instance. */
 const views = new Map<string, TileView>()
 const stores = new Map<string, TileStore>()
 const lastNotify = new Map<string, number>()
 const lastExternal = new Map<string, number>()
+/** The instance whose page is over the whole window, if any. Only one at a time. */
+let overlayKey: string | null = null
+/** How recent a click or key in the page must be for it to open its overlay (Chromium's own window for a user activation). */
+const GESTURE_MS = 5000
+
+/**
+ * Takes the page that is over the window back to where it was. Core, not the tile, owns this: it
+ * runs on Esc from any page in the window (main sees the key before the page does) and from the
+ * strip core draws above the overlay, so a tile that ignores closeOverlay still cannot keep it.
+ */
+function closeOverlay(): void {
+  if (!overlayKey) return
+  win?.webContents.send(CH.tileOverlay, overlayKey, false)
+}
+
+/** Esc closes the overlay wherever the focus is; while it is open, the page under focus never sees that Esc. */
+function escClosesOverlay(wc: WebContents): void {
+  wc.on('before-input-event', (ev, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape' && overlayKey) {
+      ev.preventDefault()
+      closeOverlay()
+    }
+  })
+}
 
 const tileDataDir = (): string => join(app.getPath('userData'), 'tile-data')
 let settings: SettingsStore
@@ -100,7 +129,7 @@ const door = new Door({
       .filter((x) => x.ops.has(call.op))
       .sort((a, b) => b.usedAt - a.usedAt)[0]
     g?.wc.send(CH.doorCall, call)
-    return g?.key
+    return g && pageOf(g)
   },
   hook: (name, token, payload) => core?.hook(name, token, payload)
 })
@@ -137,7 +166,7 @@ function guestOf(e: IpcMainEvent | IpcMainInvokeEvent): Guest | null {
 }
 const tileOf = (e: IpcMainEvent | IpcMainInvokeEvent): Tile | null => guestOf(e)?.tile ?? null
 
-function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage'): Guest {
+function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage' | 'overlay'): Guest {
   const g = guestOf(e)
   if (!g) throw new Error('not a tile')
   if (perm && !g.tile.manifest.permissions[perm]) throw new Error(`this tile did not ask for "${perm}" in tile.json`)
@@ -196,11 +225,20 @@ function guardWebviews(w: BrowserWindow): void {
     // Core's window asked for this page. If the instance already had one (the window reloading,
     // a dev tile loaded again), the new page takes over and the old one is on its way out.
     const { tile, key } = found
-    const g: Guest = { tile, wc, key, ops: new Set(), usedAt: Date.now() }
+    const g: Guest = { tile, wc, key, ops: new Set(), usedAt: Date.now(), gestureAt: 0 }
     const id = tile.manifest.id
     guests.set(wc.id, g)
     liveByTile.set(key, g)
     wc.on('focus', () => (g.usedAt = Date.now()))
+    // What counts as the user acting in this page, for openOverlay: input that reached it through
+    // the window (a script in the page cannot make these), never the Esc that closed an overlay.
+    wc.on('input-event', (_ev, input) => {
+      if (input.type === 'mouseDown' || input.type === 'touchStart' || input.type === 'gestureTap') g.gestureAt = Date.now()
+    })
+    escClosesOverlay(wc)
+    wc.on('before-input-event', (ev, input) => {
+      if (input.type === 'keyDown' && input.key !== 'Escape' && !ev.defaultPrevented) g.gestureAt = Date.now()
+    })
     wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
     // Popups go to the browser. The page itself stays on its own origin.
     wc.setWindowOpenHandler(({ url }) => {
@@ -219,12 +257,14 @@ function guardWebviews(w: BrowserWindow): void {
     wc.once('destroyed', () => {
       guests.delete(wc.id)
       if (liveByTile.get(key) === g) liveByTile.delete(key)
-      door.dropInstance(key)
+      door.dropPage(pageOf(g))
     })
   })
 }
 
 const devWatchers = new Map<string, FSWatcher>()
+/** A dev tile's id → the folder it was given as (a tile's own `root` is that folder's real path). */
+const devFolders = new Map<string, string>()
 
 /**
  * Loads (or loads again) a tile folder under development. It may stand in for a core or installed
@@ -232,6 +272,8 @@ const devWatchers = new Map<string, FSWatcher>()
  * it, a change to tile.json or plugin/ loads the tile again. A dev-server entry reloads itself.
  */
 async function addDevTile(folder: string): Promise<string> {
+  // Remembered, so it is there at the next start too (the + menu's "stop loading" forgets it).
+  if (!SMOKE && !settings.get().devTiles.includes(folder)) await settings.patch({ devTiles: [...settings.get().devTiles, folder] })
   const t = await readTile(folder, 'dev')
   registry.problems = registry.problems.filter((p) => p.folder !== folder)
   if ('errors' in t) {
@@ -241,6 +283,7 @@ async function addDevTile(folder: string): Promise<string> {
     return t.errors.join('\n')
   }
   const id = t.manifest.id
+  devFolders.set(id, folder)
   const old = registry.tiles.get(id)
   const tile: Tile = { ...t, rev: (old?.rev ?? 0) + 1, sessions: old?.sessions.length === (t.manifest.multiple ? MAX_INSTANCES : 1) ? old.sessions : sessionsFor(t) }
   registry.tiles.set(id, tile)
@@ -264,6 +307,42 @@ async function addDevTile(folder: string): Promise<string> {
   }
   win?.webContents.send(CH.tilesChanged)
   return `loaded ${id} from ${tile.root}${tile.devOrigin ? ` (dev server ${tile.devOrigin})` : ', reloading on change'}`
+}
+
+/** Stops loading a tile under development. Its folder and what it stored are left alone. */
+async function forgetDevTile(id: string): Promise<void> {
+  const t = registry.tiles.get(id)
+  if (!t || t.source !== 'dev') return
+  const folder = devFolders.get(id) ?? t.root
+  await settings.patch({ devTiles: settings.get().devTiles.filter((d) => d !== folder) })
+  devWatchers.get(folder)?.close()
+  devWatchers.delete(folder)
+  devFolders.delete(id)
+  registry.tiles.delete(id)
+  win?.webContents.send(CH.tilesChanged)
+}
+
+/** Where the + menu makes new tiles: a folder the user can find, open in an editor and push to GitHub. */
+const newTilesDir = (): string => (SMOKE ? join(app.getPath('userData'), 'workshop-tiles') : join(homedir(), 'workshop-tiles'))
+
+/**
+ * "Make a tile with Claude": the starter tile in a new folder, loaded at once as a dev tile (it
+ * reloads on every save), and a session in that folder told what to build. The folder's CLAUDE.md
+ * is the tile contract, so the session has it without being handed a plugin.
+ */
+async function createTile(name: string, idea: string): Promise<{ id: string; folder: string }> {
+  if (!core) throw new Error('sessions are not running')
+  const want = String(idea ?? '').trim().slice(0, 4000)
+  const made = await scaffoldTile(join(app.getAppPath(), 'template'), newTilesDir(), String(name ?? ''), want.split('\n')[0], (id) => registry.tiles.has(id))
+  await addDevTile(made.folder)
+  const prompt = [
+    `Build the workshop tile "${made.name}" in this folder.`,
+    want ? `What it should do: ${want}` : 'Ask me what it should do before you write anything.',
+    'This folder already holds a working starter tile, and workshop is showing it in its right-hand column now: it reloads whenever you save a file. Read CLAUDE.md here first. It is the tile contract: the manifest, the permissions, and everything window.workshop can do.',
+    'Ask for the fewest permissions that do the job. When it works, tell me what you built, which permissions it asks for, and anything the sandbox would not let it do.'
+  ].join('\n\n')
+  await core.sessions.newSession({ cwd: made.folder, name: `tile: ${made.name}`.slice(0, 60), prompt })
+  return { id: made.id, folder: made.folder }
 }
 
 /** What a tile with "sessions" sees of them: no ids it could not use, no titles (they quote the conversation). */
@@ -326,6 +405,20 @@ function bridge(): void {
     const g = need(e)
     if (open && !g.tile.manifest.pane) throw new Error('this tile did not set "pane": true in tile.json')
     win?.webContents.send(CH.tilePane, g.key, !!open)
+  })
+
+  ipcMain.handle(CH.overlay, (e, open: boolean) => {
+    if (!open) {
+      const g = need(e)
+      if (overlayKey === g.key) closeOverlay()
+      return
+    }
+    const g = need(e, 'overlay')
+    // Only straight after the user clicked or typed in this page, and once per click: a page
+    // cannot open itself over the window on a timer, or reopen in the moment it was closed.
+    if (Date.now() - g.gestureAt > GESTURE_MS) throw new Error('openOverlay: only in answer to a click or key in the tile')
+    g.gestureAt = 0
+    win?.webContents.send(CH.tileOverlay, g.key, true)
   })
 
   ipcMain.handle(CH.external, (e, url: string) => {
@@ -394,7 +487,7 @@ function bridge(): void {
     const g = guestOf(e)
     if (!g || typeof callId !== 'string' || !reply || typeof reply !== 'object') return
     const r = reply as { ok?: unknown; result?: unknown; error?: unknown }
-    door.answer(g.key, callId, r.ok === true ? { ok: true, result: r.result } : { ok: false, error: String(r.error ?? 'failed').slice(0, 500) })
+    door.answer(pageOf(g), callId, r.ok === true ? { ok: true, result: r.result } : { ok: false, error: String(r.error ?? 'failed').slice(0, 500) })
   })
 
   // Core's own window.
@@ -408,11 +501,25 @@ function bridge(): void {
     pushTheme()
     return themeState()
   })
+  ipcMain.handle(CH.tileCreate, (e, name: string, idea: string) => {
+    if (e.sender !== win?.webContents) throw new Error('core only')
+    return createTile(name, idea)
+  })
+  ipcMain.handle(CH.tileForget, (e, id: string) => {
+    if (e.sender !== win?.webContents) throw new Error('core only')
+    return forgetDevTile(String(id))
+  })
   ipcMain.handle(CH.setView, (e, key: string, view: TileView) => {
-    if (e.sender !== win?.webContents || (view !== 'tile' && view !== 'pane')) return
+    if (e.sender !== win?.webContents || (view !== 'tile' && view !== 'pane' && view !== 'overlay')) return
+    if (view === 'overlay' && !registry.tiles.get(key.replace(/\.\d$/, ''))?.manifest.permissions.overlay) return
+    const was = views.get(key)
     views.set(key, view)
+    if (view === 'overlay') overlayKey = key
+    else if (overlayKey === key) overlayKey = null
     const g = liveByTile.get(key)
     if (!g) return
+    // Leaving the overlay uses up whatever click was made in it.
+    if (was === 'overlay' && view !== 'overlay') g.gestureAt = 0
     g.usedAt = Date.now()
     g.wc.send(CH.view, view)
   })
@@ -441,8 +548,15 @@ function createWindow(): void {
     if (isHttp(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
-  win.webContents.on('will-navigate', (e) => e.preventDefault())
+  // Core's window never leaves its own page. Under `npm run dev` that page is Vite's, and Vite
+  // reloads it (a full reload is a navigation to the same origin), so that one is let through.
+  const devOrigin = process.env.ELECTRON_RENDERER_URL ? new URL(process.env.ELECTRON_RENDERER_URL).origin : null
+  win.webContents.on('will-navigate', (e, url) => {
+    if (devOrigin && URL.canParse(url) && new URL(url).origin === devOrigin) return
+    e.preventDefault()
+  })
   guardWebviews(win)
+  escClosesOverlay(win.webContents)
   if (SMOKE) {
     win.webContents.on('console-message', (e) => console.log(`[window] ${e.message}`))
     win.webContents.on('did-attach-webview', (_e, wc) => {
@@ -463,7 +577,10 @@ app.whenReady().then(async () => {
   ])
   for (const p of registry.problems) console.warn(`[tiles] refused ${p.folder}:\n  ${p.errors.join('\n  ')}`)
   await Promise.all([...registry.tiles.values()].map(armSession))
-  for (const dir of devTiles) console.log(`[tiles] ${await addDevTile(dir)}`)
+  // A remembered folder that is gone (moved, deleted) is forgotten, not shown as a refused tile for ever.
+  const kept = settings.get().devTiles.filter((d) => existsSync(join(d, 'tile.json')))
+  if (kept.length !== settings.get().devTiles.length) await settings.patch({ devTiles: kept })
+  for (const dir of new Set([...kept, ...devTiles])) console.log(`[tiles] ${await addDevTile(dir)}`)
   app.on('second-instance', (_e, argv, cwd) => {
     for (const dir of devTilesIn(argv, cwd)) void addDevTile(dir).then((m) => console.log(`[tiles] ${m}`))
     if (win?.isMinimized()) win.restore()

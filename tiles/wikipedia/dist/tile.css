@@ -1,4 +1,5 @@
-/* Colours come from core as --ws-* variables, already on :root. */
+/* Ported from deck's wiki- rules. Over the picture the text is white with a shadow, whatever the
+   theme, so it reads on any picture; everything not over the picture takes core's --ws-* colours. */
 * {
   box-sizing: border-box;
 }
@@ -6,103 +7,656 @@ html,
 body {
   margin: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--ws-panel);
-  color: var(--ws-ink);
+  color: #fff;
   font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  user-select: none;
 }
-body {
-  display: flex;
-  flex-direction: column;
-}
-body.pane {
-  font-size: 16px;
-}
-body.pane main {
-  max-width: 760px;
-  margin: 0 auto;
-  width: 100%;
-}
-form {
-  padding: 8px;
-  flex: none;
-}
+button,
 input {
-  width: 100%;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--ws-line);
-  background: var(--ws-bg);
-  color: var(--ws-ink);
   font: inherit;
-  outline: none;
 }
-input:focus {
-  border-color: var(--ws-accent);
+button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
 }
-main {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 0 8px 8px;
+.wiki {
+  position: relative;
+  cursor: pointer;
 }
-.muted {
+.wiki-results,
+.wiki-article,
+.wiki-places,
+.wiki.pane {
+  cursor: default;
+}
+.wiki-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: wiki-in 500ms ease;
+}
+@keyframes wiki-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.wiki-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.45) 45%, rgba(0, 0, 0, 0) 75%);
+  transition: background 200ms ease;
+}
+.wiki-results .wiki-scrim,
+.wiki-article .wiki-scrim,
+.wiki-places .wiki-scrim {
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+}
+/* Before the picture comes, or when it cannot: the theme's panel, not a picture. */
+.wiki-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
   color: var(--ws-muted);
 }
-.picture {
-  position: relative;
-  border-radius: 8px;
-  overflow: hidden;
-  cursor: pointer;
-}
-.picture img {
-  display: block;
-  width: 100%;
-  max-height: 320px;
-  object-fit: cover;
-}
-body.pane .picture img {
-  max-height: 560px;
-}
-.picture .caption {
-  padding: 6px 2px 0;
-}
-.hit {
+.wiki-text {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 12px 14px;
   display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+.wiki-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  opacity: 0.8;
+}
+.wiki-tagline {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 6px 4px;
-  border-radius: 6px;
-  cursor: pointer;
 }
-.hit:hover {
-  background: var(--ws-line);
+/* ‹ › through the pictures: there on hover, like the search box's chrome. */
+.wiki-steps {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 120ms ease;
 }
-.hit img {
+.wiki:hover .wiki-steps {
+  opacity: 1;
+}
+.wiki-steps button {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 16px;
+  line-height: 1;
+  background: rgba(0, 0, 0, 0.35);
+}
+.wiki-steps button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.25);
+}
+.wiki-steps button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.wiki-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wiki-summary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: 0.9;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The clock and the weather under it, top left over the picture: a shadow instead of chrome. */
+.wiki-corner {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 8px rgba(0, 0, 0, 0.5);
+  z-index: 2;
+}
+.wiki-clock {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.wiki-clock-time {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.wiki-clock-date {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  opacity: 0.85;
+}
+
+/* The weather: the first place large, the others a line each; the whole block opens the places editor. */
+.wiki-weather {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  margin: 0 -6px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  text-align: left;
+  text-shadow: inherit;
+  pointer-events: auto;
+}
+.wiki-weather:hover {
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(6px);
+}
+.wiki-weather-none {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  opacity: 0.6;
+}
+.wiki-weather-none:hover {
+  opacity: 1;
+}
+.wiki-weather-now {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 12px;
+}
+.wiki-weather-now .wiki-weather-temp {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.wiki-weather-now .wiki-weather-glyph {
+  font-size: 16px;
+}
+.wiki-weather-temp {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.wiki-weather-place {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  opacity: 0.85;
+}
+.wiki-weather-other {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11px;
+  opacity: 0.92;
+}
+.wiki-weather-other:first-of-type {
+  margin-top: 3px;
+}
+.wiki-weather-other .wiki-weather-glyph {
+  width: 13px;
+  text-align: center;
+}
+.wiki-weather-time {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The places editor, in the results panel's frame. */
+.wiki-places-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 4px;
+}
+.wiki-places-head .wiki-back {
+  margin-left: auto;
+}
+.wiki-places-units {
+  display: flex;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.wiki-places-units button {
+  padding: 1px 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.wiki-places-units button.on {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+.wiki-place {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 13px;
+}
+.wiki-place-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wiki-place button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.8);
+}
+.wiki-place button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+.wiki-place-input {
+  flex: none;
+  margin: 4px 8px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  outline: 0;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+  font-size: 12px;
+  user-select: text;
+}
+.wiki-place-input::placeholder {
+  color: rgba(255, 255, 255, 0.55);
+}
+.wiki-place-input:focus {
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.wiki-place-hit {
+  flex: none;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* The search box: no chrome until it has focus, just white text over the picture. */
+.wiki-search {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  max-width: calc(100% - 16px);
+  margin: 0;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background 120ms ease, border-color 120ms ease;
+  z-index: 2;
+}
+.wiki-search:hover,
+.wiki-search:focus-within {
+  background: rgba(0, 0, 0, 0.35);
+  border-color: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(6px);
+}
+.wiki-search input {
+  width: 150px;
+  min-width: 0;
+  padding: 4px 10px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  text-align: right;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  transition: width 160ms ease;
+  user-select: text;
+}
+.wiki-search input::placeholder {
+  color: rgba(255, 255, 255, 0.75);
+}
+.wiki-search:focus-within input,
+.wiki-results .wiki-search input,
+.wiki-article .wiki-search input {
+  width: 220px;
+  text-align: left;
+}
+.wiki-clear {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  line-height: 1;
+}
+.wiki-clear[hidden] {
+  display: none;
+}
+.wiki-clear:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Results, an article, the places editor: a scrolling panel under the search box. */
+.wiki-panel {
+  position: absolute;
+  inset: 40px 8px 8px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 1;
+}
+.wiki-none {
+  padding: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+.wiki-hit {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  text-align: left;
+  min-width: 0;
+}
+.wiki-hit:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.wiki-hit img,
+.wiki-hit-noimg {
+  flex: none;
   width: 44px;
   height: 44px;
-  object-fit: cover;
-  border-radius: 4px;
-  flex: none;
-}
-.hit b {
-  display: block;
-}
-.article img {
-  float: right;
-  max-width: 40%;
-  margin: 0 0 8px 10px;
   border-radius: 6px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
 }
-.article h2 {
-  margin: 4px 0 0;
-  font-size: 1.25em;
+.wiki-hit-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
-a,
-.link {
+.wiki-hit-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.wiki-hit-desc {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.wiki-hit-excerpt {
+  font-size: 11px;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.85);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wiki-article {
+  gap: 6px;
+  padding: 0 6px;
+  user-select: text;
+}
+.wiki-article .wiki-title {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+.wiki-back {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.wiki-back:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.wiki-link {
+  text-align: left;
+}
+.wiki-link:hover {
+  text-decoration: underline;
+}
+.wiki-extract {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+/* The pane: deck's full-window viewer. The picture whole and uncropped over the theme's panel,
+   its caption in a band of the theme under it. Results and articles keep the tile's look, larger. */
+body.pane {
+  font-size: 15px;
+}
+body.pane.wiki-picture .wiki-img {
+  bottom: 120px;
+  height: auto;
+  object-fit: contain;
+  animation: none;
+}
+body.pane.wiki-picture .wiki-scrim {
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.35) 0, rgba(0, 0, 0, 0) 120px);
+}
+body.pane.wiki-picture .wiki-text {
+  height: 120px;
+  justify-content: center;
+  padding: 10px 20px 12px;
+  background: var(--ws-panel);
+  border-top: 1px solid var(--ws-line);
+  color: var(--ws-ink);
+  text-shadow: none;
+}
+body.pane .wiki-text .wiki-tag {
+  color: var(--ws-muted);
+  opacity: 1;
+}
+body.pane .wiki-text .wiki-summary {
+  color: var(--ws-muted);
+  -webkit-line-clamp: 1;
+}
+body.pane .wiki-text .wiki-steps {
+  opacity: 1;
+}
+body.pane .wiki-text .wiki-steps button {
+  color: var(--ws-ink);
+  background: color-mix(in srgb, var(--ws-ink) 10%, transparent);
+}
+body.pane .wiki-text .wiki-steps button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ws-ink) 22%, transparent);
+}
+.wiki-commons {
+  align-self: flex-start;
+  font-size: 11px;
   color: var(--ws-accent);
-  cursor: pointer;
-  text-decoration: none;
 }
-.back {
-  display: inline-block;
-  margin: 2px 0 6px;
+.wiki-commons:hover {
+  text-decoration: underline;
+}
+body.pane .wiki-panel {
+  left: 50%;
+  right: auto;
+  width: min(760px, calc(100% - 16px));
+  transform: translateX(-50%);
+}
+body.pane .wiki-hit-title,
+body.pane .wiki-place {
+  font-size: 15px;
+}
+body.pane .wiki-hit-desc,
+body.pane .wiki-hit-excerpt {
+  font-size: 13px;
+}
+body.pane .wiki-extract {
+  font-size: 15px;
+}
+
+/* ---- the lightbox (deck's Viewer): this page over the whole window, in the overlay view. Core
+   lays the page under its own strip and draws nothing else, so the backdrop here IS the dimming:
+   the theme's background at 70%, over whatever is behind (Deep Space's sky, the columns). The
+   tile's own face is hidden; only the lightbox is drawn. */
+html:has(body.overlay),
+body.overlay {
+  background: transparent;
+}
+body.overlay > :not(#lightbox) {
+  display: none;
+}
+body.overlay {
+  cursor: default;
+  color: var(--ws-ink);
+}
+.wikibox-scrim {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--ws-bg) 70%, transparent);
+}
+.wikibox {
+  position: relative;
+  width: 70vw;
+  max-height: 88vh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--ws-panel);
+  border: 1.5px solid var(--ws-line);
+  border-radius: 10px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+/* The image takes whatever the caption leaves, whole and uncropped: it is the point of the thing. */
+.wikibox-img {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  object-fit: contain;
+  background: #1c1b18;
+}
+.wikibox-text {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 16px 14px;
+}
+.wikibox-tagline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wikibox-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ws-muted);
+}
+.wikibox-steps {
+  display: flex;
+  gap: 2px;
+}
+.wikibox-steps button {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 16px;
+  line-height: 1;
+  background: color-mix(in srgb, var(--ws-ink) 10%, transparent);
+}
+.wikibox-steps button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ws-ink) 22%, transparent);
+}
+.wikibox-steps button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.wikibox-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.wikibox-credit {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ws-muted);
+}
+.wikibox-link {
+  align-self: flex-start;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--ws-accent);
+}
+.wikibox-link:hover {
+  text-decoration: underline;
+}
+/* Big enough to hit without aiming, and it sits over the image's own corner. */
+.wikibox-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  transition: background 120ms ease, transform 120ms ease;
+}
+.wikibox-close:hover {
+  background: rgba(0, 0, 0, 0.78);
+  transform: scale(1.08);
 }

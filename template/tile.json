@@ -1,0 +1,15 @@
+{
+  "id": "__ID__",
+  "name": "__NAME__",
+  "version": "0.1.0",
+  "workshop": "^1",
+  "author": "you",
+  "hint": "__HINT__",
+  "icon": "icon.svg",
+  "entry": "dist/index.html",
+  "pane": false,
+  "span": 1,
+  "permissions": {
+    "storage": true
+  }
+}

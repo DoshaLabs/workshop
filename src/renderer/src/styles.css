@@ -20,7 +20,8 @@ button {
 
 .app {
   display: grid;
-  grid-template-columns: 220px 1fr 380px;
+  /* Thirds, as in deck: sessions, what you are on now, tiles. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
   height: 100%;
   padding: 40px 8px 8px;
@@ -346,19 +347,44 @@ button {
   background: transparent;
   border: none;
 }
+/* The column is four rows tall, as deck's is: a tile is one row (a quarter of the column) times
+   its span, and the rest scroll on. App.tsx sets --span (the manifest's, or what ↕ made it). */
 .tile-scroll {
   height: 100%;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  container-type: size;
+  scrollbar-width: none;
 }
 .tile {
+  --row: calc((100cqh - 3 * 8px) / 4);
+  height: calc(var(--span, 1) * var(--row) + (var(--span, 1) - 1) * 8px);
+  display: flex;
+  flex-direction: column;
   background: var(--ws-surface, var(--ws-panel));
   border: 1px solid var(--ws-line);
   border-radius: 10px;
   overflow: hidden;
   flex: none;
+}
+.tile > .head {
+  flex: none;
+}
+.tile-plus {
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  background: transparent;
+  color: var(--ws-muted);
+  font-size: 34px;
+  font-weight: 200;
+  cursor: pointer;
+}
+.tile-plus:hover {
+  color: var(--ws-ink);
+  border-color: var(--ws-accent);
 }
 .head {
   display: flex;
@@ -422,6 +448,8 @@ button {
 }
 .face {
   position: relative;
+  flex: 1;
+  min-height: 0;
 }
 .away {
   position: absolute;
@@ -430,18 +458,95 @@ button {
   place-items: center;
   color: var(--ws-muted);
 }
-.plus {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+/* ---- the tile column's + menu: a card in the column (nothing can be drawn over a tile's page) */
+.picker {
+  flex: none;
+  background: var(--ws-surface, var(--ws-panel));
+  border: 1px solid var(--ws-accent);
+  border-radius: 10px;
+  overflow: hidden;
 }
-.plus button {
-  border: 1px dashed var(--ws-line);
-  background: transparent;
+.picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+.picker h3 {
+  margin: 10px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--ws-muted);
+}
+.picker-note {
+  margin: 0;
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+.picker-problem {
+  margin: 0;
+  color: var(--ws-blocked);
+  font-size: 12px;
+}
+.picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border: 1px solid var(--ws-line);
+  background: transparent;
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 7px 10px;
   cursor: pointer;
+}
+.picker-row:hover {
+  border-color: var(--ws-accent);
+}
+.picker-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.picker-text span {
+  color: var(--ws-muted);
+  font-size: 12px;
+}
+.picker input,
+.picker textarea {
+  font: inherit;
+  color: var(--ws-ink);
+  background: var(--ws-bg);
+  border: 1px solid var(--ws-line);
+  border-radius: 7px;
+  padding: 6px 9px;
+  outline: none;
+  resize: vertical;
+}
+.picker input:focus,
+.picker textarea:focus {
+  border-color: var(--ws-accent);
+}
+.picker .primary {
+  align-self: flex-start;
+  border: 1px solid var(--ws-accent);
+  background: var(--ws-accent);
+  color: var(--ws-bg);
+  font-weight: 600;
+  border-radius: 7px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.picker .primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.picker-dev {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .tile-layer {
@@ -457,6 +562,73 @@ button {
   width: 100%;
   height: 100%;
   display: flex;
+}
+/* A page over the whole window sits above every other tile's page. */
+.tile-page.over {
+  z-index: 1;
+}
+
+/* ---- a tile over the whole window (permissions.overlay). The strip is core's: the tile's page is
+   laid over .overlay-box, below it, so nothing the page draws can cover the name or the ×. It is
+   the window's drag strip while it is up; the rest of the window stops being one, or the edges of
+   the page under the old drag margins would move the window instead of taking the click. */
+.app.overlaid {
+  -webkit-app-region: no-drag;
+}
+.overlay-strip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Room for the window's traffic lights. */
+  padding: 0 10px 0 84px;
+  background: var(--ws-panel);
+  border-bottom: 1px solid var(--ws-accent);
+  -webkit-app-region: drag;
+}
+.overlay-strip .name {
+  font-weight: 600;
+}
+.overlay-strip .muted {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.overlay-hint {
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid var(--ws-line);
+  border-radius: 4px;
+  color: var(--ws-muted);
+}
+.overlay-close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ws-ink) 10%, transparent);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.overlay-close:hover {
+  background: color-mix(in srgb, var(--ws-ink) 22%, transparent);
+}
+.overlay-box {
+  position: fixed;
+  top: 40px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
 }
 
 /* ---- the top bar: the window's drag strip, with the theme picker on the right */

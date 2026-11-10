@@ -58,7 +58,7 @@ export interface SessionManagerOptions {
   /** Every installed tile's plugin/ folder, handed to a NEW session with --plugin-dir. */
   pluginDirs: () => string[]
   /** Door tokens: a session's calls are attributed to it by name. */
-  register(token: string, who: () => string): void
+  register(token: string, who: () => string, session: string): void
   revoke(token: string): void
   events: SessionEvents
 }
@@ -101,7 +101,7 @@ export class SessionManager {
     this.load()
     for (const rec of this.records) {
       this.writeAuth(rec)
-      this.o.register(rec.token, () => rec.name)
+      this.o.register(rec.token, () => rec.name, rec.id)
       const alive = await this.o.tmux.hasSession(rec.tmuxName)
       this.rt.set(rec.id, { status: alive ? 'unknown' : 'idle', attention: false, tmuxAlive: alive, title: '', userDetached: false })
       if (rec.open) {
@@ -151,7 +151,7 @@ export class SessionManager {
     if (permissionMode) args.push('--permission-mode', permissionMode)
     if (opts.prompt) args.push(String(opts.prompt))
     this.writeAuth(rec)
-    this.o.register(rec.token, () => rec.name)
+    this.o.register(rec.token, () => rec.name, rec.id)
     await this.o.tmux.newSession({ name: rec.tmuxName, cwd, command: this.claudeCommand(rec, args), cols: SPAWN_COLS, rows: SPAWN_ROWS })
     this.records.push(rec)
     this.touchRecent(cwd)

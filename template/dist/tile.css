@@ -1,0 +1,33 @@
+/* Colours come from workshop as --ws-* variables, already on :root, and follow the user's theme:
+   --ws-bg --ws-panel --ws-ink --ws-muted --ws-line --ws-accent --ws-busy --ws-idle --ws-blocked */
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--ws-panel);
+  color: var(--ws-ink);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+}
+main {
+  height: 100%;
+  overflow-y: auto;
+  padding: 10px;
+}
+button {
+  font: inherit;
+  color: var(--ws-ink);
+  background: transparent;
+  border: 1px solid var(--ws-line);
+  border-radius: 6px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+button:hover {
+  border-color: var(--ws-accent);
+}
+.muted {
+  color: var(--ws-muted);
+}

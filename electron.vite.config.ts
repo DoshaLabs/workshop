@@ -12,9 +12,13 @@ export default defineConfig({
   // Core window's preload only. The preload core injects into every tile is built on its own by
   // vite.tile-preload.config.ts: a sandboxed preload must be ONE file, and two entries here would
   // share a chunk it cannot require.
+  // It must not empty out/preload: `npm run dev` builds tile.js there first, and a dev build that
+  // wiped it left every tile without `window.workshop`. (A change to src/preload/tile.ts needs
+  // `npm run dev` again; this watcher does not rebuild it.)
   preload: {
     plugins: [externalizeDepsPlugin()],
-    resolve: { alias: shared }
+    resolve: { alias: shared },
+    build: { emptyOutDir: false }
   },
   renderer: {
     plugins: [react()],

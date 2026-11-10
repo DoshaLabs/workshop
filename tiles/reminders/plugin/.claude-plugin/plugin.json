@@ -1,0 +1,9 @@
+{
+  "name": "reminders",
+  "description": "Lets a Claude session write reminders, notes and a log of work done to the workshop's Reminders tile, filed by project.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DoshaLabs"
+  },
+  "license": "MIT"
+}

@@ -6,7 +6,8 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-export const BRIDGE_VERSION = '1.0.0'
+/** 1.1: `overlay` (the tile's page over the whole window). */
+export const BRIDGE_VERSION = '1.1.0'
 
 /** A tile's own origin is tile://<id>/. */
 export const TILE_SCHEME = 'tile'
@@ -27,6 +28,13 @@ export interface Permissions {
   files?: boolean
   camera?: boolean
   microphone?: boolean
+  /**
+   * `workshop.openOverlay()`: the tile's page laid over the whole window (a lightbox), under a
+   * strip core draws with the tile's name and a close button. A permission, not a layout flag like
+   * `pane`, because a page that covers the window could pass itself off as core: the user is shown
+   * it at install, and a core that does not know it refuses the tile.
+   */
+  overlay?: boolean
   /** Hosts the page may reach: `example.com` or `*.example.com`. Nothing else gets through. */
   net?: string[]
   /** The trusted tier: a node process beside the page. Not accepted from any tile yet. */
@@ -57,7 +65,7 @@ const HOST_RE = /^(\*\.)?(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[
 export const DOOR_TIMEOUT_DEFAULT = 10_000
 export const DOOR_TIMEOUT_MAX = 120_000
 
-const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'net', 'backend'])
+const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'net', 'backend'])
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -143,7 +151,7 @@ export function checkManifest(raw: unknown, opts: { dev?: boolean } = {}): Check
   if (!isObj(p)) errors.push('permissions: must be an object')
   else {
     for (const k of Object.keys(p)) if (!KNOWN.has(k)) errors.push(`permissions.${k}: not a permission this core knows`)
-    for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone'] as const) {
+    for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay'] as const) {
       if (p[k] === undefined) continue
       if (typeof p[k] !== 'boolean') errors.push(`permissions.${k}: must be true or false`)
       else if (p[k]) permissions[k] = true

@@ -2,15 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://upload.wikimedia.org https://thumb.wikimedia.org; connect-src https://en.wikipedia.org; style-src 'self'; script-src 'self'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src https://upload.wikimedia.org https://thumb.wikimedia.org; connect-src https://en.wikipedia.org https://api.open-meteo.com https://geocoding-api.open-meteo.com; style-src 'self'; script-src 'self'" />
     <title>Wikipedia</title>
     <link rel="stylesheet" href="tile.css" />
   </head>
-  <body>
-    <form id="search" autocomplete="off">
-      <input id="q" type="search" placeholder="Search Wikipedia" spellcheck="false" />
+  <body class="wiki">
+    <div id="bg"></div>
+    <div class="wiki-scrim"></div>
+    <div class="wiki-corner">
+      <div class="wiki-clock" aria-hidden="true">
+        <span class="wiki-clock-time" id="time"></span>
+        <span class="wiki-clock-date" id="date"></span>
+      </div>
+      <div id="weather"></div>
+    </div>
+    <div id="main"></div>
+    <form id="search" class="wiki-search" autocomplete="off">
+      <input id="q" placeholder="search wikipedia" spellcheck="false" />
+      <button type="button" id="clear" class="wiki-clear" title="Clear (Esc)" hidden>×</button>
     </form>
-    <main id="body"></main>
-    <script src="tile.js"></script>
+    <div id="lightbox"></div>
+    <script type="module" src="tile.js"></script>
   </body>
 </html>

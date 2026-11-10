@@ -15,8 +15,13 @@ const core = {
   listTiles: (): Promise<{ tiles: TileInfo[]; problems: TileProblem[]; theme: ThemeState }> => ipcRenderer.invoke(CH.listTiles),
   setSettings: (patch: { theme?: string; appearance?: 'system' | 'light' | 'dark' }): Promise<ThemeState> => ipcRenderer.invoke(CH.setSettings, patch),
   setView: (id: string, view: TileView): Promise<void> => ipcRenderer.invoke(CH.setView, id, view),
+  /** A new tile from the starter, shown at once, and a Claude session in its folder told what to build. */
+  createTile: (name: string, idea: string): Promise<{ id: string; folder: string }> => ipcRenderer.invoke(CH.tileCreate, name, idea),
+  /** Stop loading a tile under development. Its folder is left alone. */
+  forgetTile: (id: string): Promise<void> => ipcRenderer.invoke(CH.tileForget, id),
   onTileHead: (fn: (id: string, head: TileHead) => void) => on(CH.tileHead, fn),
   onTilePane: (fn: (id: string, open: boolean) => void) => on(CH.tilePane, fn),
+  onTileOverlay: (fn: (id: string, open: boolean) => void) => on(CH.tileOverlay, fn),
   onTileNotify: (fn: (id: string, text: string) => void) => on(CH.tileNotify, fn),
   onTheme: (fn: (theme: ThemeState) => void) => on(CH.themeChanged, fn),
   onTilesChanged: (fn: () => void) => on(CH.tilesChanged, fn),

@@ -1,0 +1,19 @@
+{
+  "id": "reminders",
+  "name": "Reminders",
+  "version": "0.1.0",
+  "workshop": "^1",
+  "author": "DoshaLabs",
+  "repo": "https://github.com/DoshaLabs/workshop",
+  "hint": "To-dos, notes and a log, by project",
+  "icon": "icon.svg",
+  "entry": "dist/index.html",
+  "pane": true,
+  "span": 1,
+  "permissions": {
+    "storage": true,
+    "sessions": "read",
+    "door": { "ops": ["add", "note", "log", "list", "notes", "history", "done", "undo", "set", "rm"], "timeoutMs": 10000 },
+    "notify": true
+  }
+}

@@ -53,6 +53,8 @@ const IN_PAGE = (doorPort: number): string => `(async () => {
   r.noCamera = await fails(navigator.mediaDevices.getUserMedia({ video: true }))
   r.noScreen = await fails(navigator.mediaDevices.getDisplayMedia({ video: true }))
   r.noPopup = window.open('https://example.com') === null
+  // Over the whole window: the probe did not ask for "overlay", so not even a real click lets it.
+  r.noOverlay = await workshop.openOverlay().then(() => false, (e) => /overlay/.test(e.message))
   r.undeclaredOpThrows = (() => { try { workshop.door.handle('nope', () => 1); return false } catch { return true } })()
   let watched = null
   const stop = workshop.storage.watch('k', (v) => { watched = v })
@@ -72,6 +74,12 @@ const IN_PAGE = (doorPort: number): string => `(async () => {
 const WIKI_IN_PAGE = `(async () => {
   const res = await fetch('https://en.wikipedia.org/api/rest_v1/page/summary/Fox')
   return res.ok && (await res.json()).title === 'Fox'
+})()`
+
+const WEATHER_IN_PAGE = `(async () => {
+  const f = await fetch('https://api.open-meteo.com/v1/forecast?latitude=38.72&longitude=-9.13&current=temperature_2m')
+  const g = await fetch('https://geocoding-api.open-meteo.com/v1/search?name=Lisbon&count=1')
+  return f.ok && typeof (await f.json()).current?.temperature_2m === 'number' && g.ok && (await g.json()).results?.length === 1
 })()`
 
 async function post(port: number, path: string, body: unknown, headers: Record<string, string>): Promise<{ status: number; json: any }> {
@@ -139,13 +147,33 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
 
     const wiki = liveByTile.get('wikipedia')!.wc
     check('wikipedia page: declared host reachable', (await wiki.executeJavaScript(WIKI_IN_PAGE).catch((e) => String(e))) === true)
+    check('wikipedia page: weather hosts reachable', (await wiki.executeJavaScript(WEATHER_IN_PAGE).catch((e) => String(e))) === true)
+    const wjs = (code: string): Promise<any> => wiki.executeJavaScript(code)
+    check('wikipedia page: the clock is drawn', /\d:\d\d/.test(await wjs(`document.getElementById('time').textContent`)))
+    // A fresh profile has no place saved, so the tile asks for a city; one is found and picked
+    // the way a person would, and the weather for it is drawn under the clock.
+    await waitFor('the wikipedia tile to ask for a city', async () => (await wjs(`!!document.querySelector('.wiki-places .wiki-place-input')`)) === true)
+    check('wikipedia page: first run asks for a city', (await wjs(`document.querySelector('.wiki-places .wiki-tag').textContent`)).includes('where are you'))
+    await wjs(`(() => { const i = document.querySelector('.wiki-place-input'); i.value = 'Lisbon, Portugal'; i.dispatchEvent(new Event('input')); return true })()`)
+    await waitFor('a place to be found', async () => (await wjs(`!!document.querySelector('.wiki-place-hit')`)) === true)
+    await wjs(`document.querySelector('.wiki-place-hit').click(); document.querySelector('.wiki-places-head .wiki-back').click(); true`)
+    await waitFor('the weather to be drawn', async () => /\d°/.test(await wjs(`document.querySelector('.wiki-weather-now .wiki-weather-temp')?.textContent ?? ''`)))
+    check('wikipedia page: a weather reading is drawn', (await wjs(`document.querySelector('.wiki-weather-place').textContent`)).startsWith('Lisbon'))
+    await sleep(200)
+    const wikiStore = JSON.parse(await readFile(join(userData, 'tile-data', 'wikipedia', 'store.json'), 'utf8')) as { places?: { name: string }[] }
+    check('wikipedia page: the place is kept in workshop.storage', wikiStore.places?.[0]?.name === 'Lisbon', JSON.stringify(wikiStore))
+    await waitFor('the picture of the day', async () => (await wjs(`!!document.querySelector('.wiki-text .wiki-title')`)) === true)
     const show = await post(door.port, '/tile/wikipedia', { op: 'show', args: ['Red fox'] }, auth)
+    check('wikipedia door: show opens the article in the tile', (await wjs(`document.querySelector('.wiki-article .wiki-title')?.textContent ?? ''`)).includes('Red fox'))
     const found = await post(door.port, '/tile/wikipedia', { op: 'search', args: ['red', 'fox'] }, auth)
     check('wikipedia door: search', found.status === 200 && Array.isArray(found.json.result) && found.json.result.length > 0, JSON.stringify(found.json).slice(0, 200))
     const imgs = (await wiki.executeJavaScript(`new Promise((res) => setTimeout(() => res([...document.images].map((i) => i.complete && i.naturalWidth > 0)), 3000))`)) as boolean[]
     check('wikipedia page: images load', imgs.length > 0 && imgs.every(Boolean), JSON.stringify(imgs))
     check('wikipedia door: show', show.status === 200 && typeof show.json.result?.title === 'string', JSON.stringify(show.json))
+    const today = await post(door.port, '/tile/wikipedia', { op: 'today' }, auth)
+    check('wikipedia door: today', today.status === 200 && typeof today.json.result?.title === 'string' && (await wjs(`document.body.classList.contains('wiki-picture')`)) === true, JSON.stringify(today.json).slice(0, 200))
 
+    await overlays(check, ctx)
     await devTiles(check, liveByTile, door.port, addDevTile)
     if (process.env.WORKSHOP_REAL_CLAUDE) {
       await realClaude(check, ctx)
@@ -227,6 +255,90 @@ async function devTiles(
   } finally {
     server.close()
   }
+}
+
+/**
+ * The overlay view: the Wikipedia tile's picture over the whole window. It opens only on a real
+ * click in the page (input core saw, not a script), under core's strip; Esc from inside the page
+ * closes it without the page seeing the key; the strip's × and closeOverlay close it too; and a
+ * tile without the permission is refused by main even when core's window asks.
+ */
+async function overlays(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile }: Ctx): Promise<void> {
+  const wiki = liveByTile.get('wikipedia')!.wc
+  const wjs = (code: string, gesture = false): Promise<any> => wiki.executeJavaScript(code, gesture)
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const isOpen = async (): Promise<boolean> => (await js(`!!document.querySelector('.overlay-strip')`)) === true
+  const closed = (what: string) => waitFor(what, async () => !(await isOpen()) && (await wjs('workshop.view')) === 'tile', 3000).then(() => true, () => false)
+  /** A real click in the middle of the picture, through Chromium's input pipeline as a mouse would. */
+  const click = async (): Promise<void> => {
+    const [w, h] = (await wjs('[innerWidth, innerHeight]')) as number[]
+    const at = { x: Math.round(w / 2), y: Math.round(h * 0.45) }
+    wiki.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
+    wiki.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
+  }
+  await waitFor('the picture to be up', async () => (await wjs(`document.body.classList.contains('wiki-picture') && !!document.querySelector('.wiki-text .wiki-title')`)) === true)
+
+  const bare = (await wjs(`workshop.openOverlay().then(() => 'opened', (e) => e.message)`)) as string
+  check('overlay: refused without a click in the page', /click or key/.test(bare), bare)
+  await wjs(`document.body.click(); true`, true)
+  await sleep(500)
+  check('overlay: a click made by a script does not count', !(await isOpen()))
+
+  await click()
+  const opened = await waitFor('the overlay to open', async () => (await isOpen()) && (await wjs('workshop.view')) === 'overlay', 3000).then(() => true, () => false)
+  check('overlay: a real click on the picture opens it, and the page hears view = overlay', opened)
+  await sleep(300)
+  const cover = (await js(`(() => {
+    const r = document.querySelector('.tile-page.over')?.getBoundingClientRect()
+    const s = document.querySelector('.overlay-strip')?.getBoundingClientRect()
+    return r && s ? { left: r.left, top: r.top, right: r.right, bottom: r.bottom, strip: s.bottom, w: innerWidth, h: innerHeight, name: document.querySelector('.overlay-strip .name').textContent } : null
+  })()`)) as Record<string, number | string> | null
+  check(
+    'overlay: the page covers the window below core\'s strip',
+    !!cover && cover.left === 0 && cover.right === cover.w && cover.bottom === cover.h && cover.top === cover.strip && cover.strip === 40 && cover.name === 'Wikipedia',
+    JSON.stringify(cover)
+  )
+  await waitFor('the large picture', async () => (await wjs(`(() => { const i = document.querySelector('.wikibox-img'); return !!i && i.complete && i.naturalWidth > 0 })()`)) === true, 15_000).catch(() => undefined)
+  const big = (await wjs(`(() => {
+    const i = document.querySelector('.wikibox-img'), r = i?.getBoundingClientRect()
+    return { loaded: !!i && i.complete && i.naturalWidth > 0, wide: r ? r.width / innerWidth : 0, fit: i ? getComputedStyle(i).objectFit : '', title: document.querySelector('.wikibox-title')?.textContent ?? '', tag: document.querySelector('.wikibox-tag')?.textContent ?? '', commons: !!document.querySelector('.wikibox-link'), face: getComputedStyle(document.getElementById('main')).display }
+  })()`)) as { loaded: boolean; wide: number; fit: string; title: string; tag: string; commons: boolean; face: string }
+  check('overlay: the Wikipedia page shows the picture large and whole, with its caption', big.loaded && big.wide > 0.6 && big.fit === 'contain' && !!big.title && big.tag.startsWith('picture of the day') && big.commons && big.face === 'none', JSON.stringify(big))
+  if (process.env.WORKSHOP_SHOT_OVERLAY) {
+    await sleep(800)
+    await writeFile(process.env.WORKSHOP_SHOT_OVERLAY, (await win.webContents.capturePage()).toPNG())
+  }
+
+  // Esc from inside the page: main takes it before the page does, so a page cannot swallow it.
+  await wjs(`window.sawEsc = false; addEventListener('keydown', (e) => { if (e.key === 'Escape') window.sawEsc = true }, true); true`)
+  wiki.focus()
+  wiki.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+  wiki.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+  check('overlay: Esc from inside the page closes it', await closed('Esc to close the overlay'))
+  check('overlay: the page never sees that Esc', (await wjs('window.sawEsc')) === false)
+  const again = (await wjs(`workshop.openOverlay().then(() => 'opened', (e) => e.message)`)) as string
+  check('overlay: the click that opened it cannot open it again', /click or key/.test(again), again)
+
+  await click()
+  await waitFor('the overlay again', isOpen, 3000).catch(() => undefined)
+  await js(`document.querySelector('.overlay-close').click(); true`)
+  check('overlay: the × on core\'s strip closes it', await closed('the strip to close the overlay'))
+  await click()
+  await waitFor('the overlay again', isOpen, 3000).catch(() => undefined)
+  win.webContents.focus()
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+  check('overlay: Esc with the focus in core\'s window closes it', await closed('Esc in core to close the overlay'))
+  await click()
+  await waitFor('the overlay again', isOpen, 3000).catch(() => undefined)
+  await wjs(`document.querySelector('.wikibox-scrim').click(); true`)
+  check('overlay: a click outside the picture closes it (closeOverlay)', await closed('the page to close its overlay'))
+
+  // Core's window asking to lay the probe (no "overlay" in its manifest) over the window: main refuses.
+  await js(`window.core.setView('probe', 'overlay')`)
+  await sleep(200)
+  const probeView = (await liveByTile.get('probe')!.wc.executeJavaScript('workshop.view')) as string
+  check('overlay: main refuses the view for a tile without the permission', probeView !== 'overlay', probeView)
 }
 
 /** `multiple`: a second probe, its own page and web storage, the same workshop.storage, and the door. */
@@ -328,7 +440,7 @@ async function themes(check: (name: string, ok: boolean, detail?: string) => voi
  * hooks and the status line reaching core with the session's own token, the door attributing a
  * call to the session, tiles seeing sessions and usage as their permissions allow, park / resume / kill.
  */
-async function sessions(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile, userData, core }: Ctx): Promise<void> {
+async function sessions(check: (name: string, ok: boolean, detail?: string) => void, { win, door, liveByTile, userData, core }: Ctx): Promise<void> {
   const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
   const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
   const state = () => core.sessions.getState()
@@ -359,6 +471,7 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   await waitFor('the door call from the session', async () => (await screen(id)).includes('DONE door'))
   const scr = await screen(id)
   check('sessions: a door call from a session carries its name', scr.includes('"caller": "smoke-one"') || scr.includes('"caller":"smoke-one"'), scr.slice(-400))
+  check('sessions: and its id, which a name cannot stand in for', scr.replace(/\s+/g, '').includes(`"session":"${id}"`), scr.slice(-400))
 
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'spoof\\r'); true`)
   await waitFor('the spoof turn', async () => (await screen(id)).includes('DONE spoof'))
@@ -377,6 +490,69 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   const wiki = liveByTile.get('wikipedia')!.wc
   const refused = (await wiki.executeJavaScript(`Promise.all([workshop.sessions.list().then(() => false, () => true), workshop.usage.get().then(() => false, () => true)])`)) as boolean[]
   check('tiles: no sessions or usage without the permission', refused.every(Boolean))
+
+  // The Reminders tile: storage, sessions and the door at once. A session adds a reminder with no
+  // project named; the tile finds the session's folder from the call's session id.
+  await waitFor('the reminders tile to answer its door', () => !!liveByTile.get('reminders')?.ops.has('add'))
+  const rem = (code: string): Promise<any> => liveByTile.get('reminders')!.wc.executeJavaScript(code)
+  const outside = (op: string, ...args: string[]) => post(door.port, '/tile/reminders', { op, args }, { Authorization: `Bearer ${door.token}` })
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'tile reminders add "Rotate the test key" --priority high --due tomorrow\\r'); true`)
+  await waitFor('the reminder from the session', async () => (await screen(id)).includes('DONE tile reminders add'))
+  const headOf = (sel: string): Promise<string> => js(`document.querySelector('[data-face="reminders"]').closest('.tile').querySelector('${sel}')?.textContent ?? ''`)
+  check('reminders: a session adding one notifies', (await headOf('.chip')).includes('smoke-one: Rotate the test key'), await headOf('.head'))
+  check('reminders: the open count is on the tile head', (await headOf('.badge')) === '1', await headOf('.head'))
+  const all = await outside('list', '--all')
+  const mine = (all.json.result?.reminders ?? []).find((r: { text: string }) => r.text === 'Rotate the test key')
+  check('reminders: a session adds one, filed under its own folder and name', !!mine && mine.project === cwd && mine.by === 'smoke-one' && mine.priority === 'high' && /^\d{4}-\d\d-\d\d$/.test(mine.due), JSON.stringify(all.json).slice(0, 300))
+  const nowhere = await outside('add', 'from nowhere')
+  check('reminders: a caller with no session must name the project', nowhere.status === 502 && /which project/.test(nowhere.json.error ?? ''), JSON.stringify(nowhere.json))
+  const named = await outside('note', 'The staging DB is a **copy** from Oct 3', '--project', cwd.split('/').pop()!)
+  check('reminders: a known project goes by its folder name', named.json.result?.note?.project === cwd && named.json.result?.note?.by === 'outside', JSON.stringify(named.json))
+  const badFlag = await outside('add', 'x', '--shout')
+  check('reminders: an unknown flag is refused, not swallowed', badFlag.status === 502 && /no --shout/.test(badFlag.json.error ?? ''), JSON.stringify(badFlag.json))
+  await waitFor('the page to draw it', async () => (await rem(`document.querySelector('.row .text')?.textContent ?? ''`)).includes('Rotate the test key'))
+  check('reminders: the page draws it under its project', (await rem(`document.querySelector('.group h4')?.textContent ?? ''`)).startsWith(cwd.split('/').pop()!))
+  await rem(`document.querySelector('.row .check').click(); true`)
+  await waitFor('the click to complete it', async () => (await outside('history', '--all')).json.result?.log?.length === 1)
+  const hist = await outside('history', '--all')
+  check('reminders: ticking it in the tile writes the log line', hist.json.result?.log?.[0]?.text === 'Rotate the test key' && hist.json.result.log[0].by === 'you', JSON.stringify(hist.json))
+  const undone = await outside('undo', mine?.id ?? '')
+  check('reminders: undo from the door takes the line back', undone.status === 200 && (await outside('history', '--all')).json.result?.log?.length === 0)
+  await sleep(200)
+  const stored = JSON.parse(await readFile(join(userData, 'tile-data', 'reminders', 'store.json'), 'utf8')) as { state?: { reminders?: unknown[]; notes?: unknown[] } }
+  check('reminders: the state is in workshop.storage', stored.state?.reminders?.length === 1 && stored.state?.notes?.length === 1, JSON.stringify(stored).slice(0, 200))
+  // The page reloads (a dev tile after an edit, the window after a crash): what it kept comes back,
+  // and a call the NEW page takes is not failed by the old page going away (open issue B).
+  const oldPage = liveByTile.get('reminders')!.wc
+  oldPage.reload()
+  await waitFor('the reminders page to come back', async () => (await outside('list', '--all')).status === 200)
+  const back = await outside('list', '--all')
+  check('reminders: a reloaded page has what it kept', back.json.result?.reminders?.[0]?.text === 'Rotate the test key', JSON.stringify(back.json).slice(0, 200))
+  await rem(`document.querySelector('[role=tab]:nth-child(2)').click(); true`)
+  await waitFor('the notes tab', async () => (await rem(`document.querySelector('.note-body b')?.textContent ?? ''`)) === 'copy')
+  check('reminders: a note is drawn as markdown', true)
+  await rem(`document.querySelector('[role=tab]').click(); true`)
+
+  // The + at the foot of the tile column: its menu, and "make one with Claude" (a starter tile in a
+  // new folder, live at once, and a session in that folder told what to build).
+  await js(`document.querySelector('.tile-plus').click(); true`)
+  await waitFor('the + menu', async () => (await js(`!!document.querySelector('.picker')`)) === true)
+  check('plus: the menu offers another instance of a tile that allows it', String(await js(`document.querySelector('.picker').textContent`)).includes('Another Probe'))
+  const newTile = (await js(`window.core.createTile('Smoke Timer', 'Count down 25 minutes')`)) as { id: string; folder: string }
+  await waitFor('the new tile to load', () => !!liveByTile.get('smoke-timer'))
+  await waitFor('the starter to draw', async () => String(await liveByTile.get('smoke-timer')!.wc.executeJavaScript(`document.body.textContent`).catch(() => '')).includes('Smoke Timer is running'))
+  const builder = state().sessions.find((s) => s.name === 'tile: Smoke Timer')
+  if (builder) await waitFor('the builder session to start', () => stat(join(userData, `fake-${builder.id}.json`)).then(() => true, () => false)).catch(() => undefined)
+  const builderArgs = builder ? (JSON.parse(await readFile(join(userData, `fake-${builder.id}.json`), 'utf8').catch(() => '{"args":[]}')) as { args: string[] }).args : []
+  check('plus: make one with Claude starts a session in the new tile’s folder', newTile.id === 'smoke-timer' && !!builder && (await realpath(builder.cwd)) === (await realpath(newTile.folder)), JSON.stringify(newTile))
+  check('plus: the session is told what to build and where the contract is', builderArgs.some((a) => a.includes('Count down 25 minutes') && a.includes('CLAUDE.md')), builderArgs.slice(-1).join().slice(0, 200))
+  check('plus: the folder carries the tile contract', (await readFile(join(newTile.folder, 'CLAUDE.md'), 'utf8')).includes('window.workshop'))
+  await js(`window.core.forgetTile('smoke-timer')`)
+  await waitFor('the tile to go', () => !liveByTile.get('smoke-timer'))
+  check('plus: a dev tile can be dropped, its folder left alone', await stat(join(newTile.folder, 'tile.json')).then(() => true, () => false))
+  if (builder) await js(`window.core.kill(${JSON.stringify(builder.id)})`)
+  await js(`window.core.focusSession(${JSON.stringify(id)})`)
+  await sleep(200)
 
   if (process.env.WORKSHOP_SHOT_SESSION) {
     await sleep(800)

@@ -1,10 +1,11 @@
 // Every live tile's page, in one layer over the window. A webview that leaves the DOM loses its
 // page, so a tile's webview is mounted once and never moved in the tree: each frame it is laid
 // over wherever the tile is showing (its face in the column, clipped to the column as it
-// scrolls, or the center pane) and hidden with `visibility` when it is nowhere. (deck's WebLayer.)
+// scrolls, the center pane, or the overlay's box over the whole window) and hidden with
+// `visibility` when it is nowhere. (deck's WebLayer.)
 
 import { useEffect, useRef } from 'react'
-import type { TileInfo } from '@shared/ipc'
+import type { TileInfo, TileView } from '@shared/ipc'
 
 /** One page in the column: a tile's first instance (key = its id) or a later one (`<id>.<n>`). */
 export interface Instance {
@@ -13,18 +14,22 @@ export interface Instance {
   tile: TileInfo
 }
 
-export function TileLayer({ instances, pane }: { instances: Instance[]; pane: string | null }) {
+export function TileLayer({ instances, viewOf }: { instances: Instance[]; viewOf: (key: string) => TileView }) {
   return (
     <div className="tile-layer">
       {instances.map((i) => (
-        <TileView key={`${i.key}:${i.tile.rev}`} inst={i} inPane={pane === i.key} />
+        <TilePage key={`${i.key}:${i.tile.rev}`} inst={i} where={viewOf(i.key)} />
       ))}
     </div>
   )
 }
 
-function TileView({ inst, inPane }: { inst: Instance; inPane: boolean }) {
+/** The element a page is laid over in each view. */
+const TARGET: Record<TileView, string> = { tile: 'data-face', pane: 'data-pane', overlay: 'data-overlay' }
+
+function TilePage({ inst, where }: { inst: Instance; where: TileView }) {
   const box = useRef<HTMLDivElement>(null)
+  const view = useRef<HTMLElement>(null)
   const id = inst.key
   const { tile } = inst
 
@@ -35,7 +40,7 @@ function TileView({ inst, inPane }: { inst: Instance; inPane: boolean }) {
     let last = ''
     const step = () => {
       raf = requestAnimationFrame(step)
-      const face = document.querySelector<HTMLElement>(inPane ? `[data-pane="${id}"]` : `[data-face="${id}"]`)
+      const face = document.querySelector<HTMLElement>(`[${TARGET[where]}="${id}"]`)
       let key = 'hidden'
       let style: Partial<CSSStyleDeclaration> = { visibility: 'hidden' }
       if (face) {
@@ -61,12 +66,18 @@ function TileView({ inst, inPane }: { inst: Instance; inPane: boolean }) {
     }
     step()
     return () => cancelAnimationFrame(raf)
-  }, [id, inPane])
+  }, [id, where])
+
+  // Over the window the page takes the keyboard, so its own keys work at once. (Esc is core's:
+  // main closes the overlay before the page sees it.)
+  useEffect(() => {
+    if (where === 'overlay') view.current?.focus()
+  }, [where])
 
   return (
-    <div ref={box} className="tile-page" style={{ visibility: 'hidden' }}>
+    <div ref={box} className={`tile-page ${where === 'overlay' ? 'over' : ''}`} style={{ visibility: 'hidden' }}>
       {/* Main matches the partition to the tile and instance (main/tiles.ts partitionOf). */}
-      <webview partition={inst.n === 1 ? tile.partition : `${tile.partition}.${inst.n}`} src={tile.src} />
+      <webview ref={view} partition={inst.n === 1 ? tile.partition : `${tile.partition}.${inst.n}`} src={tile.src} />
     </div>
   )
 }

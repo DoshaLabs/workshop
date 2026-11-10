@@ -1,18 +1,19 @@
 {
   "id": "wikipedia",
   "name": "Wikipedia",
-  "version": "0.1.0",
-  "workshop": "^1",
+  "version": "0.3.0",
+  "workshop": "^1.1",
   "author": "DoshaLabs",
   "repo": "https://github.com/DoshaLabs/workshop",
-  "hint": "Today's picture, search, and an article's summary",
+  "hint": "Today's picture, a clock, the weather, and search",
   "icon": "icon.svg",
   "entry": "dist/index.html",
   "pane": true,
-  "span": 2,
+  "span": 1,
   "permissions": {
     "storage": true,
-    "net": ["en.wikipedia.org", "upload.wikimedia.org", "thumb.wikimedia.org"],
+    "overlay": true,
+    "net": ["en.wikipedia.org", "upload.wikimedia.org", "thumb.wikimedia.org", "api.open-meteo.com", "geocoding-api.open-meteo.com"],
     "door": { "ops": ["show", "search", "today"], "timeoutMs": 15000 }
   }
 }

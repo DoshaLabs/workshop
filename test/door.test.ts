@@ -91,7 +91,16 @@ describe('Door', () => {
     await start()
     const p = call({ op: 'hang' })
     await new Promise((r) => setTimeout(r, 50))
-    door.dropInstance('echo')
+    door.dropPage('echo')
     expect((await p).json.error).toMatch(/closed/)
+  })
+
+  it('a page going away does not fail a call another page took', async () => {
+    await start()
+    const p = call({ op: 'hang' })
+    await new Promise((r) => setTimeout(r, 50))
+    door.dropPage('echo@old') // the page this instance had before it reloaded
+    door.answer('echo', delivered[0].callId, { ok: true, result: 'still here' })
+    expect((await p).json.result).toBe('still here')
   })
 })

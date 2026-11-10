@@ -64,7 +64,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     profile: o.profile,
     settingsPath: settings.path,
     pluginDirs: o.pluginDirs,
-    register: (t, who) => o.door.register(t, who),
+    register: (t, who, session) => o.door.register(t, who, session),
     revoke: (t) => o.door.revoke(t),
     events: {
       state: (s) => {
