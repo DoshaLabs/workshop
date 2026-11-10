@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react'
 import { money, timeLeft, usageLevel, type Usage, type UsageWindow } from '@shared/usage'
 
-const UNKNOWN_WHY = 'nothing reported yet. A session reports it after its first reply, and only on a Claude subscription (an API key has no such window).'
+const UNKNOWN_WHY = 'nothing reported yet. A session reports it after its first reply, and only on a subscription (an API key has no such window).'
 
 function Meter({ label, name, w, now }: { label: string; name: string; w: UsageWindow | null; now: number }) {
   const live = w && w.resetsAt > now ? w : null
@@ -43,7 +43,7 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
     return () => window.clearInterval(t)
   }, [])
   return (
-    <span className="usage" title="Usage, as Claude Code reports it to each session's status line">
+    <span className="usage" title="Usage, as each session's status line reports it">
       <Meter label="5h" name="5-hour window" w={usage?.fiveHour ?? null} now={now} />
       <Meter label="week" name="weekly window" w={usage?.sevenDay ?? null} now={now} />
     </span>

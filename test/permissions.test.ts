@@ -6,13 +6,13 @@ describe('permissions in words', () => {
     const w = permissionWords({ storage: true, net: ['api.example.com'], transcripts: true, door: { ops: ['add', 'list'], timeoutMs: 1000 } })
     expect(w[0]).toMatch(/conversations/)
     expect(w[1]).toBe('reach api.example.com')
-    expect(w).toContain('answer Claude sessions (add, list)')
+    expect(w).toContain('take requests from your sessions (add, list)')
     expect(w.at(-1)).toBe('keep its own data')
     expect(permissionWords({})).toEqual([])
   })
 
   it('puts full access to the Mac before everything else', () => {
-    expect(permissionWords({ backend: true, transcripts: true })).toEqual(['run its own program with full access to this Mac', 'read your conversations with Claude'])
+    expect(permissionWords({ backend: true, transcripts: true })).toEqual(['run its own program with full access to this Mac', 'read your sessions’ conversations'])
     expect(needsAsking({ storage: true }, { storage: true, backend: true })).toBe(true)
   })
 

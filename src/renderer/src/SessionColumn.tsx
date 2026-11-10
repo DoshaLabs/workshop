@@ -326,7 +326,7 @@ function ParkedCard({ parked, onPick }: { parked: SessionView[]; onPick: (s: Ses
           </span>
           <button
             className={`ghost ${arm === s.id ? 'armed' : ''}`}
-            title={arm === s.id ? 'Click again to end it for good' : 'End this session (the conversation stays in Claude Code’s history)'}
+            title={arm === s.id ? 'Click again to end it for good' : 'End this session (its conversation is kept)'}
             onClick={(e) => {
               e.stopPropagation()
               if (arm !== s.id) return setArm(s.id)

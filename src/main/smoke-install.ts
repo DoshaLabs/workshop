@@ -86,7 +86,7 @@ export async function installs(check: Check, { win, liveByTile, userData }: Ctx)
   await click('.picker [data-tab="yours"]')
   await sleep(150)
   const yours = await text('.picker-body')
-  check('menu: Yours holds the folders under development, load a folder and make one with Claude', yours.includes('Probe') && yours.includes('Load a folder') && yours.includes('Make one with Claude') && yours.includes('Stop loading'), yours.slice(0, 300))
+  check('menu: Yours holds the folders under development, load a folder and make one with Claude', yours.includes('Probe') && yours.includes('Load a folder') && yours.includes('Build a new tile') && yours.includes('Stop loading'), yours.slice(0, 300))
 
   await click('.picker [data-tab="market"]')
   await waitFor('the index to be listed', () => has('.picker [data-install="hello-repo"]'))

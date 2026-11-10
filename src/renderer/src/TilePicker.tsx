@@ -201,8 +201,8 @@ function Yours({ tiles, row, onClose }: { tiles: TileInfo[]; row: RowFn; onClose
       </button>
       {loaded && <p className="picker-note">{loaded}</p>}
 
-      <h3>Make one with Claude</h3>
-      <p className="picker-note">Starts a session in a new folder under ~/workshop-tiles with a working starter tile. It shows up here at once and reloads as Claude writes it.</p>
+      <h3>Build a new tile</h3>
+      <p className="picker-note">Starts a session in a new folder under ~/workshop-tiles with a working starter tile. It shows up here at once and reloads as the session writes it.</p>
       <input value={name} maxLength={40} placeholder="Name, like “Focus timer”" onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void create()} />
       <textarea value={idea} rows={3} maxLength={4000} placeholder="What should it do?" onChange={(e) => setIdea(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && e.metaKey && void create()} />
       {problem && <p className="picker-problem">{problem}</p>}

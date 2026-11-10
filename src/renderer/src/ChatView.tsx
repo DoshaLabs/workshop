@@ -40,7 +40,7 @@ export function ChatView({ id, status, attention, cwd }: { id: string; status: S
         <Block key={`${b.ts}-${i}`} b={b} onPath={onPath} />
       ))}
       {busy && (
-        <div className="chat-busy" aria-label="Claude is working">
+        <div className="chat-busy" aria-label="Working">
           <span />
           <span />
           <span />

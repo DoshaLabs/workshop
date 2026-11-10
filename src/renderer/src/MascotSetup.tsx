@@ -180,7 +180,7 @@ export function MascotSetup({ onClose }: { onClose: () => void }) {
         </button>
       </h1>
       <p className="muted">
-        Every session’s head shows the Knot: small and slow while it rests, full size and fast while Claude works, in the theme’s alert colour when it needs you. Use your own sprite sheet instead of the Knot: a PNG of frames, and which frames are which pose. Remove it to go back to the Knot.
+        Every session’s head shows the Knot: small and slow while it rests, full size and fast while it works, in the theme’s alert colour when it needs you. Use your own sprite sheet instead of the Knot: a PNG of frames, and which frames are which pose. Remove it to go back to the Knot.
       </p>
 
       <div className="mascot-reco">

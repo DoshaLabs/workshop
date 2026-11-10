@@ -11,7 +11,7 @@ export const FULL_ACCESS = 'run its own program with full access to this Mac'
 export function permissionWords(p: Permissions): string[] {
   const out: string[] = []
   if (p.backend) out.push(FULL_ACCESS)
-  if (p.transcripts) out.push('read your conversations with Claude')
+  if (p.transcripts) out.push('read your sessions’ conversations')
   if (p.net?.length) out.push(`reach ${p.net.join(', ')}`)
   if (p.camera) out.push('use the camera')
   if (p.microphone) out.push('use the microphone')
@@ -19,7 +19,7 @@ export function permissionWords(p: Permissions): string[] {
   else if (p.sessions === 'read') out.push('see your sessions (names, folders, status)')
   if (p.music) out.push('see and control what Spotify or Music is playing')
   if (p.files) out.push('read files and folders you pick for it')
-  if (p.door) out.push(`answer Claude sessions (${p.door.ops.join(', ')})`)
+  if (p.door) out.push(`take requests from your sessions (${p.door.ops.join(', ')})`)
   if (p.usage) out.push('see your usage and costs')
   if (p.overlay) out.push('show itself over the whole window when you click it')
   if (p.notify) out.push('send you notifications')

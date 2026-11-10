@@ -409,7 +409,7 @@ export function App() {
               onClose={() => setPicker(false)}
             />
           ) : (
-            <button className={`tile tile-plus ${tileDrag.mark(null)}`} title="Add a tile, or make one with Claude" onClick={() => setPicker(true)} {...tileDrag.target(null)}>
+            <button className={`tile tile-plus ${tileDrag.mark(null)}`} title="Add a tile, or build a new one" onClick={() => setPicker(true)} {...tileDrag.target(null)}>
               +
             </button>
           )}

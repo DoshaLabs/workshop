@@ -22,7 +22,7 @@ let count = Number(await ws.storage.get('count')) || 0
 function render() {
   body.replaceChildren(
     el('p', {}, '__NAME__ is running.'),
-    el('p', { class: 'muted' }, 'This is the starter. Ask Claude to make it yours.'),
+    el('p', { class: 'muted' }, 'This is the starter. Ask the session to make it yours.'),
     el(
       'button',
       {
