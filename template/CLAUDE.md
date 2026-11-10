@@ -141,6 +141,18 @@ what survives a reinstall and is shared between instances. Keep real data there.
 - A tile is small: the column is about a third of the window. Design for 400 px wide first, and
   give `pane` view more room if `"pane": true`.
 
+### Why there is no backend for this tile
+
+Workshop has a second, trusted tier: a tile that ships with workshop itself (Git, Spotify) may add
+a `backend`, a node program of its own with full access to the Mac, which its page reaches
+through `workshop.backend`. Your tile cannot have one. Workshop refuses to load, install or list
+any other tile that declares a `backend` or carries a `backend.mjs`, and `tile check` says so.
+
+That is on purpose: a tile from the index runs on strangers' Macs, and a program with full access
+is how a tile could read their files, their keys and their conversations. Everything a tile needs
+should come through the page and the permissions above. If yours cannot be built without the
+machine, say what it needed when you report back: that is how the contract grows, for everyone.
+
 ## Letting Claude sessions use the tile (the door)
 
 Declare ops in `permissions.door.ops`, answer them with `workshop.door.handle`, and a session

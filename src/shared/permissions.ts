@@ -4,9 +4,13 @@
 
 import type { Permissions } from './manifest'
 
-/** One line per permission, in the order a person would care about them: what can leave the machine first. */
+/** The trusted tier in words. First in every list: nothing else a tile may do comes near it. */
+export const FULL_ACCESS = 'run its own program with full access to this Mac'
+
+/** One line per permission, in the order a person would care about them: full access, then what can leave the machine. */
 export function permissionWords(p: Permissions): string[] {
   const out: string[] = []
+  if (p.backend) out.push(FULL_ACCESS)
   if (p.transcripts) out.push('read your conversations with Claude')
   if (p.net?.length) out.push(`reach ${p.net.join(', ')}`)
   if (p.camera) out.push('use the camera')
@@ -19,7 +23,6 @@ export function permissionWords(p: Permissions): string[] {
   if (p.overlay) out.push('show itself over the whole window when you click it')
   if (p.notify) out.push('send you notifications')
   if (p.storage) out.push('keep its own data')
-  if (p.backend) out.push('run a program with full access to this Mac')
   return out
 }
 

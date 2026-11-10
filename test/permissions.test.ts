@@ -11,6 +11,11 @@ describe('permissions in words', () => {
     expect(permissionWords({})).toEqual([])
   })
 
+  it('puts full access to the Mac before everything else', () => {
+    expect(permissionWords({ backend: true, transcripts: true })).toEqual(['run its own program with full access to this Mac', 'read your conversations with Claude'])
+    expect(needsAsking({ storage: true }, { storage: true, backend: true })).toBe(true)
+  })
+
   it('a door timeout is not a permission; its ops are', () => {
     expect(permissionKeys({ door: { ops: ['b', 'a'], timeoutMs: 1 } })).toEqual(permissionKeys({ door: { ops: ['a', 'b'], timeoutMs: 99 } }))
     expect(needsAsking({ door: { ops: ['a'], timeoutMs: 1 } }, { door: { ops: ['a'], timeoutMs: 5000 } })).toBe(false)
