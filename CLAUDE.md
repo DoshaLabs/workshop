@@ -103,6 +103,14 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   Denied Automation is `error: 'denied'`. Smoke drives it with a stand-in runner
   (`smoke-music.ts`, `test/fixtures/music`). A packaged build needs `NSAppleEventsUsageDescription`
   (and the Apple Events entitlement under the hardened runtime).
+- `tiles/git/` (track C, `docs/progress/2026-11-10-git.md`): the Git tile, built in with a
+  backend, read-only. Changes: every open session by project, one line per working tree (sessions
+  sharing one are named together) with branch, files and `+n −m` against HEAD (untracked lines
+  counted, binary not), unfolding to the diff the backend parsed into hunks. The page names
+  sessions by id; the backend finds their folders. Every git call: argv, no shell,
+  GIT_OPTIONAL_LOCKS=0, no pager or colour, a timeout and a cap. Worktrees, History and PRs say
+  "Coming". Door: `git show`.
+- Theme variables include `--ws-green` and `--ws-red` (the terminal's, at 4.5:1 on the panel).
 - Session tiles (phase 1, `docs/progress/2026-11-10-phase1.md`): the left column is a column of
   tiles, one per open session, each its live conversation (`ChatView.tsx`; prose as markdown in
   the serif face, parsed to a tree by `src/shared/markdown.ts`, never HTML), with ⌘n, the status
@@ -240,7 +248,7 @@ are actually building tiles.
 | Wolfpack | A session's subagents and helper sessions as live tiles, with pause and kill |
 | All themes | Deep Space is the default |
 | Wikipedia + weather + clock tile | Asks for your city on first run (deck defaults to Portland, Maine) |
-| Git tile | One tile, four tabs (section 4) |
+| Git tile | One tile, four tabs (section 4); Changes built |
 | Files tile | A plain directory tree |
 | Web-app tiles | Any site registered by name and URL, as a tile |
 | Status mark | The Knot, whose size, speed and colour are each session's status; a sprite pack (Foxtrot recommended) may replace it (section 8) |
@@ -289,7 +297,7 @@ say plainly that we provide no ROMs, discs or BIOS files.
 One tile, four tabs. It ships in core because worktrees are tied to how sessions start. It is
 built ON the tile contract (trusted tier) so that tier is exercised before strangers use it.
 
-- **Changes.** Every open session, grouped by project: a line per session with branch, files
+- **Changes** (built: `tiles/git`; sessions in one worktree share a line). Every open session, grouped by project: a line per session with branch, files
   touched and `+n −m`; click one to unfold its diffs. (deck's version shows only the focused
   session; `src/main/git.ts` there is the starting point, including `GIT_OPTIONAL_LOCKS=0` so a
   poll never fights Claude for the index lock.)
