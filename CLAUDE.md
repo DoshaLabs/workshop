@@ -95,6 +95,14 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   core refuses undeclared ops. The backend gets an allowlisted env (PATH, HOME, SSH_AUTH_SOCK…,
   never WORKSHOP_*), the sessions as `{ id, name, folder, root }`, no token; its output goes to
   `<profile>/logs/backend-<id>.log`. Smoke loads `test/fixtures/trusted` as built in.
+- Music (bridge 1.3, `permissions.music`, `docs/progress/2026-11-10-music.md`): `workshop.music`
+  reads and drives Spotify.app and Music.app for a sandboxed tile. `src/main/music.ts` runs fixed
+  JXA/AppleScript through osascript (a tile's values only as checked argv), never launches an app
+  (`running()` first), polls only while a page watches (1 s playing, slower otherwise), and serves
+  the artwork at `tile://<id>/~music/art/<hash>` (`tiles.ts`), so the tile needs no `net`.
+  Denied Automation is `error: 'denied'`. Smoke drives it with a stand-in runner
+  (`smoke-music.ts`, `test/fixtures/music`). A packaged build needs `NSAppleEventsUsageDescription`
+  (and the Apple Events entitlement under the hardened runtime).
 - Session tiles (phase 1, `docs/progress/2026-11-10-phase1.md`): the left column is a column of
   tiles, one per open session, each its live conversation (`ChatView.tsx`; prose as markdown in
   the serif face, parsed to a tree by `src/shared/markdown.ts`, never HTML), with ⌘n, the status
@@ -383,6 +391,10 @@ sandbox, and making the exception loud and rare, is the answer to it.
   for that tile, remembered across restarts. The page gets a handle and a name, never the path, and
   reads through its own origin at `tile://<id>/~files/<handle>/<path>`, streamed (a disc image
   never crosses IPC). Symlinks that lead outside the grant are refused. Read-only.
+- **Music** (`src/main/music.ts`): core, not the tile, talks to Spotify and Music, with fixed
+  scripts; the tile's values (seek, volume, a Spotify URI) are checked and passed as arguments.
+  Core never opens either app. The artwork is fetched by core (Spotify's CDN only) or read from
+  Music, and served on the tile's own origin, so a music tile needs no `net`.
 
 ### The bridge
 
@@ -413,6 +425,7 @@ workshop.usage.get/watch           // "usage"             → costs and rate-lim
 workshop.door.handle(op, fn)       // "door"              → fn(args, caller, { session }) answers a Claude session
 workshop.notify({ text, attention }) // "notify"          → needs-you chip, macOS notification, the mark flares
 workshop.files.pick/list/entries/read/url/forget  // "files" → only what the user picked for this tile
+workshop.music.get/watch/play/pause/toggle/next/previous/seek/setVolume/playUri  // "music" → Spotify or Music (bridge ^1.3)
 workshop.media                     // "camera" / "microphone" → passed to the macOS prompt
 workshop.backend.call(op, body) / status() / onStatus(fn)   // built-in tiles with a "backend" only (bridge ^1.2)
 ```
