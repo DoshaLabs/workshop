@@ -8,6 +8,7 @@ import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { session, type Session } from 'electron'
 import { TILE_SCHEME, checkManifest, requestAllowed, type Manifest } from '@shared/manifest'
 import type { TileInfo, TileProblem } from '@shared/ipc'
+import { checkPlugin } from './plugin'
 
 export { TILE_SCHEME }
 
@@ -22,6 +23,8 @@ export interface Tile {
   session: Session
   src: string
   icon: string
+  /** The tile's Claude Code plugin (handed to new sessions with --plugin-dir), or null. */
+  plugin: string | null
 }
 
 export interface Registry {
@@ -81,6 +84,8 @@ async function readTile(folder: string, source: Tile['source']): Promise<Omit<Ti
     return { folder, errors: [`entry: ${m.entry} does not exist (the built page must be in the folder; no build step runs on install)`] }
   }
   if (!inside(root, entryReal)) return { folder, errors: ['entry: points outside the tile folder'] }
+  const plugin = await checkPlugin(root, m.id)
+  if (!plugin.ok) return { folder, errors: plugin.errors }
   let icon = ''
   if (m.icon) {
     try {
@@ -100,7 +105,8 @@ async function readTile(folder: string, source: Tile['source']): Promise<Omit<Ti
     source,
     partition: `persist:tile-${m.id}`,
     src: `${TILE_SCHEME}://${m.id}/${basename(entryReal)}`,
-    icon
+    icon,
+    plugin: plugin.dir
   }
 }
 

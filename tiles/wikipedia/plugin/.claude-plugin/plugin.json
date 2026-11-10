@@ -1,0 +1,9 @@
+{
+  "name": "wikipedia",
+  "description": "Lets a Claude session put a Wikipedia article, a search, or today's picture on the workshop's Wikipedia tile.",
+  "version": "0.1.0",
+  "author": {
+    "name": "DoshaLabs"
+  },
+  "license": "MIT"
+}

@@ -183,7 +183,7 @@ red for three seconds, the second acts. The tile never force-pushes.
 
 ## 5. The tile contract, version 1
 
-A tile is a folder: a manifest, a built web page, optionally a Claude Code skill. The page runs
+A tile is a folder: a manifest, a built web page, optionally a Claude Code plugin with skills. The page runs
 in its own sandboxed webview with its own storage and no network access unless declared.
 Everything it can do goes through one `window.workshop` object that core injects, and every
 capability beyond the basics is a permission named in the manifest and shown at install.
@@ -192,12 +192,18 @@ capability beyond the basics is a permission named in the manifest and shown at 
 
 ```
 my-tile/
-  tile.json          the manifest
-  dist/index.html    the built page (any stack; NO build step ever runs on the user's machine)
+  tile.json                               the manifest
+  dist/index.html                         the built page (any stack; NO build step ever runs on the user's machine)
   icon.svg
-  skill/SKILL.md     optional: how a Claude session uses this tile
-  backend.mjs        optional: trusted tier only
+  plugin/.claude-plugin/plugin.json       optional: a Claude Code plugin, "name" = the tile's id
+  plugin/skills/<skill>/SKILL.md          how a Claude session uses this tile
+  backend.mjs                             optional: trusted tier only
 ```
+
+`plugin/` is an ordinary Claude Code plugin (`claude plugin validate tiles/wikipedia/plugin`
+passes), so its skills read `<tile-id>:<skill>` in a session. Core accepts only skills there
+(`src/main/plugin.ts`): hooks, MCP servers, agents and commands run with the session's full
+permissions, which makes them the trusted tier.
 
 ### The manifest
 
@@ -306,11 +312,9 @@ This generalizes what deck does by hand for each tile (`/deck:mol`, `/deck:remin
 - The caller's identity (the session's name) is attached by core. It is never read from the
   request body.
 - A tile that is turned off refuses at once with "turn on the X tile".
-- Each installed tile's `skill/` folder is handed to new sessions with `--plugin-dir`, which is
+- Each installed tile's `plugin/` folder is handed to new sessions with `--plugin-dir`, which is
   repeatable (verified on Claude Code 2.1.322). A session already running does not see a tile
   installed after it started.
-  **Unresolved:** `--plugin-dir` expects a plugin layout (`skills/<name>/SKILL.md`), not a bare
-  `skill/SKILL.md`. Settle the tile folder's layout before sessions are wired (step 3).
 
 ### Install, update, develop
 
@@ -362,7 +366,7 @@ How it works:
 - **Rank**: the installer pings a small counter with the tile id only (no user id), and anyone
   can turn that off. That gives "most downloaded". "Most used" needs usage telemetry, so it is
   opt-in and comes later.
-- **Reuse in other projects**: a tile's `skill/` half is an ordinary Claude Code plugin, so the
+- **Reuse in other projects**: a tile's `plugin/` folder is an ordinary Claude Code plugin, so the
   index may double as a Claude Code plugin marketplace. The current marketplace file format must
   be checked before this is promised.
 - **Sprite packs** (section 8) are a second category in the same index.
@@ -539,7 +543,7 @@ already uses most of them:
 |---|---|
 | `--settings <file>` | Our hooks, env vars, status line and theme, merged over the user's own |
 | Hooks | Status (Notification, Stop, UserPromptSubmit), subagent tiles (SubagentStart / Stop), the leash (PreToolUse), session context (SessionStart) |
-| `--plugin-dir` (repeatable) | Core's own skills, and each installed tile's `skill/` folder |
+| `--plugin-dir` (repeatable) | Core's own skills, and each installed tile's `plugin/` folder |
 | `statusLine` | The account's rate-limit windows and each session's context percentage |
 | `--session-id` | Our own UUID, which is how hooks and poll rows are matched to a tile |
 | `--worktree`, `--model`, `--permission-mode`, `--name` | The launcher's choices |
