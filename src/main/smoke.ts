@@ -10,6 +10,7 @@ import { join } from 'node:path'
 import { CH } from '@shared/ipc'
 import type { Door } from './door'
 import { installs } from './smoke-install'
+import { previewSmoke, reorderSmoke } from './smoke-preview'
 
 interface Ctx {
   win: BrowserWindow
@@ -616,6 +617,8 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   check('usage: the session shows its context and cost', badges.includes('ctx 17%') && badges.includes('$1.23'), badges)
   await sessionTiles(check, ctx, id)
   await shortcuts(check, ctx, id, cwd)
+  await previewSmoke(check, ctx, id, cwd)
+  await reorderSmoke(check, ctx, id, cwd)
 
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'door\\r'); true`)
   await waitFor('the door call from the session', async () => (await screen(id)).includes('DONE door'))

@@ -17,6 +17,8 @@ import { SessionManager } from './sessions'
 import { Tmux } from './tmux'
 import { TranscriptWatcher } from './transcript'
 import { UsageTracker } from './usage'
+import { startPreview } from './preview'
+import { keepImage } from './drops'
 
 export interface CoreSessions {
   sessions: SessionManager
@@ -26,6 +28,8 @@ export interface CoreSessions {
   transcripts: TranscriptWatcher
   /** Route a /hook/<name> call (the door's server hands them here). */
   hook(name: string, token: string, payload: unknown): void
+  /** A /core/<name> call from a session (the preview pane's `doc`); answered. Sessions only. */
+  call(name: string, token: string, payload: unknown): Promise<unknown>
   stop(): void
 }
 
@@ -126,6 +130,10 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     const r = await dialog.showOpenDialog(w, { properties: ['openDirectory', 'createDirectory'], defaultPath: typeof start === 'string' && existsSync(start) ? start : undefined })
     return r.canceled ? null : r.filePaths[0]
   })
+  // The preview pane (track E): files read and written for the window, and a session's `doc open`.
+  const preview = startPreview({ win: o.win, handle })
+  // An image pasted or dropped into a session tile's prompt bar, kept as a file the session can read.
+  handle(CH.dropKeep, (file: unknown) => keepImage(o.home, file))
   on(CH.ptyInput, (id: string, data: string) => typeof data === 'string' && sessions.input(String(id), data))
   on(CH.ptyResize, (id: string, cols: number, rows: number) => sessions.resize(String(id), Number(cols), Number(rows)))
   on(CH.ptyTitle, (id: string, title: string) => sessions.setTitle(String(id), String(title)))
@@ -146,9 +154,15 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
       // A session reports for itself only: the payload must name the session its token belongs to.
       if (event && p.session_id === rec.claudeSessionId) sessions.onHook(event, p)
     },
+    async call(name, token, payload) {
+      const rec = sessions.byToken(token)
+      if (!rec) throw new Error('only a session inside workshop can do that')
+      return preview.call(name, payload, { id: rec.id, cwd: rec.cwd })
+    },
     stop() {
       fleet.stop()
       transcripts.stop()
+      preview.stop()
       sessions.detachAll()
     }
   }

@@ -156,7 +156,8 @@ const door = new Door({
     g?.wc.send(CH.doorCall, call)
     return g && pageOf(g)
   },
-  hook: (name, token, payload) => core?.hook(name, token, payload)
+  hook: (name, token, payload) => core?.hook(name, token, payload),
+  core: (name, token, payload) => (core ? core.call(name, token, payload) : Promise.reject(new Error('workshop is starting')))
 })
 
 const grants = new Map<string, TileGrants>()
@@ -681,7 +682,8 @@ app.whenReady().then(async () => {
     home: app.getPath('userData'),
     profile: PROFILE,
     appPath: app.getAppPath(),
-    pluginDirs: () => [...registry.tiles.values()].map((t) => t.plugin).filter((p): p is string => !!p),
+    // Core's own plugin (its skills: workshop:doc) first, then every tile's.
+    pluginDirs: () => [join(app.getAppPath(), 'plugin'), ...[...registry.tiles.values()].map((t) => t.plugin).filter((p): p is string => !!p)],
     dark: isDark(settings.get()),
     poll: !SMOKE,
     pathFirst: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getAppPath(), 'test/fixtures/fake-claude') : undefined,

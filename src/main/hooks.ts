@@ -12,12 +12,13 @@
 // - Claude Code's theme, light or dark to match the app (deck learned that a light CLI theme
 //   inside a dark app is near-white text on light grey); the user's -daltonized / -ansi is kept.
 // - WORKSHOP_TILE, the door's CLI, so a tile's skill can run `node "$WORKSHOP_TILE" <id> <op>`.
+// - WORKSHOP_DOC, the preview pane's CLI beside it: `node "$WORKSHOP_DOC" open <path> [--line N]`.
 //
 // Carried over from deck's hooks.ts, without its leash, wolfpack and tile routes.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 export type HookEvent = 'Notification' | 'Stop' | 'UserPromptSubmit' | 'SubagentStart' | 'SubagentStop'
 
@@ -115,7 +116,7 @@ export class SessionSettings {
     const settings = {
       theme: claudeTheme(this.dark, theirs.theme),
       statusLine: this.writeStatusScript(theirs.statusLine),
-      env: { WORKSHOP_HOME: this.home, WORKSHOP_TILE: this.tileCli },
+      env: { WORKSHOP_HOME: this.home, WORKSHOP_TILE: this.tileCli, WORKSHOP_DOC: join(dirname(this.tileCli), 'workshop-doc.mjs') },
       hooks: {
         Notification: hook('notification'),
         Stop: hook('stop'),

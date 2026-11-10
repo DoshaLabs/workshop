@@ -1,6 +1,6 @@
 // Core's own window's bridge (not a tile's: that is tile.ts).
 
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { NewSessionOpts, SessionsState } from '../shared/sessions'
 import type { Usage } from '../shared/usage'
 import type { Transcript } from '../shared/transcript'
@@ -8,6 +8,7 @@ import type { Shortcut } from '../shared/shortcuts'
 import type { ColumnState } from '../shared/column'
 import type { ActiveMascot } from '../shared/mascot'
 import { MENU, type IndexState, type InstallRecord, type InstallRequest, type PendingInstall } from '../shared/tile-menu'
+import type { PreviewDoc, PreviewRef, PreviewWrite } from '../shared/preview'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
@@ -74,6 +75,26 @@ const core = {
     cancel: (token: string): Promise<void> => ipcRenderer.invoke(MENU.cancel, token),
     remove: (id: string, opts: { storage: boolean }): Promise<void> => ipcRenderer.invoke(MENU.remove, id, opts),
     loadFolder: (): Promise<{ folder: string; message: string } | null> => ipcRenderer.invoke(MENU.loadFolder)
+  },
+  // track E: the preview pane, and images for a session's prompt
+  readDoc: (path: string, cwd?: string): Promise<PreviewDoc> => ipcRenderer.invoke(CH.previewRead, path, cwd),
+  writeDoc: (path: string, text: string, mtime: number): Promise<PreviewWrite> => ipcRenderer.invoke(CH.previewWrite, path, text, mtime),
+  tickTask: (path: string, line: number, checked: boolean, mtime: number): Promise<PreviewWrite> => ipcRenderer.invoke(CH.previewTask, path, line, checked, mtime),
+  /** Watch the file the pane shows (null: none); a change comes back through onDocChanged. */
+  watchDoc: (path: string | null): Promise<void> => ipcRenderer.invoke(CH.previewWatch, path),
+  onDocChanged: (fn: (path: string, mtime: number) => void) => on(CH.previewChanged, fn),
+  /** A session ran `node "$WORKSHOP_DOC" open <path>`. */
+  onOpenDoc: (fn: (ref: PreviewRef, sessionId: string) => void) => on(CH.previewOpen, fn),
+  /** A pasted or dropped file, kept where a session can read it; its path. A Finder file keeps its own path. */
+  keepDrop: async (file: File): Promise<string> => {
+    let path = ''
+    try {
+      path = webUtils.getPathForFile(file)
+    } catch {
+      // a pasted picture has no file behind it
+    }
+    const bytes = path ? undefined : new Uint8Array(await file.arrayBuffer())
+    return ipcRenderer.invoke(CH.dropKeep, { name: file.name, path, bytes, type: file.type })
   }
 }
 
