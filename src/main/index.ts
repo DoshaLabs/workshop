@@ -2,7 +2,7 @@
 // webview core's window attaches, answers the bridge and runs the door) and the sessions
 // (main/core-sessions.ts).
 
-import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protocol, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protocol, shell, utilityProcess, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { existsSync, mkdtempSync, readFileSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -10,7 +10,7 @@ import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type
 import { BRIDGE_VERSION } from '@shared/manifest'
 import { FONT_VARS } from '@shared/fonts'
 import { shortcutOf } from '@shared/shortcuts'
-import { cleanColumn } from '@shared/column'
+import { EMPTY_COLUMN, cleanColumn } from '@shared/column'
 import { COSMOS_ID, forcesDark, resolveVariant, seeThrough, themeVars } from '@shared/themes'
 import { SettingsStore, type Settings } from './settings'
 import { Door } from './door'
@@ -23,6 +23,9 @@ import { startSessions, type CoreSessions } from './core-sessions'
 import { MascotStore } from './mascot'
 import { startTileMenu } from './tile-menu'
 import { ProjectRoots } from './project'
+import { Backends, utilitySpawn, type BackendTile, type UtilityProcessLike } from './backend'
+import { backendEnv } from './backend-protocol'
+import { shellEnv } from './env'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 
@@ -44,6 +47,11 @@ if (SMOKE) {
   app.setPath('userData', RESTARTED ? process.env.WORKSHOP_SMOKE_HOME! : mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
 } else if (DEV) app.setPath('userData', `${app.getPath('userData')}-dev`)
+/**
+ * A trusted tile for the smoke test, loaded as if it shipped in tiles/ (the only place a backend is
+ * allowed), so the trusted tier is exercised without a fake tile in the app. Smoke runs only.
+ */
+const SMOKE_BUILTINS = SMOKE ? [{ dir: resolve(app.getAppPath(), 'test/fixtures/trusted'), source: 'core' as const, single: true }] : []
 
 // One app per profile. `workshop tile dev ./x` while it runs hands the folder to the running app.
 if (!SMOKE && !app.requestSingleInstanceLock()) app.exit(0)
@@ -162,6 +170,39 @@ const door = new Door({
   hook: (name, token, payload) => core?.hook(name, token, payload),
   core: (name, token, payload) => (core ? core.call(name, token, payload) : Promise.reject(new Error('workshop is starting')))
 })
+
+/**
+ * The trusted tier's processes (main/backend.ts): one per built-in tile with a backend, while it is
+ * on. Their output goes to <profile>/logs/backend-<id>.log. A smoke run restarts them sooner, so
+ * it can watch one give up.
+ */
+const backends = new Backends({
+  spawn: utilitySpawn(utilityProcess as unknown as UtilityProcessLike, join(__dirname, 'backend-host.js'), join(app.getPath('userData'), 'logs'), () => backendEnv(shellEnv())),
+  onStatus: (id, st) => {
+    for (const g of instancesOf(id)) g.wc.send(CH.backendStatusChanged, st)
+  },
+  delays: SMOKE ? [100, 200, 300] : undefined
+})
+
+/** Whether any instance of a tile is turned on in the column (shared/column.ts). */
+function tileIsOn(id: string): boolean {
+  const c = settings.get().column ?? EMPTY_COLUMN
+  return !c.off.includes(id) || c.extra.some((k) => k.startsWith(`${id}.`))
+}
+
+/**
+ * Starts the backends of the built-in tiles that are on and stops the rest. Run whenever the
+ * column or the registry changes: a tile turned off, or a dev folder standing in for a built-in
+ * tile (a dev tile never has a backend), stops its backend.
+ */
+function syncBackends(): void {
+  const wanted: BackendTile[] = []
+  for (const t of registry.tiles.values()) {
+    if (t.source !== 'core' || !t.backend || !t.manifest.backend || !tileIsOn(t.manifest.id)) continue
+    wanted.push({ id: t.manifest.id, name: t.manifest.name, program: t.backend, root: t.root, decl: t.manifest.backend })
+  }
+  backends.sync(wanted)
+}
 
 const grants = new Map<string, TileGrants>()
 function grantsOf(id: string): TileGrants {
@@ -338,6 +379,7 @@ async function addDevTile(folder: string): Promise<string> {
     w.on('error', () => devWatchers.delete(folder))
     devWatchers.set(folder, w)
   }
+  syncBackends()
   win?.webContents.send(CH.tilesChanged)
   return `loaded ${id} from ${tile.root}${tile.devOrigin ? ` (dev server ${tile.devOrigin})` : ', reloading on change'}`
 }
@@ -352,6 +394,7 @@ async function forgetDevTile(id: string): Promise<void> {
   devWatchers.delete(folder)
   devFolders.delete(id)
   registry.tiles.delete(id)
+  syncBackends()
   win?.webContents.send(CH.tilesChanged)
 }
 
@@ -397,6 +440,8 @@ function pushSessions(s: SessionsState): void {
     const latest = core?.sessions.getState() ?? s
     await roots.ready(latest.sessions)
     const list = tileSessions(latest)
+    // A backend hears of every session, whatever its tile's permissions: folders, never tokens.
+    backends.setSessions(list.map((v) => ({ id: v.id, name: v.name, folder: v.project, root: v.root })))
     for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
   })()
 }
@@ -437,6 +482,7 @@ function bridge(): void {
     const g = guests.get(e.sender.id)!
     g.ops = new Set()
     const hello: TileHello = { id: t.manifest.id, instance: g.key, view: views.get(g.key) ?? 'tile', vars: vars(), bridge: BRIDGE_VERSION, permissions: t.manifest.permissions }
+    if (t.backend && t.manifest.backend) hello.backendOps = [...t.manifest.backend.ops]
     e.returnValue = hello
   })
 
@@ -531,6 +577,16 @@ function bridge(): void {
   ipcMain.handle(CH.filesEntries, (e, handle: string, rel: string) => grantsOf(need(e, 'files').tile.manifest.id).entries(String(handle), String(rel ?? '')))
   ipcMain.handle(CH.filesForget, (e, handle: string) => grantsOf(need(e, 'files').tile.manifest.id).forget(String(handle)))
 
+  // The trusted tier: the page asks, core checks who is asking and that the op is declared, the
+  // backend answers. Only a built-in tile's own page, from its top frame, on its own origin.
+  const withBackend = (e: IpcMainInvokeEvent): Tile => {
+    const { tile } = need(e)
+    if (!tile.backend || !tile.manifest.backend || tile.source !== 'core') throw new Error('this tile has no backend')
+    return tile
+  }
+  ipcMain.handle(CH.backendCall, (e, op: unknown, body: unknown) => backends.call(withBackend(e).manifest.id, String(op), body))
+  ipcMain.handle(CH.backendStatus, (e) => backends.status(withBackend(e).manifest.id))
+
   ipcMain.on(CH.doorReady, (e, ops: unknown) => {
     const t = tileOf(e)
     const g = guests.get(e.sender.id)
@@ -567,7 +623,7 @@ function bridge(): void {
     if (e.sender !== win?.webContents) throw new Error('core only')
     const column = cleanColumn(c)
     if (!column) throw new Error('not a column')
-    const write = columnWrites.then(() => settings.patch({ column }))
+    const write = columnWrites.then(() => settings.patch({ column })).then(syncBackends)
     columnWrites = write.catch(() => undefined)
     return write.then(() => undefined)
   })
@@ -669,6 +725,7 @@ app.whenReady().then(async () => {
   mascots = new MascotStore(join(app.getPath('userData'), 'mascots'))
   registry = await loadTiles([
     { dir: join(app.getAppPath(), 'tiles'), source: 'core' },
+    ...SMOKE_BUILTINS,
     { dir: join(app.getPath('userData'), 'tiles'), source: 'installed' }
   ])
   for (const p of registry.problems) console.warn(`[tiles] refused ${p.folder}:\n  ${p.errors.join('\n  ')}`)
@@ -711,14 +768,18 @@ app.whenReady().then(async () => {
     onState: pushSessions,
     onUsage: pushUsage
   })
+  // The backends start with the sessions they will be told about already listed.
+  pushSessions(core.sessions.getState())
+  syncBackends()
   createWindow()
 
   nativeTheme.on('updated', pushTheme)
 
   if (SMOKE) {
-    const ctx = { win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core!, profile: PROFILE }
+    const ctx = { win: win!, door, liveByTile, backends, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core!, profile: PROFILE }
     const code = RESTARTED ? await runRestarted(ctx) : await runSmoke(ctx)
     core?.stop()
+    backends.stopAll()
     // The run that started this one cleans up the tmux server it still needs.
     if (!RESTARTED) await core?.tmux.killServer()
     door.stop()
@@ -727,7 +788,10 @@ app.whenReady().then(async () => {
 })
 
 // Sessions are parked, not killed: the next launch reattaches them.
-app.on('before-quit', () => core?.stop())
+app.on('before-quit', () => {
+  core?.stop()
+  backends.stopAll()
+})
 
 // The CLI reads door.json to find a running app; a stale one would point at a closed port.
 app.on('will-quit', () => {

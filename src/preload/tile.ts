@@ -17,6 +17,7 @@ if (hello) {
   const storageSubs = new Map<string, Set<(v: unknown) => void>>()
   const sessionSubs = new Set<(list: unknown) => void>()
   const usageSubs = new Set<(u: unknown) => void>()
+  const backendSubs = new Set<(s: unknown) => void>()
   const doorHandlers = new Map<string, (args: string[], caller: string, from: { session: string | null }) => unknown>()
   const perms = hello.permissions
 
@@ -84,6 +85,9 @@ if (hello) {
   ipcRenderer.on(CH.tileUsageChanged, (_e, u: unknown) => {
     for (const fn of usageSubs) call(() => fn(u))
   })
+  ipcRenderer.on(CH.backendStatusChanged, (_e, st: unknown) => {
+    for (const fn of backendSubs) call(() => fn(st))
+  })
   ipcRenderer.on(CH.doorCall, async (_e, c: DoorCall) => {
     const fn = doorHandlers.get(c.op)
     if (!fn) return ipcRenderer.send(CH.doorReply, c.callId, { ok: false, error: `no handler for "${c.op}"` })
@@ -95,6 +99,21 @@ if (hello) {
       ipcRenderer.send(CH.doorReply, c.callId, { ok: false, error: err instanceof Error ? err.message : String(err) })
     }
   })
+
+  // The trusted tier (bridge 1.2): only on a built-in tile whose manifest declares a backend.
+  const backendOps = hello.backendOps ?? []
+  const backend = perms.backend
+    ? {
+        backend: {
+          /** Asks the tile's backend `op` with a JSON `body`; resolves to its JSON answer. The op must be in the manifest's backend.ops. */
+          call: (op: string, body?: unknown): Promise<unknown> =>
+            backendOps.includes(op) ? ipcRenderer.invoke(CH.backendCall, op, body === undefined ? null : body) : Promise.reject(new Error(`"${op}" is not in backend.ops in tile.json`)),
+          /** { state: 'starting' | 'running' | 'restarting' | 'failed' | 'stopped', error? } */
+          status: (): Promise<unknown> => ipcRenderer.invoke(CH.backendStatus),
+          onStatus: (fn: (s: unknown) => void) => sub(backendSubs, fn)
+        }
+      }
+    : {}
 
   // contextBridge copies a getter's value once, so the live values (view, theme.vars) cross as
   // functions and the page-side object below turns them back into properties.
@@ -187,7 +206,8 @@ if (hello) {
         doorHandlers.set(op, fn)
         ipcRenderer.send(CH.doorReady, [...doorHandlers.keys()])
       }
-    }
+    },
+    ...backend
   }
 
   contextBridge.executeInMainWorld({
