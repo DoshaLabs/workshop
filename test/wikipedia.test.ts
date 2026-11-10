@@ -13,6 +13,7 @@ import {
   look,
   otherClock,
   pictureFrom,
+  placesExit,
   placesFrom,
   randomPastDay,
   removePlace,
@@ -104,6 +105,12 @@ describe('wikipedia tile', () => {
     expect(addPlace(list, lisbon)).toBe(list)
     expect(leadPlace(list, oslo)).toEqual([oslo, lisbon])
     expect(removePlace(list, lisbon)).toEqual([oslo])
+  })
+
+  it('draws a way out of the places editor only on first run', () => {
+    expect(placesExit(null)).toBe('not now')
+    expect(placesExit([])).toBeNull()
+    expect(placesExit([lisbon])).toBeNull()
   })
 
   it('picks the unit from the locale unless one was saved', () => {

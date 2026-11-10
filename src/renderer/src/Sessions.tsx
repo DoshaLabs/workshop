@@ -9,6 +9,8 @@ import { fit, focusTerminal, mount, unmount } from './terminals'
 import { SessionUsage } from './UsageMeter'
 import { Mascot } from './Mascot'
 import { KnotCanvas } from './Knot'
+import { useFileDrop } from './drop'
+import { ParkButton } from './SessionColumn'
 
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
@@ -170,8 +172,14 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
   )
 }
 
-export function FocusPane({ session, usage }: { session: SessionView; usage: Usage | null }) {
+/**
+ * The focused session: its terminal, under a head with what its tile in the column had (⌘ number,
+ * status, name, usage, park), since that tile leaves the column while this is up. A file dropped
+ * anywhere on it is pasted into the session, as a terminal does (deck's FocusPane).
+ */
+export function FocusPane({ session, usage, n }: { session: SessionView; usage: Usage | null; /** Its ⌘ number, if it has one. */ n?: number }) {
   const box = useRef<HTMLDivElement>(null)
+  const drop = useFileDrop(session.id)
   useLayoutEffect(() => {
     const host = box.current!
     mount(session.id, host)
@@ -184,8 +192,9 @@ export function FocusPane({ session, usage }: { session: SessionView; usage: Usa
     }
   }, [session.id])
   return (
-    <section className="pane">
+    <section className={`pane focus-pane ${drop.over ? 'file-over' : ''}`} data-session={session.id} {...drop.handlers}>
       <header className="head">
+        {n && <span className="key">⌘{n}</span>}
         <Mascot id={session.id} status={session.status} attention={session.attention} />
         <span className="name" title={session.title ?? undefined}>
           {session.name}
@@ -195,6 +204,7 @@ export function FocusPane({ session, usage }: { session: SessionView; usage: Usa
         <span className="session-folder" title={session.cwd}>
           {tilde(session.cwd)}
         </span>
+        <ParkButton id={session.id} />
       </header>
       <div className="term-host" ref={box} />
     </section>

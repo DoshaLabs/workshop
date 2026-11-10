@@ -31,6 +31,7 @@ const core = {
   onTilePane: (fn: (id: string, open: boolean) => void) => on(CH.tilePane, fn),
   onTileOverlay: (fn: (id: string, open: boolean) => void) => on(CH.tileOverlay, fn),
   onTileNotify: (fn: (id: string, text: string) => void) => on(CH.tileNotify, fn),
+  onTileWheel: (fn: (id: string, dy: number) => void) => on(CH.tileWheel, fn),
   onTheme: (fn: (theme: ThemeState) => void) => on(CH.themeChanged, fn),
   onTilesChanged: (fn: () => void) => on(CH.tilesChanged, fn),
   // sessions

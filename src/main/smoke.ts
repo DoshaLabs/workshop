@@ -17,6 +17,7 @@ import { historySmoke } from './smoke-history'
 import { backendSmoke } from './smoke-backend'
 import type { Backends } from './backend'
 import { previewSmoke, reorderSmoke } from './smoke-preview'
+import { uiSmoke, wheelSmoke } from './smoke-ui'
 import { musicSmoke } from './smoke-music'
 import type { MusicHost } from './music'
 import { recorderSmoke } from './smoke-recorder'
@@ -179,9 +180,17 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     check('wikipedia page: the city prompt draws no missing piece as the word null', !String(await wjs(`document.body.innerText`)).includes('null'))
     await wjs(`(() => { const i = document.querySelector('.wiki-place-input'); i.value = 'Lisbon, Portugal'; i.dispatchEvent(new Event('input')); return true })()`)
     await waitFor('a place to be found', async () => (await wjs(`!!document.querySelector('.wiki-place-hit')`)) === true)
-    await wjs(`document.querySelector('.wiki-place-hit').click(); document.querySelector('.wiki-places-head .wiki-back').click(); true`)
+    check('wikipedia page: first run offers "not now"', (await wjs(`document.querySelector('.wiki-places-head .wiki-back')?.textContent ?? ''`)) === 'not now')
+    // Choosing the city is the whole job: the editor closes on its own, with no Done to press.
+    await wjs(`document.querySelector('.wiki-place-hit').click(); true`)
+    check('wikipedia page: choosing a city closes the editor', (await wjs(`!document.querySelector('.wiki-places')`)) === true)
     await waitFor('the weather to be drawn', async () => /\d°/.test(await wjs(`document.querySelector('.wiki-weather-now .wiki-weather-temp')?.textContent ?? ''`)))
     check('wikipedia page: a weather reading is drawn', (await wjs(`document.querySelector('.wiki-weather-place').textContent`)).startsWith('Lisbon'))
+    // Opened again with a city saved, the editor draws no button of its own; Esc closes it.
+    await wjs(`document.querySelector('.wiki-weather').click(); true`)
+    check('wikipedia page: the places editor has no Done once a city is saved', (await wjs(`!!document.querySelector('.wiki-places') && !document.querySelector('.wiki-places-head .wiki-back')`)) === true)
+    await wjs(`document.querySelector('.wiki-place-input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+    check('wikipedia page: Esc closes the places editor', (await wjs(`!document.querySelector('.wiki-places')`)) === true)
     await sleep(200)
     const wikiStore = JSON.parse(await readFile(join(userData, 'tile-data', 'wikipedia', 'store.json'), 'utf8')) as { places?: { name: string }[] }
     check('wikipedia page: the place is kept in workshop.storage', wikiStore.places?.[0]?.name === 'Lisbon', JSON.stringify(wikiStore))
@@ -503,8 +512,8 @@ async function sessionTiles(check: (name: string, ok: boolean, detail?: string) 
   const path = core.transcripts.pathOf(id) ?? ''
   check('session tiles: main finds the transcript by session id under the CLI\'s config folder', path.startsWith(join(userData, 'claude-config', 'projects')) && path.endsWith('.jsonl'), path)
 
-  // While its terminal is in the center, the focused session is a line in the column, not a tile.
-  check('session tiles: the focused session gives its tile way to the terminal', (await js(`!${tile} && !!document.querySelector('.session-center[data-session="${id}"]')`)) === true && (await terminals()) === 1)
+  // While its terminal is in the center, the focused session leaves the column (as in deck).
+  check('session tiles: the focused session gives its tile way to the terminal', (await js(`!${tile} && !document.querySelector('.sessions [data-session="${id}"]') && !!document.querySelector('.focus-pane[data-session="${id}"]')`)) === true && (await terminals()) === 1)
 
   // The launcher takes the center: the session becomes a tile, and no terminal is mounted at all.
   await js(`document.querySelector('.session-plus').click(); true`)
@@ -650,6 +659,8 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   await shortcuts(check, ctx, id, cwd)
   await previewSmoke(check, ctx, id, cwd)
   await reorderSmoke(check, ctx, id, cwd)
+  await uiSmoke(check, ctx, id, cwd)
+  await wheelSmoke(check, ctx)
 
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'door\\r'); true`)
   await waitFor('the door call from the session', async () => (await screen(id)).includes('DONE door'))
@@ -823,8 +834,8 @@ async function mascot(check: (name: string, ok: boolean, detail?: string) => voi
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'ws-mascot-')))
   const made = await js(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, name: 'mascot' })`)
   const id = String(made.id)
-  // A session is a tile, the line it leaves while its terminal is in the center, or a row under Closed.
-  const row = `[...document.querySelectorAll('.sessions [data-session]')].find((r) => r.querySelector('.name, .session-name')?.textContent.trim() === 'mascot')`
+  // A session is a tile, the center's head while its terminal is there, or a row under Closed.
+  const row = `document.querySelector('[data-session="${id}"]')`
   const mark = (sel: string): Promise<string | null> => js(`(() => { const r = ${row}; const m = r?.querySelector('${sel}'); return m ? (m.dataset.mode ?? m.dataset.pose ?? '') : null })()`)
   const modeIs = (want: string) => waitFor(`the knot to read ${want}`, async () => (await mark('canvas.knot')) === want, 5000).then(() => true, () => false)
   const flare = (): Promise<string | undefined> => js(`(${row}).querySelector('canvas.knot').dataset.flare`)

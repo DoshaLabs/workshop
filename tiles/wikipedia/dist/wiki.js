@@ -145,6 +145,12 @@ export function cleanPlaces(raw) {
 export const addPlace = (list, p) => (list.some((x) => samePlace(x, p)) || list.length >= PLACES_MAX ? list : [...list, p])
 export const removePlace = (list, p) => list.filter((x) => !samePlace(x, p))
 export const leadPlace = (list, p) => [p, ...list.filter((x) => !samePlace(x, p))]
+/**
+ * The places editor's own way out, or null for none. Choosing a place closes the editor, and Esc
+ * or the × in the search line close it too, so a button is only worth drawing on first run, where
+ * "not now" does something of its own: it saves the empty list, so the tile does not ask again.
+ */
+export const placesExit = (places) => (places === null ? 'not now' : null)
 
 export function forecastUrl(places, unit) {
   const q = new URLSearchParams({

@@ -98,6 +98,45 @@ if (hello) {
     for (const fn of musicSubs) call(() => fn(s))
   })
 
+  // The wheel at the page's edge belongs to the column (deck's rule: a tile never eats it). A wheel
+  // that nothing under the pointer can use (nothing scrolls that way, or it is at its end) is passed
+  // to core, which scrolls the tile column by it: scroll chaining across the webview's border. The
+  // page keeps every wheel it can use, and one it cancels (a map's zoom). Summed per frame, so a
+  // trackpad's stream (momentum too) is one message a frame. Pinch (ctrlKey) is never passed.
+  const scrollsY = (el: Element, dy: number): boolean => {
+    const root = el === document.scrollingElement
+    const oy = getComputedStyle(el).overflowY
+    if (root ? oy === 'hidden' || oy === 'clip' || (document.body && ['hidden', 'clip'].includes(getComputedStyle(document.body).overflowY)) : oy !== 'auto' && oy !== 'scroll') return false
+    if (el.scrollHeight <= el.clientHeight + 1) return false
+    return dy < 0 ? el.scrollTop > 0.5 : el.scrollTop + el.clientHeight < el.scrollHeight - 1
+  }
+  const pageCanUse = (e: WheelEvent): boolean => {
+    for (let el = e.target instanceof Element ? e.target : null; el; el = el.parentElement) if (scrollsY(el, e.deltaY)) return true
+    const root = document.scrollingElement
+    return !!root && scrollsY(root, e.deltaY)
+  }
+  let pending: WheelEvent[] = []
+  const flush = (): void => {
+    if (pending.length === 0) return
+    let dy = 0
+    for (const e of pending) if (!e.defaultPrevented) dy += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * innerHeight : e.deltaY
+    pending = []
+    if (dy) ipcRenderer.send(CH.wheel, dy)
+  }
+  window.addEventListener(
+    'wheel',
+    (e) => {
+      if (view !== 'tile' || e.ctrlKey || !e.deltaY || Math.abs(e.deltaX) > Math.abs(e.deltaY) || pageCanUse(e)) return
+      // One message a frame; the timer covers a page that is not drawing (rAF waits for a frame).
+      if (pending.length === 0) {
+        requestAnimationFrame(flush)
+        setTimeout(flush, 50)
+      }
+      pending.push(e)
+    },
+    { passive: true }
+  )
+
   ipcRenderer.on(CH.doorCall, async (_e, c: DoorCall) => {
     const fn = doorHandlers.get(c.op)
     if (!fn) return ipcRenderer.send(CH.doorReply, c.callId, { ok: false, error: `no handler for "${c.op}"` })

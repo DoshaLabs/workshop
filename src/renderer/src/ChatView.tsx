@@ -1,7 +1,7 @@
 // A session tile's body: the conversation, tailed from Claude Code's transcript by main, instead
 // of the CLI's screen. Your prompts in the interface face, Claude's prose as markdown in the
-// reading face, a line per tool call in mono. Pinned to the latest: in a tile the wheel belongs to
-// the column, and the whole conversation is one click away in the terminal. Carried from deck's
+// reading face, a line per tool call in mono. Pinned to the latest while you leave it there; scroll
+// up for history and it stays put until you come back down (deck's ChatView). Carried from deck's
 // ChatView, without its fox (the mascot is its own piece). File paths in it (a tool's file, a path
 // in a prompt or in Claude's prose) open in the preview pane, resolved against the session's folder.
 
@@ -18,14 +18,19 @@ type OnPath = (path: string, line: number | null) => void
 export function ChatView({ id, status, attention, cwd }: { id: string; status: SessionStatus; attention: boolean; /** The session's folder: relative paths resolve against it. */ cwd: string }) {
   const t = useTranscript(id)
   const box = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true)
   const blocks = t?.blocks ?? []
   const busy = status === 'busy' || status === 'starting'
   const onPath: OnPath = (path, line) => openDoc({ path, line, cwd })
 
   useLayoutEffect(() => {
     const el = box.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el && pinned.current) el.scrollTop = el.scrollHeight
   }, [t, status, attention])
+  const onScroll = (): void => {
+    const el = box.current
+    if (el) pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24
+  }
 
   if (blocks.length === 0)
     return (
@@ -35,7 +40,7 @@ export function ChatView({ id, status, attention, cwd }: { id: string; status: S
     )
 
   return (
-    <div className="chat" ref={box}>
+    <div className="chat" ref={box} onScroll={onScroll}>
       {blocks.map((b, i) => (
         <Block key={`${b.ts}-${i}`} b={b} onPath={onPath} />
       ))}

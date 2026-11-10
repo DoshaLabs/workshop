@@ -194,6 +194,13 @@ what survives a reinstall and is shared between instances. Keep real data there.
   `font-src 'self'`, as the starter's does. To ship a font of your own, put the file in `dist/`.
 - A tile is small: the column is about a third of the window. Design for 400 px wide first, and
   give `pane` view more room if `"pane": true`.
+- **The wheel belongs to the column at your page's edge.** In the column (`workshop.view` is
+  `'tile'`), a wheel your page cannot use scrolls the tile column instead: nothing under the
+  pointer scrolls that way, or what does is already at its end. A list that scrolls keeps the
+  wheel until it reaches its top or bottom, then the column moves on, as nested scrolling does in
+  any web page. To keep a wheel for yourself (a map's zoom, a dial), call `preventDefault()` on it
+  in a non-passive listener. A pinch (ctrl + wheel) is never passed on. In `pane` and `overlay`
+  views every wheel stays in your page.
 
 ### Why there is no backend for this tile
 
