@@ -6,8 +6,11 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). */
-export const BRIDGE_VERSION = '1.3.0'
+/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). */
+export const BRIDGE_VERSION = '1.4.0'
+
+/** The first bridge with `sessions: "launch"`: a tile asking for it must not claim to run on an older one. */
+export const LAUNCH_SINCE = '1.4.0'
 
 /** A tile's own origin is tile://<id>/. */
 export const TILE_SCHEME = 'tile'
@@ -37,7 +40,12 @@ export const TRUSTED_ONLY = 'the trusted tier (a backend with full access to the
 
 export interface Permissions {
   storage?: boolean
-  sessions?: 'read' | 'write'
+  /**
+   * A ladder, each step taking the one before: `read` lists and watches them; `launch` adds
+   * `sessions.launch` (core's new-session form, filled in, for the user to start: bridge 1.4);
+   * `write` adds `paste` (typing into a session), and launch with it.
+   */
+  sessions?: 'read' | 'launch' | 'write'
   transcripts?: boolean
   usage?: boolean
   door?: DoorPermission
@@ -215,7 +223,9 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
       else if (p[k]) permissions[k] = true
     }
     if (p.sessions !== undefined) {
-      if (p.sessions !== 'read' && p.sessions !== 'write') errors.push('permissions.sessions: "read" or "write"')
+      if (p.sessions !== 'read' && p.sessions !== 'launch' && p.sessions !== 'write') errors.push('permissions.sessions: "read", "launch" or "write"')
+      else if (p.sessions === 'launch' && range && semver.validRange(range) && semver.lt(semver.minVersion(range) ?? '0.0.0', LAUNCH_SINCE))
+        errors.push(`permissions.sessions: "launch" is bridge ${LAUNCH_SINCE.replace(/\.0$/, '')}; set "workshop" to "^1.4" or later`)
       else permissions.sessions = p.sessions
     }
     if (p.door !== undefined) {

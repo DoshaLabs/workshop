@@ -1,22 +1,22 @@
 {
   "id": "git",
   "name": "Git",
-  "version": "0.1.0",
-  "workshop": "^1.2",
+  "version": "0.2.0",
+  "workshop": "^1.4",
   "author": "DoshaLabs",
   "repo": "https://github.com/DoshaLabs/workshop",
-  "hint": "What each session has changed, by project",
+  "hint": "What each session has changed, and every worktree, by project",
   "icon": "icon.svg",
   "entry": "dist/index.html",
   "pane": true,
   "span": 2,
   "permissions": {
-    "sessions": "read",
+    "sessions": "launch",
     "door": { "ops": ["show"], "timeoutMs": 15000 }
   },
   "backend": {
     "entry": "backend.mjs",
-    "ops": ["changes", "diff"],
-    "timeoutMs": 20000
+    "ops": ["changes", "diff", "worktrees", "diffmain", "rebase", "merge", "remove"],
+    "timeoutMs": 60000
   }
 }

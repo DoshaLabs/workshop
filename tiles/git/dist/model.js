@@ -93,3 +93,64 @@ export function totals(projects) {
   }
   return { files, dirty }
 }
+
+// ---- the Worktrees tab
+
+/** How long a destructive button stays armed (red) after its first click: CLAUDE.md §4. */
+export const ARM_MS = 3000
+
+/**
+ * The two-click rule: the first click on a destructive button arms it, a second on the same button
+ * within ARM_MS acts. `armed` is { key, at } or null. Returns what to do and the new state.
+ */
+export function press(armed, key, now = Date.now()) {
+  if (armed && armed.key === key && now - armed.at <= ARM_MS) return { act: true, armed: null }
+  return { act: false, armed: { key, at: now } }
+}
+
+/** Whether `key` is armed at `now`. */
+export const isArmed = (armed, key, now = Date.now()) => !!armed && armed.key === key && now - armed.at <= ARM_MS
+
+/** "↑2 ↓1 on main", "even with main", or '' when there is nothing to compare with. */
+export function versusBase(w, base) {
+  if (!base || w.isBase || w.ahead == null) return ''
+  if (!w.ahead && !w.behind) return `even with ${base.name}`
+  return [w.ahead ? `↑${w.ahead}` : '', w.behind ? `↓${w.behind}` : ''].filter(Boolean).join(' ') + ` on ${base.name}`
+}
+
+/** "clean", "3 changed", or '' (not read). */
+export const dirtyLabel = (w) => (w.dirty == null ? '' : w.dirty ? `${w.dirty} changed` : 'clean')
+
+/** Why the stale filter shows it, in words. */
+export const STALE_WORDS = { gone: 'folder gone', merged: 'merged, no session', untouched: 'untouched 14+ days, no session' }
+
+/** What a worktree row offers. The backend checks every one again; this only hides what could never work. */
+export function actionsFor(w, base) {
+  const ok = !w.bare && w.prunable == null && !w.error
+  const branchOff = ok && !!base && !!w.branch && !w.isBase && w.branch !== base.name
+  return {
+    diff: ok && !!base && !w.isBase && ((w.ahead ?? 0) > 0 || (w.dirty ?? 0) > 0),
+    open: ok,
+    rebase: branchOff && (w.behind ?? 0) > 0,
+    merge: branchOff && !base.remote && (w.ahead ?? 0) > 0,
+    remove: ok && !w.main && !w.isBase && !w.sessions.length
+  }
+}
+
+/** The worktrees a filter shows: all, or the stale ones. */
+export const filtered = (worktrees, filter) => (filter === 'stale' ? worktrees.filter((w) => w.stale) : worktrees)
+
+/** Every overlap in a project once (each is listed on both rows): [{ a, b, files, count }] by short name. */
+export function projectOverlaps(p) {
+  const seen = new Set()
+  const out = []
+  for (const w of p.worktrees) {
+    for (const o of w.overlaps ?? []) {
+      const k = [w.path, o.with].sort().join('\0')
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push({ a: w.short, b: o.short, files: o.files, count: o.count })
+    }
+  }
+  return out
+}

@@ -1,12 +1,14 @@
-// The Git tile: what every open session has changed, by project. Plain JavaScript, no build. The
-// rules are in model.js; the git work is the backend's (../backend.mjs, the trusted tier), which
-// this page reaches through `workshop.backend` naming sessions by id, never by path. Read-only.
+// The Git tile: what every open session has changed, and every worktree of their projects. Plain
+// JavaScript, no build. The rules are in model.js; the git work is the backend's (../backend.mjs,
+// the trusted tier), which this page reaches through `workshop.backend` naming sessions by id and
+// worktrees by the paths the backend itself listed.
 //
-// What it uses of the contract: backend (changes, diff), sessions read (which sessions are open,
-// and when one goes quiet), view (poll only while the page can be seen; the pane gives diffs room),
-// head (the count of changed files), door (`show`: a session asks for its changes to be shown).
+// What it uses of the contract: backend (changes, diff, worktrees, diffmain, rebase, merge,
+// remove), sessions launch (which sessions are open, when one goes quiet, and the new-session form
+// filled in for "open a session here" and "new chat in a worktree"), view (poll only while the
+// page can be seen; the pane gives diffs room), head (the count of changed files), door (`show`).
 
-import { LETTER, branchLabel, filesLabel, names, num, numbered, openIds, sessionsKey, signature, totals, worktreeOfSession, worktreesOf } from './model.js'
+import { ARM_MS, LETTER, STALE_WORDS, actionsFor, branchLabel, dirtyLabel, filesLabel, filtered, isArmed, names, num, numbered, openIds, press, projectOverlaps, sessionsKey, signature, totals, versusBase, worktreeOfSession, worktreesOf } from './model.js'
 
 const ws = window.workshop
 const $ = (id) => document.getElementById(id)
@@ -16,6 +18,8 @@ const problemBox = $('problem')
 
 /** How often the Changes tab asks again while it can be seen. A session going quiet asks at once. */
 const POLL_MS = 4000
+/** The Worktrees tab reads more per worktree (status, ahead / behind, the files its commits touch), so it asks a little less often. */
+const WT_POLL_MS = 6000
 const TABS = [
   ['changes', 'Changes'],
   ['worktrees', 'Worktrees'],
@@ -23,7 +27,6 @@ const TABS = [
   ['prs', 'PRs']
 ]
 const COMING = {
-  worktrees: 'A row per worktree: its session, its branch, ahead and behind main, dirty or clean. Then opening a session in one, diffing against main, rebasing, merging and removing it once merged.',
   history: 'The commit log across branches, each commit tagged with the session that made it, and a “what did Claude do today” filter.',
   prs: 'Your open pull requests and whether their checks pass, through the gh CLI.'
 }
@@ -40,6 +43,16 @@ let error = ''
 /** Diffs fetched for unfolded worktrees: top -> { sig, files, cut, unread, error, loading }. */
 const diffs = new Map()
 let backendState = 'starting'
+/** The Worktrees tab: the last answer, the filter, the armed button, each row's last result, and diffs against main by path. */
+let wt = null
+let wtError = ''
+let wtFilter = load('wtFilter', 'all')
+let armed = null
+let armTimer = null
+const results = new Map()
+const mainDiffs = new Map()
+/** The write running now (its button's key), so a row says so and nothing else is pressed meanwhile. */
+let acting = ''
 /** The last answer drawn, to tell a poll that changed nothing. */
 let drawn = ''
 
@@ -154,15 +167,22 @@ async function toggle(w) {
 
 let timer = null
 const canSee = () => document.visibilityState === 'visible'
-/** Polls only while the Changes tab is up and the page can be seen; nothing runs otherwise. */
+/** Polls only while Changes or Worktrees is up and the page can be seen; nothing runs otherwise. */
 function schedule() {
   clearInterval(timer)
   timer = null
-  if (tab === 'changes' && canSee() && backendState !== 'failed') timer = setInterval(() => void refresh(), POLL_MS)
+  if (!canSee() || backendState === 'failed') return
+  if (tab === 'changes') timer = setInterval(() => void refresh(), POLL_MS)
+  else if (tab === 'worktrees') timer = setInterval(() => void refreshWorktrees(), WT_POLL_MS)
+}
+/** Asks again for the tab that is up. */
+function refreshTab() {
+  if (tab === 'changes') return refresh()
+  if (tab === 'worktrees') return refreshWorktrees()
 }
 document.addEventListener('visibilitychange', () => {
   schedule()
-  if (canSee() && tab === 'changes') void refresh()
+  if (canSee()) void refreshTab()
 })
 
 let lastKey = ''
@@ -176,7 +196,9 @@ function onSessions(list) {
   // A session opened or closed, or its status moved (it went quiet after a turn): ask now, once.
   clearTimeout(soon)
   soon = setTimeout(() => {
-    if (!canSee() || tab !== 'changes') return
+    if (!canSee()) return
+    if (tab === 'worktrees') return void refreshWorktrees()
+    if (tab !== 'changes') return
     // Counts can stay the same while the lines change: a session's turn ending refetches the diffs.
     for (const d of diffs.values()) d.sig = ''
     void refresh()
@@ -192,6 +214,10 @@ function render() {
   void ws.head.set({ badge: t.files ? String(t.files) : '' }).catch(() => {})
   if (backendState === 'failed') problem('The git helper stopped. Turn the tile off and on again to restart it.')
   else problem(error ? `Could not read git: ${error}` : '')
+  if (tab === 'worktrees') {
+    drawWorktreesTab()
+    return
+  }
   if (tab !== 'changes') {
     body.replaceChildren(el('div', { class: 'coming' }, el('p', { class: 'coming-title' }, 'Coming'), el('p', {}, COMING[tab])))
     return
@@ -223,7 +249,7 @@ function drawBar() {
               save('tab', tab)
               schedule()
               render()
-              if (tab === 'changes') void refresh()
+              void refreshTab()
             }
           },
           label
@@ -231,7 +257,32 @@ function drawBar() {
       )
     ),
     el('span', { class: 'spacer' }),
-    tab === 'changes' && at ? el('span', { class: 'muted when', title: new Date(at).toLocaleTimeString() }, 'live') : null
+    tab === 'worktrees'
+      ? el(
+          'span',
+          { class: 'filter' },
+          [
+            ['all', 'All'],
+            ['stale', 'Stale']
+          ].map(([id, label]) =>
+            el(
+              'button',
+              {
+                class: wtFilter === id ? 'on' : undefined,
+                'data-filter': id,
+                title: id === 'stale' ? 'Worktrees with no session that are merged, untouched for 14 days, or whose folder is gone' : undefined,
+                onclick: () => {
+                  wtFilter = id
+                  save('wtFilter', wtFilter)
+                  render()
+                }
+              },
+              label
+            )
+          )
+        )
+      : null,
+    (tab === 'changes' && at) || (tab === 'worktrees' && wt) ? el('span', { class: 'muted when', title: new Date(tab === 'changes' ? at : wt.at).toLocaleTimeString() }, 'live') : null
   )
 }
 
@@ -363,6 +414,266 @@ function drawFile(top, f) {
   )
 }
 
+// ---- the Worktrees tab
+
+let wtAsking = null
+let wtAgain = false
+/** Asks for every worktree of the open sessions' projects; a call made while one is out runs once more after it. */
+async function refreshWorktrees() {
+  if (wtAsking) {
+    wtAgain = true
+    return wtAsking
+  }
+  wtAsking = (async () => {
+    try {
+      const ids = openIds(sessions)
+      const r = ids.length ? await ws.backend.call('worktrees', { sessions: ids }) : { projects: [], at: Date.now() }
+      const changed = JSON.stringify(r.projects) !== JSON.stringify(wt?.projects)
+      wt = r
+      const hadError = !!wtError
+      wtError = ''
+      // A diff against main that is open is read again when its worktree moved.
+      let fetched = false
+      for (const [path, d] of mainDiffs) {
+        const w = findWorktree(path)
+        if (!w) mainDiffs.delete(path)
+        else if (d.sig !== wtSig(w)) {
+          fetched = true
+          await loadMainDiff(w.root, w)
+        }
+      }
+      if (tab === 'worktrees' && (changed || fetched || hadError)) render()
+    } catch (e) {
+      wtError = e.message
+      if (tab === 'worktrees') render()
+    }
+  })()
+  try {
+    await wtAsking
+  } finally {
+    wtAsking = null
+    if (wtAgain) {
+      wtAgain = false
+      void refreshWorktrees()
+    }
+  }
+}
+
+/** A worktree in the last answer, with its project's root and main. */
+function findWorktree(path) {
+  for (const p of wt?.projects ?? []) for (const w of p.worktrees) if (w.path === path) return { ...w, root: p.root, base: p.base }
+  return null
+}
+const wtSig = (w) => `${w.head}|${w.base?.oid}|${w.dirty}`
+
+async function loadMainDiff(root, w) {
+  try {
+    const d = await ws.backend.call('diffmain', { root, path: w.path })
+    mainDiffs.set(w.path, { sig: wtSig(w), ...d })
+  } catch (e) {
+    mainDiffs.set(w.path, { sig: wtSig(w), files: [], error: e.message })
+  }
+}
+
+async function toggleMainDiff(p, w) {
+  if (mainDiffs.has(w.path)) {
+    mainDiffs.delete(w.path)
+    render()
+    return
+  }
+  mainDiffs.set(w.path, { sig: '', loading: true, files: [] })
+  render()
+  await loadMainDiff(p.root, { ...w, base: p.base })
+  render()
+}
+
+/** The new-session form, filled in; the user presses Start. Only a real click reaches here, which core requires. */
+async function launch(key, opts) {
+  try {
+    await ws.sessions.launch(opts)
+    results.set(key, { ok: true, said: 'The new-session form is open in the center: press Start.' })
+  } catch (e) {
+    results.set(key, { ok: false, said: e.message })
+  }
+  render()
+}
+
+/**
+ * A destructive button: the first click arms it red for ARM_MS, the second within that time acts
+ * (CLAUDE.md §4). `key` is `<op> <path>`.
+ */
+function arming(op, p, w) {
+  const key = `${op} ${w.path}`
+  const r = press(armed, key)
+  armed = r.armed
+  clearTimeout(armTimer)
+  if (!r.act) {
+    armTimer = setTimeout(() => {
+      armed = null
+      render()
+    }, ARM_MS + 50)
+    render()
+    return
+  }
+  void act(op, p, w)
+}
+
+async function act(op, p, w) {
+  if (acting) return
+  acting = `${op} ${w.path}`
+  results.delete(w.path)
+  render()
+  try {
+    const r = await ws.backend.call(op, { root: p.root, path: w.path, expect: { head: w.head, base: p.base?.oid ?? null } })
+    results.set(w.path, { ok: !!r.done, said: r.said, files: r.files })
+  } catch (e) {
+    results.set(w.path, { ok: false, said: e.message })
+  }
+  acting = ''
+  mainDiffs.delete(w.path)
+  await refreshWorktrees()
+  render()
+}
+
+const LABEL = { rebase: 'Rebase', merge: 'Merge', remove: 'Remove' }
+const ARMED_LABEL = { rebase: 'Rebase? Click again', merge: 'Merge? Click again', remove: 'Remove? Click again' }
+const TITLE = {
+  rebase: (b) => `Rebase this branch onto ${b}. Refused if it has uncommitted changes or its session is busy; a conflict is undone at once.`,
+  merge: (b) => `Merge this branch into ${b}, in the worktree ${b} is checked out in. Refused if either has uncommitted changes or a session there is busy; a conflict is undone at once.`,
+  remove: (b) => `Remove this worktree and delete its branch, only if ${b} has every commit on it. Never forced.`
+}
+
+function drawWorktreesTab() {
+  if (wtError && !wt) {
+    body.replaceChildren(el('p', { class: 'err empty' }, `Could not read the worktrees: ${wtError}`))
+    return
+  }
+  if (!wt) {
+    body.replaceChildren(el('p', { class: 'muted empty' }, 'Reading…'))
+    return
+  }
+  if (!wt.projects.length) {
+    body.replaceChildren(el('p', { class: 'muted empty' }, 'No sessions open. The worktrees of each session’s project show here.'))
+    return
+  }
+  const drawn = wt.projects.map(drawWtProject).filter(Boolean)
+  body.replaceChildren(...(drawn.length ? drawn : [el('p', { class: 'muted empty' }, 'No stale worktrees: every one has a session, or unmerged work touched in the last 14 days.')]))
+}
+
+function drawWtProject(p) {
+  const rows = filtered(p.worktrees, wtFilter)
+  if (wtFilter === 'stale' && !rows.length) return null
+  const over = projectOverlaps(p)
+  return el(
+    'section',
+    { class: 'project wt-project', 'data-root': p.root },
+    el(
+      'div',
+      { class: 'project-head', title: p.root },
+      el('span', { class: 'project-name' }, p.name),
+      el('span', { class: 'muted path' }, `‎${p.root}`),
+      el('span', { class: 'spacer' }),
+      ws.sessions.launch && !p.error
+        ? el(
+            'button',
+            { class: 'act', 'data-act': 'newchat', title: 'Open the new-session form for this project, with a new worktree ticked. You press Start.', onclick: () => void launch(`newchat ${p.root}`, { folder: p.root, worktree: {} }) },
+            'New chat in a worktree'
+          )
+        : null
+    ),
+    p.error ? el('p', { class: 'err note' }, p.error) : null,
+    !p.error && !p.base ? el('p', { class: 'muted note' }, 'No main or master branch here, so nothing to compare with.') : null,
+    p.base ? el('p', { class: 'muted note base', title: p.base.how }, `Compared with ${p.base.remote ? 'origin/' : ''}${p.base.name} (${p.base.how}).`) : null,
+    results.get(`newchat ${p.root}`) ? drawResult(results.get(`newchat ${p.root}`)) : null,
+    over.map((o) =>
+      el(
+        'p',
+        { class: 'overlap', title: o.files.join('\n') },
+        el('span', { class: 'warn' }, '⚠ '),
+        `${o.a} and ${o.b} both touch ${o.count === 1 ? o.files[0] : `${o.count} files: ${o.files.slice(0, 3).join(', ')}${o.count > 3 ? '…' : ''}`}`
+      )
+    ),
+    rows.map((w) => drawWtRow(p, w))
+  )
+}
+
+function drawResult(r) {
+  return el(
+    'div',
+    { class: `result ${r.ok ? 'ok' : 'bad'}` },
+    r.said,
+    r.files?.length ? el('ul', { class: 'conflicts' }, r.files.slice(0, 20).map((f) => el('li', { class: 'fpath' }, f))) : null
+  )
+}
+
+function drawWtRow(p, w) {
+  const can = actionsFor(w, p.base)
+  const dangerous = (op) => {
+    const key = `${op} ${w.path}`
+    const on = isArmed(armed, key)
+    return el(
+      'button',
+      {
+        class: `act danger${on ? ' armed' : ''}`,
+        'data-act': op,
+        title: TITLE[op](p.base?.name ?? 'main'),
+        disabled: !!acting,
+        onclick: () => arming(op, p, w)
+      },
+      acting === key ? `${LABEL[op]}…` : on ? ARMED_LABEL[op] : LABEL[op]
+    )
+  }
+  const md = mainDiffs.get(w.path)
+  const res = results.get(w.path)
+  return el(
+    'div',
+    { class: 'wt', 'data-path': w.path },
+    el(
+      'div',
+      { class: 'wt-head' },
+      el(
+        'span',
+        { class: 'row1' },
+        el('span', { class: 'branch' }, w.branch ?? (w.head ? `detached at ${w.head.slice(0, 7)}` : w.bare ? 'bare' : 'no commits yet')),
+        w.main ? el('span', { class: 'muted tag' }, 'main worktree') : null,
+        w.locked != null ? el('span', { class: 'muted tag', title: w.locked || 'locked' }, 'locked') : null,
+        w.stale ? el('span', { class: 'tag stale' }, STALE_WORDS[w.stale]) : null,
+        el('span', { class: 'spacer' }),
+        el('span', { class: 'muted vs' }, versusBase(w, p.base)),
+        el('span', { class: `state ${w.dirty ? 'dirty' : 'clean'}` }, w.error ? '' : dirtyLabel(w))
+      ),
+      el(
+        'span',
+        { class: 'row2' },
+        w.sessions.length ? [w.sessions.map((s) => statusDot(s.id)), el('span', { class: 'who' }, names(w.sessions))] : el('span', { class: 'muted who' }, 'no session'),
+        el('span', { class: 'spacer' }),
+        el('span', { class: 'muted path', title: w.path }, `‎${w.short}`)
+      ),
+      w.error ? el('span', { class: 'err' }, w.error) : null,
+      w.prunable != null ? el('span', { class: 'muted' }, `Its folder is gone${w.prunable ? ` (${w.prunable})` : ''}; git worktree prune tidies it.`) : null
+    ),
+    el(
+      'div',
+      { class: 'acts' },
+      can.diff ? el('button', { class: `act${md ? ' on' : ''}`, 'data-act': 'diff', title: `What this worktree would bring to ${p.base.name}: its commits and uncommitted changes since they parted`, onclick: () => void toggleMainDiff(p, w) }, `Diff vs ${p.base.name}`) : null,
+      can.open && ws.sessions.launch ? el('button', { class: 'act', 'data-act': 'open', title: 'Open the new-session form in this worktree. You press Start.', onclick: () => void launch(w.path, { folder: w.path }) }, 'Open a session') : null,
+      can.rebase ? dangerous('rebase') : null,
+      can.merge ? dangerous('merge') : null,
+      can.remove ? dangerous('remove') : null
+    ),
+    res ? drawResult(res) : null,
+    md ? drawMainDiff(w, md) : null
+  )
+}
+
+function drawMainDiff(w, d) {
+  if (d.loading) return el('p', { class: 'muted note' }, 'Reading the diff…')
+  if (d.error) return el('p', { class: 'err note' }, d.error)
+  if (!d.files.length) return el('p', { class: 'muted note' }, 'No changes to tracked files.')
+  return el('div', { class: 'diffs' }, d.files.map((f) => drawFile(`main ${w.path}`, f)), d.cut ? el('p', { class: 'muted note' }, 'The diff was too long to read whole; the rest is not shown.') : null)
+}
+
+
 // ---- the door: a session asks for its changes to be shown
 
 ws.door?.handle('show', async (_args, caller, { session }) => {
@@ -385,13 +696,13 @@ ws.door?.handle('show', async (_args, caller, { session }) => {
 
 ws.onViewChange(() => {
   render()
-  if (tab === 'changes') void refresh()
+  void refreshTab()
 })
 ws.backend.onStatus((s) => {
   const was = backendState
   backendState = s?.state ?? 'starting'
   schedule()
-  if (backendState === 'running' && was !== 'running') void refresh()
+  if (backendState === 'running' && was !== 'running') void refreshTab()
   else render()
 })
 ws.sessions.watch(onSessions)
@@ -401,4 +712,5 @@ lastKey = sessionsKey(sessions)
 render()
 schedule()
 await refresh()
+if (tab === 'worktrees') await refreshWorktrees()
 window.gitReady = true

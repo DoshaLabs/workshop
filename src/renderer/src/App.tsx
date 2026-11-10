@@ -12,7 +12,7 @@ import { FocusPane, Launcher } from './Sessions'
 import { SessionColumn } from './SessionColumn'
 import { Guard } from './Guard'
 import { setPalette } from './terminals'
-import { shortcutOrder, type SessionsState } from '@shared/sessions'
+import { shortcutOrder, type LaunchPrefill, type SessionsState } from '@shared/sessions'
 import { stepFrom } from '@shared/shortcuts'
 import { LEGACY_KEYS, legacyColumn, type ColumnState } from '@shared/column'
 import type { Usage } from '@shared/usage'
@@ -62,6 +62,8 @@ export function App() {
   const [usage, setUsage] = useState<Usage | null>(null)
   /** The launcher asked for (the + in the session column), over the focused session. */
   const [launcher, setLauncher] = useState(false)
+  /** What a tile filled the launcher with (workshop.sessions.launch); the user still presses Start. */
+  const [prefill, setPrefill] = useState<LaunchPrefill | undefined>(undefined)
   /** The tile column's + menu. */
   const [picker, setPicker] = useState(false)
   /** The mascot's setup screen, in the center (the button beside the theme picker). */
@@ -148,6 +150,15 @@ export function App() {
       window.core.onTileHead((key, head) => setHeads((h) => ({ ...h, [key]: head }))),
       window.core.onTilePane((key, open) => setPane((p) => (open ? key : p === key ? null : p))),
       window.core.onTileOverlay((key, open) => setOverlay((o) => (open ? key : o === key ? null : o))),
+      // A tile asked for a new session here: the launcher takes the center, filled in. Nothing starts.
+      window.core.onLaunch((p) => {
+        if (!closeDoc()) return
+        setPane(null)
+        setOverlay(null)
+        setMascotSetup(false)
+        setPrefill(p)
+        setLauncher(true)
+      }),
       window.core.onTileNotify((key, text) => {
         setChips((c) => ({ ...c, [key]: text }))
         window.setTimeout(() => setChips((c) => (c[key] === text ? { ...c, [key]: '' } : c)), 8000)
@@ -330,7 +341,7 @@ export function App() {
           <FocusPane session={focused} usage={usage} />
         ) : (
           <div className="center-scroll">
-            <Launcher recent={sessions?.recent ?? []} onStarted={() => setLauncher(false)} />
+            <Launcher recent={sessions?.recent ?? []} prefill={prefill} onStarted={() => setLauncher(false)} />
             {problems.length > 0 && (
               <div className="problems">
                 <h2>Tiles that were refused</h2>

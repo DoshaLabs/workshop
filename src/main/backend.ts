@@ -104,7 +104,7 @@ export class Backends {
 
   /** The sessions changed: every backend hears the whole list. */
   setSessions(list: BackendSession[]): void {
-    this.sessions = list.map((s) => ({ id: s.id, name: s.name, folder: s.folder, root: s.root }))
+    this.sessions = list.map((s) => ({ id: s.id, name: s.name, folder: s.folder, root: s.root, status: s.status }))
     for (const run of this.runs.values()) if (run.child && run.state === 'running') run.child.post({ type: 'sessions', sessions: this.sessions })
   }
 

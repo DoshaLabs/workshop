@@ -332,3 +332,115 @@ body:not(.pane) .l .no:first-child {
   color: var(--ws-muted);
   font-style: italic;
 }
+
+/* The Worktrees tab */
+.filter {
+  display: flex;
+  gap: 2px;
+}
+.filter button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ws-muted);
+  padding: 1px 6px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.filter button.on {
+  color: var(--ws-ink);
+  background: color-mix(in srgb, var(--ws-ink) 12%, transparent);
+}
+.wt {
+  padding: 5px 10px 6px;
+  border-top: 1px solid color-mix(in srgb, var(--ws-line) 60%, transparent);
+}
+.wt-head {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.wt .path {
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  max-width: 60%;
+}
+.wt .vs {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.state {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.state.dirty {
+  color: var(--ws-blocked);
+}
+.state.clean {
+  color: var(--ws-muted);
+}
+.tag.stale {
+  color: var(--ws-blocked);
+  font-size: 11px;
+}
+.acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.act {
+  border: 1px solid var(--ws-line);
+  border-radius: 4px;
+  background: transparent;
+  padding: 1px 7px;
+  cursor: pointer;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.act:hover:not(:disabled),
+.act.on {
+  background: var(--fill);
+}
+.act:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.act.danger.armed {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--ws-panel);
+}
+.project-head .act {
+  margin-left: 6px;
+}
+.base {
+  padding: 0 10px;
+  font-size: 11px;
+}
+.overlap {
+  margin: 2px 10px;
+  font-size: 11px;
+}
+.overlap .warn {
+  color: var(--ws-blocked);
+}
+.result {
+  margin-top: 4px;
+  font-size: 11px;
+}
+.result.ok {
+  color: var(--green);
+}
+.result.bad {
+  color: var(--red);
+}
+.conflicts {
+  margin: 2px 0 0;
+  padding-left: 16px;
+}

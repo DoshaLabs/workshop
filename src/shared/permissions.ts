@@ -16,6 +16,7 @@ export function permissionWords(p: Permissions): string[] {
   if (p.camera) out.push('use the camera')
   if (p.microphone) out.push('use the microphone')
   if (p.sessions === 'write') out.push('see your sessions and type into them')
+  else if (p.sessions === 'launch') out.push('see your sessions, and open the new-session form filled in for you to start')
   else if (p.sessions === 'read') out.push('see your sessions (names, folders, status)')
   if (p.music) out.push('see and control what Spotify or Music is playing')
   if (p.files) out.push('read files and folders you pick for it')
@@ -60,7 +61,7 @@ export function permissionChange(before: Permissions, after: Permissions): Permi
       if (!not.has(k)) {
         if (k.startsWith('door:')) ops.push(k.slice(5))
         else if (k.startsWith('net:')) net.push(k.slice(4))
-        else if (k.startsWith('sessions:')) p.sessions = k.slice(9) as 'read' | 'write'
+        else if (k.startsWith('sessions:')) p.sessions = k.slice(9) as 'read' | 'launch' | 'write'
         else (p as Record<string, boolean>)[k] = true
       }
     }

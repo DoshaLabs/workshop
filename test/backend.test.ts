@@ -70,7 +70,7 @@ describe('the kit a backend.mjs is handed', () => {
     const seen: number[] = []
     const stop = kit.onSessions((l) => seen.push(l.length))
     expect(kit.sessions()).toEqual([])
-    const s = { id: 'abc123', name: 'one', folder: '/p/wt', root: '/p' }
+    const s = { id: 'abc123', name: 'one', folder: '/p/wt', root: '/p', status: 'idle' }
     await receive({ type: 'sessions', sessions: [s] })
     expect(kit.sessions()).toEqual([s])
     stop()
@@ -150,12 +150,12 @@ describe('a backend\'s life', () => {
   })
 
   it('holds calls until it is ready, then hears the sessions first', async () => {
-    b.setSessions([{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p' }])
+    b.setSessions([{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy' }])
     b.sync([tile()])
     const p = b.call('git', 'status', { path: '.' })
     expect(last().calls()).toEqual([])
     last().say({ type: 'ready', ops: ['status'] })
-    expect(last().sent[0]).toEqual({ type: 'sessions', sessions: [{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p' }] })
+    expect(last().sent[0]).toEqual({ type: 'sessions', sessions: [{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy' }] })
     const c = last().calls()[0]
     expect(c).toMatchObject({ op: 'status', body: { path: '.' } })
     last().say({ type: 'reply', id: c.id, ok: true, result: { clean: true } })
@@ -165,8 +165,8 @@ describe('a backend\'s life', () => {
   it('passes on every change to the sessions, and only what a backend may know of them', () => {
     b.sync([tile()])
     last().say({ type: 'ready', ops: [] })
-    b.setSessions([{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', token: 'secret' } as never])
-    expect(last().sent.at(-1)).toEqual({ type: 'sessions', sessions: [{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p' }] })
+    b.setSessions([{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy', token: 'secret' } as never])
+    expect(last().sent.at(-1)).toEqual({ type: 'sessions', sessions: [{ id: 'a1b2c3', name: 'one', folder: '/p', root: '/p', status: 'busy' }] })
   })
 
   it('refuses an op the manifest does not list before the backend hears of it', async () => {
