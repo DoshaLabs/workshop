@@ -8,6 +8,7 @@ import type { Usage } from '@shared/usage'
 import { fit, focusTerminal, mount, unmount } from './terminals'
 import { SessionUsage } from './UsageMeter'
 import { Mascot } from './Mascot'
+import { KnotCanvas } from './Knot'
 
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
@@ -21,12 +22,14 @@ export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: (
   const [prompt, setPrompt] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [typing, setTyping] = useState(recent.length === 0)
 
   useEffect(() => {
     if (!cwd && recent[0]) setCwd(recent[0])
   }, [recent, cwd])
 
   const start = async (): Promise<void> => {
+    if (!cwd || busy) return
     setBusy(true)
     setError('')
     try {
@@ -40,72 +43,114 @@ export function Launcher({ recent, onStarted }: { recent: string[]; onStarted: (
       setBusy(false)
     }
   }
+  const choose = (): void => void window.core.pickFolder(cwd).then((p) => p && setCwd(p))
+  // The recent folders as cards, the chosen one first if it is not among them.
+  const cards = recent.slice(0, 6)
+  const picked = MODELS.find((m) => m.id === model)
+  const perm = PERMISSION_MODES.find((m) => m.id === mode)
 
   return (
-    <section className="launcher">
-      <h1>New session</h1>
-      <label>
-        Folder
-        <span className="row">
-          <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder="~/code/my-project" spellCheck={false} />
-          <button onClick={() => void window.core.pickFolder(cwd).then((p) => p && setCwd(p))}>Choose…</button>
-        </span>
-      </label>
-      {recent.length > 0 && (
-        <div className="chips">
-          {recent.map((r) => (
-            <button key={r} className={r === cwd ? 'on' : ''} onClick={() => setCwd(r)} title={r}>
-              {base(r)}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="grid2">
-        <label>
-          Model
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
-            {MODELS.map((m) => (
-              <option key={m.id} value={m.id} title={m.hint}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Permissions
-          <select value={mode} onChange={(e) => setMode(e.target.value)}>
-            {PERMISSION_MODES.map((m) => (
-              <option key={m.id} value={m.id} title={m.hint}>
-                {m.label}
-                {m.risky ? ' ⚠' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+    <section className="launcher launch">
+      <div className="launch-hero">
+        <KnotCanvas mode="rest" size={112} className="launch-knot" />
+        <h1>What should Claude work on?</h1>
       </div>
-      <label className="check">
-        <input type="checkbox" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
-        In a new git worktree (its own branch, so it cannot trip over other sessions)
-      </label>
-      <label>
-        Name <span className="muted">(optional)</span>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="what this session is for" />
-      </label>
-      <label>
-        First message <span className="muted">(optional)</span>
+
+      <div className="launch-compose">
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
-          rows={3}
+          rows={4}
+          autoFocus
+          placeholder="Describe the task, or leave this empty and talk to Claude once it opens."
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && e.metaKey && cwd && !busy) void start()
+            if (e.key === 'Enter' && e.metaKey) void start()
           }}
         />
-      </label>
-      {error && <p className="error">{error}</p>}
-      <button className="primary" disabled={!cwd || busy} onClick={() => void start()}>
-        {busy ? 'Starting…' : 'Start session'} <span className="muted">⌘↩</span>
-      </button>
+        <div className="launch-compose-foot">
+          <span className="launch-where" title={cwd || undefined}>
+            {cwd ? <>in <b>{base(cwd)}</b></> : 'Pick a folder below'}
+          </span>
+          <button className="launch-go" disabled={!cwd || busy} onClick={() => void start()}>
+            {busy ? 'Starting…' : 'Start session'}
+            <kbd>⌘↩</kbd>
+          </button>
+        </div>
+      </div>
+      {error && <p className="launch-error">{error}</p>}
+
+      <div className="launch-section">
+        <h2>Folder</h2>
+        {cards.length > 0 && (
+          <div className="launch-folders">
+            {cards.map((r) => (
+              <button key={r} className={`launch-folder${r === cwd ? ' on' : ''}`} onClick={() => setCwd(r)} title={r}>
+                <b>{base(r)}</b>
+                <span>{'\u200e' + (tilde(r.replace(/\/[^/]*\/?$/, '')) || '/') + '\u200e'}</span>
+              </button>
+            ))}
+            <button className="launch-folder other" onClick={choose}>
+              <b>Another folder…</b>
+              <span>opens the Finder</span>
+            </button>
+          </div>
+        )}
+        {typing || cards.length === 0 || !cards.includes(cwd) ? (
+          <span className="launch-path">
+            <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder="~/code/my-project" spellCheck={false} />
+            {cards.length === 0 && <button onClick={choose}>Choose…</button>}
+          </span>
+        ) : (
+          <button className="launch-path-show" onClick={() => setTyping(true)} title="Type a path instead">
+            Type a path instead
+          </button>
+        )}
+      </div>
+
+      <div className="launch-section">
+        <h2>Model</h2>
+        <div className="launch-pills" role="radiogroup" aria-label="Model">
+          {MODELS.map((m) => (
+            <button key={m.id} role="radio" aria-checked={m.id === model} className={m.id === model ? 'on' : ''} onClick={() => setModel(m.id)}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {picked && <p className="launch-hint">{picked.hint}</p>}
+      </div>
+
+      <div className="launch-section">
+        <h2>Permissions</h2>
+        <div className="launch-pills" role="radiogroup" aria-label="Permissions">
+          {PERMISSION_MODES.map((m) => (
+            <button
+              key={m.id}
+              role="radio"
+              aria-checked={m.id === mode}
+              className={`${m.id === mode ? 'on' : ''}${m.risky ? ' risky' : ''}`}
+              onClick={() => setMode(m.id)}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        {perm && <p className={`launch-hint${perm.risky ? ' risky' : ''}`}>{perm.hint}</p>}
+      </div>
+
+      <div className="launch-section launch-extras">
+        <label className="launch-switch">
+          <input type="checkbox" role="switch" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
+          <span className="track" aria-hidden="true" />
+          <span>
+            <b>Its own worktree</b>
+            <span>A new branch in its own folder, so it can’t trip over other sessions</span>
+          </span>
+        </label>
+        <label className="launch-name">
+          <b>Name</b>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="optional, e.g. login fix" />
+        </label>
+      </div>
     </section>
   )
 }

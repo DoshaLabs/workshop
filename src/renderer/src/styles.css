@@ -292,27 +292,27 @@ button {
   flex-direction: column;
   gap: 12px;
 }
-.launcher h1 {
+.launcher:not(.launch) h1 {
   margin: 0 0 4px;
   font-size: 20px;
   font-weight: 600;
 }
-.launcher label {
+.launcher:not(.launch) label {
   display: flex;
   flex-direction: column;
   gap: 4px;
   color: var(--ws-muted);
   font-size: 12px;
 }
-.launcher label.check {
+.launcher:not(.launch) label.check {
   flex-direction: row;
   align-items: center;
   gap: 8px;
   font-size: 13px;
 }
-.launcher input:not([type]),
-.launcher select,
-.launcher textarea {
+.launcher:not(.launch) input:not([type]),
+.launcher:not(.launch) select,
+.launcher:not(.launch) textarea {
   font: inherit;
   font-size: 13px;
   color: var(--ws-ink);
@@ -322,22 +322,22 @@ button {
   padding: 7px 9px;
   outline: none;
 }
-.launcher textarea {
+.launcher:not(.launch) textarea {
   resize: vertical;
 }
-.launcher input:focus,
-.launcher select:focus,
-.launcher textarea:focus {
+.launcher:not(.launch) input:focus,
+.launcher:not(.launch) select:focus,
+.launcher:not(.launch) textarea:focus {
   border-color: var(--ws-accent);
 }
-.launcher .row {
+.launcher:not(.launch) .row {
   display: flex;
   gap: 6px;
 }
-.launcher .row input {
+.launcher:not(.launch) .row input {
   flex: 1;
 }
-.launcher button,
+.launcher:not(.launch) button,
 .chips button {
   border: 1px solid var(--ws-line);
   background: transparent;
@@ -365,7 +365,7 @@ button {
   color: var(--ws-accent);
   border-color: var(--ws-accent);
 }
-.launcher button.primary {
+.launcher:not(.launch) button.primary {
   align-self: flex-start;
   background: var(--ws-accent);
   border-color: var(--ws-accent);
@@ -373,11 +373,11 @@ button {
   font-weight: 600;
   padding: 8px 16px;
 }
-.launcher button.primary:disabled {
+.launcher:not(.launch) button.primary:disabled {
   opacity: 0.5;
   cursor: default;
 }
-.launcher button.primary .muted {
+.launcher:not(.launch) button.primary .muted {
   color: inherit;
   opacity: 0.7;
 }
@@ -1969,4 +1969,418 @@ a.md-path:hover {
   .rec-btn.is-live .rec-btn-dot {
     animation: none;
   }
+}
+
+/* ==== The launcher: the empty center, the first screen anyone sees (Sessions.tsx).
+   The task is the hero: a serif question over the box the first message goes in, Start inside it.
+   The choices below are all on show (cards and pills, not drop-downs), each saying in words what
+   it will do. Colours are the theme's; the old `.launcher` rules above now serve only the
+   mascot setup screen. ==== */
+.launcher.launch {
+  max-width: 640px;
+  padding: 3vh 0 32px;
+  gap: 28px;
+  font-size: 15px;
+}
+.launch-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.launch-knot {
+  width: 112px;
+  height: 112px;
+}
+.launch-hero h1 {
+  margin: 0;
+  font-family: var(--ws-font-serif);
+  font-size: clamp(26px, 2.6vw, 34px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--ws-ink);
+  text-wrap: balance;
+}
+.launch-compose {
+  display: flex;
+  flex-direction: column;
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: 18px;
+  box-shadow: 0 10px 40px color-mix(in srgb, var(--ws-bg) 70%, transparent);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.launch-compose:focus-within {
+  border-color: var(--ws-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--ws-accent) 18%, transparent), 0 10px 40px color-mix(in srgb, var(--ws-bg) 70%, transparent);
+}
+.launch-compose textarea {
+  font-family: var(--ws-font-serif);
+  font-size: 19px;
+  line-height: 1.5;
+  color: var(--ws-ink);
+  background: transparent;
+  border: 0;
+  outline: none;
+  resize: vertical;
+  min-height: 120px;
+  padding: 18px 20px 6px;
+}
+.launch-compose textarea::placeholder {
+  color: var(--ws-muted);
+  opacity: 0.8;
+}
+.launch-compose-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 10px 10px 20px;
+}
+.launch-where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ws-muted);
+  font-size: 15px;
+}
+.launch-where b {
+  color: var(--ws-ink);
+  font-weight: 700;
+}
+.launch-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 12px;
+  padding: 11px 18px;
+  background: var(--ws-accent);
+  color: var(--ws-bg);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.1s, filter 0.15s;
+}
+.launch-go:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.launch-go:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.launch-go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.launch-go kbd {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.7;
+}
+.launch-error {
+  margin: -16px 0 0;
+  color: var(--ws-blocked);
+  font-size: 15px;
+}
+.launch-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.launch-section h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ws-ink);
+}
+.launch-folders {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
+}
+.launch-folder {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--ws-line);
+  background: color-mix(in srgb, var(--ws-panel) 70%, transparent);
+  color: var(--ws-ink);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.launch-folder b {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 700;
+}
+.launch-folder span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  color: var(--ws-muted);
+  font-size: 13px;
+}
+.launch-folder:hover {
+  border-color: color-mix(in srgb, var(--ws-accent) 50%, var(--ws-line));
+}
+.launch-folder.on {
+  border-color: var(--ws-accent);
+  background: color-mix(in srgb, var(--ws-accent) 16%, var(--ws-panel));
+}
+.launch-folder.other {
+  border-style: dashed;
+  background: transparent;
+}
+.launch-folder.other b {
+  color: var(--ws-muted);
+  font-weight: 600;
+}
+.launch-path {
+  display: flex;
+  gap: 8px;
+}
+.launch-path input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--ws-font-mono);
+  font-size: 14px;
+  color: var(--ws-ink);
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  outline: none;
+}
+.launch-path input:focus {
+  border-color: var(--ws-accent);
+}
+.launch-path button,
+.launch-path-show {
+  font: inherit;
+  font-size: 14px;
+  color: var(--ws-muted);
+  background: transparent;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.launch-path-show {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-color: transparent;
+  padding: 2px 0;
+  font-size: 14px;
+}
+.launch-path-show:hover {
+  color: var(--ws-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.launch-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.launch-pills button {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ws-muted);
+  background: transparent;
+  border: 1px solid var(--ws-line);
+  border-radius: 999px;
+  padding: 7px 15px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.launch-pills button:hover {
+  color: var(--ws-ink);
+}
+.launch-pills button.on {
+  color: var(--ws-bg);
+  background: var(--ws-accent);
+  border-color: var(--ws-accent);
+}
+.launch-pills button.risky.on {
+  background: var(--ws-blocked);
+  border-color: var(--ws-blocked);
+}
+.launch-hint {
+  margin: 0;
+  color: var(--ws-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.launch-hint.risky {
+  color: var(--ws-blocked);
+}
+.launch-extras {
+  gap: 16px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ws-line);
+}
+.launch-switch {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+}
+.launch-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.launch-switch .track {
+  flex: none;
+  position: relative;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--ws-line);
+  transition: background 0.15s;
+}
+.launch-switch .track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ws-ink);
+  transition: transform 0.15s;
+}
+.launch-switch input:checked + .track {
+  background: var(--ws-accent);
+}
+.launch-switch input:checked + .track::after {
+  transform: translateX(18px);
+  background: var(--ws-bg);
+}
+.launch-switch input:focus-visible + .track {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 2px;
+}
+.launch-switch > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.launch-switch b,
+.launch-name b {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ws-ink);
+}
+.launch-switch > span:last-child > span {
+  color: var(--ws-muted);
+  font-size: 14px;
+}
+.launch-name {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.launch-name input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ws-ink);
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  padding: 9px 12px;
+  outline: none;
+}
+.launch-name input:focus {
+  border-color: var(--ws-accent);
+}
+.launch button:focus-visible {
+  outline: 2px solid var(--ws-accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .launch * {
+    transition: none !important;
+  }
+}
+
+/* ==== Menus at a readable size (Colin, 10 Nov 2026: "the font is too small on most of the menu
+   sections"). The + menu and the mascot setup screen were set at 10-13 px; they now start at 15,
+   with nothing under 13. Same selectors as the rules above, so these win by coming later. ==== */
+.picker {
+  font-size: 15px;
+}
+.picker h3 {
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.picker-note,
+.picker-problem,
+.picker-text span,
+.pick-hint,
+.pick-act,
+.pick-wide,
+.pick-confirm,
+.pick-more {
+  font-size: 14px;
+}
+.picker input,
+.picker textarea {
+  font-size: 15px;
+}
+.pick-tabs button {
+  font-size: 14px;
+  padding: 7px 4px 8px;
+}
+.pick-state,
+.pick-perms,
+.pick-full,
+.pick-prompt code {
+  font-size: 13px;
+}
+.launcher.mascot-setup {
+  font-size: 15px;
+}
+.launcher.mascot-setup h1 {
+  font-size: 24px;
+}
+.launcher.mascot-setup label {
+  font-size: 14px;
+}
+.launcher.mascot-setup input:not([type]),
+.launcher.mascot-setup select,
+.launcher.mascot-setup textarea,
+.mascot-setup input[type='number'] {
+  font-size: 15px;
+}
+.mascot-reco ul {
+  font-size: 14px;
+}
+.mascot-state-name small,
+.mascot-pose small {
+  font-size: 13px;
 }
