@@ -21,6 +21,7 @@ import { runSmoke } from './smoke'
 import { scaffoldTile } from './scaffold'
 import { startSessions, type CoreSessions } from './core-sessions'
 import { MascotStore } from './mascot'
+import { ProjectRoots } from './project'
 import type { SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 
@@ -370,24 +371,38 @@ async function createTile(name: string, idea: string): Promise<{ id: string; fol
   return { id: made.id, folder: made.folder }
 }
 
-/** What a tile with "sessions" sees of them: no ids it could not use, no titles (they quote the conversation). */
-function tileSessions(s: SessionsState): { id: string; name: string; project: string; status: string; focused: boolean; open: boolean }[] {
-  return s.sessions.map((v) => ({ id: v.id, name: v.name, project: v.cwd, status: v.status, focused: v.id === s.focus, open: v.open }))
+/**
+ * What a tile with "sessions" sees of them: no ids it could not use, no titles (they quote the
+ * conversation). `project` is the folder the session started in; `root` the project it belongs
+ * to (the repository's root, shared by its worktrees: project.ts).
+ */
+function tileSessions(s: SessionsState): { id: string; name: string; project: string; root: string; status: string; focused: boolean; open: boolean }[] {
+  return s.sessions.map((v) => ({ id: v.id, name: v.name, project: v.cwd, root: roots.get(v.id, v.cwd), status: v.status, focused: v.id === s.focus, open: v.open }))
 }
 const lastPaste = new Map<string, number>()
+const roots = new ProjectRoots()
 
+/** Every session's root is resolved before a tile hears of it; then the latest state goes out. */
 function pushSessions(s: SessionsState): void {
-  const list = tileSessions(s)
-  for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
+  void (async () => {
+    await roots.ready(s.sessions)
+    // A session may have started while git answered: resolve it too (nothing to wait for otherwise).
+    const latest = core?.sessions.getState() ?? s
+    await roots.ready(latest.sessions)
+    const list = tileSessions(latest)
+    for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
+  })()
 }
 function pushUsage(u: Usage): void {
   for (const g of liveByTile.values()) if (g.tile.manifest.permissions.usage) g.wc.send(CH.tileUsageChanged, u)
 }
 
 function bridge(): void {
-  ipcMain.handle(CH.tileSessionsList, (e) => {
+  ipcMain.handle(CH.tileSessionsList, async (e) => {
     need(e, 'sessions')
-    return core ? tileSessions(core.sessions.getState()) : []
+    if (!core) return []
+    await roots.ready(core.sessions.getState().sessions)
+    return tileSessions(core.sessions.getState())
   })
   ipcMain.handle(CH.tileSessionsPaste, (e, id: string, text: string) => {
     const { tile } = need(e, 'sessions')

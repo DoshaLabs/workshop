@@ -156,7 +156,7 @@ if (hello) {
       forget: (handle: string): Promise<boolean> => gate('files', () => ipcRenderer.invoke(CH.filesForget, handle))
     },
     sessions: {
-      /** The sessions: [{ id, name, project, status, focused, open }]. Needs "sessions": "read" or "write". */
+      /** The sessions: [{ id, name, project (the start folder), root (its repo root), status, focused, open }]. Needs "sessions": "read" or "write". */
       list: (): Promise<unknown> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsList)),
       watch: (fn: (list: unknown) => void): (() => void) => {
         needs('sessions')

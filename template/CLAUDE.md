@@ -97,7 +97,11 @@ await workshop.storage.get(key)             // any JSON value, or null
 await workshop.storage.set(key, value)      // null removes it. 5 MB for the whole tile.
 workshop.storage.watch(key, (value) => {})  // also fires for your own writes
 
-await workshop.sessions.list()              // [{ id, name, project, status, focused, open }]
+await workshop.sessions.list()              // [{ id, name, project, root, status, focused, open }]
+                                            // project: the folder the session started in
+                                            // root: the project it belongs to: its git repository's root
+                                            //   (every worktree of one repo shares it), else the start folder.
+                                            //   File things by root.
 workshop.sessions.watch((list) => {})
 await workshop.sessions.paste(id, text)     // "write" only: types into a session and submits
 

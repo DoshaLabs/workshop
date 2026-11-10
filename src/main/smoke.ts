@@ -4,6 +4,7 @@
 
 import type { BrowserWindow, WebContents } from 'electron'
 import { mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -184,6 +185,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await files(check, ctx)
     await themes(check, ctx)
     await mascot(check, ctx)
+    await projects(check, ctx)
     await instances(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
@@ -928,4 +930,42 @@ async function measureCpu({ win, core }: { win: BrowserWindow; core: Ctx['core']
   await sleep(1000)
   await sample('10 sessions working, every Knot off screen')
   for (const id of ids) await core.sessions.kill(id)
+}
+
+// ── Track F ──────────────────────────────────────────────────────────────────
+
+/**
+ * A session's project is its repository's root (project.ts): a session started in a worktree
+ * reports the main repo as `root` beside its own start folder as `project`, and Reminders files
+ * what it adds under the repo.
+ */
+async function projects(check: (name: string, ok: boolean, detail?: string) => void, { win, door, liveByTile, core }: Ctx): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  const git = (cwd: string, ...args: string[]): void => void execFileSync('git', ['-c', 'user.name=smoke', '-c', 'user.email=smoke@example.com', ...args], { cwd, stdio: 'ignore' })
+  const repo = await realpath(await mkdtemp(join(tmpdir(), 'ws-repo-')))
+  git(repo, 'init', '-q')
+  await writeFile(join(repo, 'a.txt'), 'a')
+  git(repo, 'add', '.')
+  git(repo, 'commit', '-q', '-m', 'one')
+  const wt = join(repo, '.claude', 'worktrees', 'smoke')
+  git(repo, 'worktree', 'add', '-q', wt, '-b', 'smoke')
+  const made = await js(`window.core.newSession({ cwd: ${JSON.stringify(wt)}, name: 'in-a-worktree' })`)
+  const id = String(made.id)
+  const plainDir = await realpath(await mkdtemp(join(tmpdir(), 'ws-plain-')))
+  const other = String((await js(`window.core.newSession({ cwd: ${JSON.stringify(plainDir)}, name: 'no-repo' })`)).id)
+  await waitFor('the worktree session to start', async () => (await screen(id)).includes('FAKE CLAUDE READY'))
+  const list = (await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.sessions.list()`)) as { id: string; project: string; root: string }[]
+  const me = list.find((s) => s.id === id)
+  check('projects: a worktree session reports its start folder and its repo’s root', me?.project === wt && me?.root === repo, JSON.stringify(me))
+  const plain = list.find((s) => s.id === other)
+  check('projects: a session outside any repo is its own project', plain?.project === plainDir && plain?.root === plainDir, JSON.stringify(plain))
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'tile reminders add "From the worktree"\\r'); true`)
+  await waitFor('the reminder from the worktree', async () => (await screen(id)).includes('DONE tile reminders add'))
+  const all = await post(door.port, '/tile/reminders', { op: 'list', args: ['--all'] }, { Authorization: `Bearer ${door.token}` })
+  const r = (all.json.result?.reminders ?? []).find((x: { text: string }) => x.text === 'From the worktree')
+  check('projects: Reminders files a worktree session’s reminder under the repo', r?.project === repo, JSON.stringify(r))
+  if (r) await post(door.port, '/tile/reminders', { op: 'rm', args: [r.id] }, { Authorization: `Bearer ${door.token}` })
+  await core.sessions.kill(id)
+  await core.sessions.kill(other)
 }

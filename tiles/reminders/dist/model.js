@@ -61,6 +61,15 @@ export function sweep(state, now) {
 
 export const baseName = (p) => p.split('/').filter(Boolean).pop() ?? '/'
 
+/**
+ * The project a session's things are filed under: its repository's root (`root`, which every
+ * worktree of one repo shares), else the folder it started in (`project`, from a workshop too old
+ * to report a root), else ''.
+ */
+export function sessionProject(s) {
+  return str(s?.root) || str(s?.project)
+}
+
 /** Every project anything is filed under, plus `extra` (the sessions' folders), by folder name. */
 export function projectsOf(state, extra = []) {
   const set = new Set(extra.filter(Boolean))
