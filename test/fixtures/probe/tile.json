@@ -1,0 +1,15 @@
+{
+  "id": "probe",
+  "name": "Probe",
+  "version": "0.0.1",
+  "workshop": "^1",
+  "author": "workshop smoke test",
+  "hint": "Tries to get out of the sandbox; loaded only by npm run smoke",
+  "entry": "dist/index.html",
+  "pane": true,
+  "permissions": {
+    "storage": true,
+    "notify": true,
+    "door": { "ops": ["echo", "slow"], "timeoutMs": 500 }
+  }
+}

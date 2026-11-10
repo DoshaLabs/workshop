@@ -1,0 +1,197 @@
+/* Every colour is a theme variable (src/shared/themes.ts). */
+
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--ws-bg);
+  color: var(--ws-ink);
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  overflow: hidden;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: 220px 1fr 380px;
+  gap: 8px;
+  height: 100%;
+  padding: 40px 8px 8px;
+  -webkit-app-region: drag;
+}
+.app > * {
+  -webkit-app-region: no-drag;
+}
+.col {
+  min-height: 0;
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.col-title {
+  padding: 10px 12px;
+  color: var(--ws-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.empty {
+  padding: 0 12px;
+  color: var(--ws-muted);
+}
+
+.center {
+  display: flex;
+}
+.launcher {
+  margin: auto;
+  max-width: 560px;
+  padding: 24px;
+  color: var(--ws-muted);
+}
+.launcher h1 {
+  color: var(--ws-ink);
+  font-weight: 600;
+}
+.problems h2 {
+  font-size: 13px;
+  color: var(--ws-blocked);
+}
+.problem code {
+  color: var(--ws-ink);
+  word-break: break-all;
+}
+.pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.pane-face {
+  flex: 1;
+}
+
+.tiles {
+  background: transparent;
+  border: none;
+}
+.tile-scroll {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tile {
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  overflow: hidden;
+  flex: none;
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--ws-line);
+}
+.head .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.icon.letter {
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--ws-accent);
+  color: var(--ws-bg);
+  font-size: 10px;
+  font-weight: 700;
+}
+.badge,
+.dev,
+.chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--ws-line);
+  color: var(--ws-muted);
+}
+.chip {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-color: var(--ws-accent);
+  color: var(--ws-accent);
+}
+.ghost {
+  border: none;
+  background: transparent;
+  color: var(--ws-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+.ghost:hover {
+  color: var(--ws-ink);
+  background: var(--ws-line);
+}
+.face {
+  position: relative;
+}
+.away {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ws-muted);
+}
+.plus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.plus button {
+  border: 1px dashed var(--ws-line);
+  background: transparent;
+  color: var(--ws-muted);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.tile-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+.tile-page {
+  position: fixed;
+  pointer-events: auto;
+}
+.tile-page webview {
+  width: 100%;
+  height: 100%;
+  display: flex;
+}

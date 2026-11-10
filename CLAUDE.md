@@ -4,10 +4,32 @@ A desktop app for people who use Claude Code: several Claude Code sessions in on
 column of small apps ("tiles") beside them that anyone can write, share and install. Open source,
 in the DoshaLabs GitHub org. macOS and Claude Code first.
 
-**Status (10 Nov 2026): this file is the plan. Nothing in this repo is built yet.** Every section
-says what was decided and why, so that whoever starts building, person or Claude session, does not
-have to re-derive it. When code lands, rewrite the matching section to describe what exists and
-delete the plan wording.
+**Status (10 Nov 2026): roadmap step 1 is built (the tile host); the rest of this file is still
+the plan.** Every section says what was decided and why, so that whoever starts building, person or
+Claude session, does not have to re-derive it. When code lands, rewrite the matching section to
+describe what exists and delete the plan wording.
+
+**What exists.** `npm run dev` · `npm test` (unit) · `npm run smoke` (launches the app with a
+throwaway profile and `test/fixtures/probe`, a tile that tries every way out of the sandbox, and
+drives the door; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture of the window).
+
+- `src/shared/manifest.ts`: the tile.json validator and the per-request network rule. Unknown
+  permissions are refused, `backend` is refused, `net` is https/wss to listed hosts only.
+- `src/main/tiles.ts`: finds tiles (`--dev-tile=<folder>`, then `tiles/`, then userData `tiles/`;
+  an installed tile can never take a core tile's id), and arms each one's session: files on
+  `tile://<id>/` (only the entry's folder), requests filtered, a dead proxy for everything
+  undeclared (closes WebRTC and DNS side doors), media only if declared, no downloads or screen
+  capture.
+- `src/main/index.ts`: guards every webview (core's sandboxed preload only) and answers the bridge,
+  checking the sender's webview, top frame and origin on every call.
+- `src/preload/tile.ts`: `window.workshop`. Built separately (`vite.tile-preload.config.ts`)
+  because a sandboxed preload must be one file. contextBridge copies getters once, so live values
+  cross as functions and are rebuilt into properties with `executeInMainWorld`.
+- `src/main/storage.ts`, `src/main/door.ts`, `bin/workshop-tile.mjs`: storage (5 MB, atomic) and
+  the door (127.0.0.1, bearer token, caller from the token, browser `Origin` refused).
+- `tiles/wikipedia/`: the reference tile, plain JS with no build step.
+- Not yet: sessions, `sessions`/`usage`/`transcripts`/`files` (accepted in manifests, not yet in
+  the bridge), `multiple`, the trusted tier, `entry` pointing at a dev server, theme picker.
 
 Terms used throughout:
 
@@ -287,6 +309,8 @@ This generalizes what deck does by hand for each tile (`/deck:mol`, `/deck:remin
 - Each installed tile's `skill/` folder is handed to new sessions with `--plugin-dir`, which is
   repeatable (verified on Claude Code 2.1.322). A session already running does not see a tile
   installed after it started.
+  **Unresolved:** `--plugin-dir` expects a plugin layout (`skills/<name>/SKILL.md`), not a bare
+  `skill/SKILL.md`. Settle the tile folder's layout before sessions are wired (step 3).
 
 ### Install, update, develop
 

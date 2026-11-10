@@ -1,0 +1,33 @@
+{
+  "name": "workshop",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "description": "Claude Code sessions in one window, beside a column of small apps anyone can write.",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "vite build --config vite.tile-preload.config.ts --logLevel warn && electron-vite dev --watch",
+    "build": "electron-vite build && vite build --config vite.tile-preload.config.ts --logLevel warn",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "smoke": "npm run build && electron . --smoke"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "semver": "^7.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@types/semver": "^7.7.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "electron": "^44.3.0",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6",
+    "vitest": "^4.0.0"
+  }
+}
