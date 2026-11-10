@@ -114,7 +114,7 @@ The first build session's notes, open issues and second-pass list: `docs/progres
 - Usage: the top bar's 5-hour and weekly meters are always there (a dash and a tooltip until a
   session reports); each session shows its context % and cost.
 - Shortcuts (`src/shared/shortcuts.ts`): ⌘1–9 (sessions in the order they were started), ⌘[ ⌘],
-  ⌘N. Main catches them in `before-input-event` on core's window and every tile's page.
+  ⌘N, ⌘⇧O (the screen recorder). Main catches them in `before-input-event` on core's window and every tile's page.
 - The tile column's state (off, extra instances, heights) is `settings.column` in core's
   settings (`src/shared/column.ts`), migrated once from the window's old localStorage.
 - The status mark (section 8): the Knot (`src/shared/knot.ts`, `Knot.tsx`) on every session and
@@ -122,6 +122,14 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   `Mascot.tsx`, `MascotSetup.tsx`, `mascot-store.ts`); `notify({ attention: true })` flares or leaps it.
   Smoke: `WORKSHOP_SHOT_MASCOT=<dir>` saves pictures, `WORKSHOP_SMOKE_SHEET=<png>` tries a sheet
   in the setup screen (throwaway profile only), `WORKSHOP_MEASURE_CPU=1` prints renderer CPU.
+- The screen recorder (`src/main/recorder.ts`, `src/shared/recorder.ts`, the frame's page in
+  `src/renderer/src/recorder/`, its preload `src/preload/recorder.ts`, the sound helper
+  `native/recaudio.swift`; `docs/progress/2026-11-10-recorder.md`): deck's, carried over. The top
+  bar's button or ⌘⇧O opens a 9:16 frame you drag anywhere that films what is under it at
+  1080 × 1920, with the Mac's sound through BlackHole (the user installs it) and optionally the
+  microphone, into `~/Movies/workshop/` (ffmpeg makes it Instagram's H.264 if installed). Core's
+  own, on its own partition: tiles still get no screen capture. Smoke films a test pattern, never
+  the screen.
 - Preview pane (`PreviewPane.tsx`, `preview-store.ts`, `src/main/preview.ts`): a file a session
   points at, in the center. Markdown through the tree with live task boxes (one character
   written), code and text in mono with line numbers, `edit` and ⌘S; writes locked to the mtime
@@ -236,6 +244,7 @@ are actually building tiles.
 | Files tile | A plain directory tree |
 | Web-app tiles | Any site registered by name and URL, as a tile |
 | Status mark | The Knot, whose size, speed and colour are each session's status; a sprite pack (Foxtrot recommended) may replace it (section 8) |
+| Screen recorder | A 9:16 frame for Reels / Stories you drag anywhere, with the Mac's sound (from deck) |
 
 The phone remote (deck's second renderer over Tailscale) is **not** in the launch scope.
 
@@ -270,7 +279,8 @@ say plainly that we provide no ROMs, discs or BIOS files.
   a model call of its own, so `workshop.model` returns with it (section 5).
 - **Broadcast** (the MLB gamecast) is out for good.
 - Colin's personal tiles (Studio, Molecule, Lesson, Space, Sleepgod, the marathon stage, the body
-  pad, the screen recorder) stay in deck. Some may be published later as his own tiles.
+  pad) stay in deck. Some may be published later as his own tiles. The screen recorder came over
+  as part of core (Colin, 10 Nov 2026).
 
 ---
 
