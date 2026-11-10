@@ -4,6 +4,7 @@
 // CLAUDE.md §5 "The bridge".
 
 import { contextBridge, ipcRenderer } from 'electron'
+import { FONTS_PREFIX, FONT_FILES } from '../shared/fonts'
 import { CH, type DoorCall, type TileHead, type TileHello, type TileView } from '../shared/ipc'
 
 const hello = ipcRenderer.sendSync(CH.hello) as TileHello | null
@@ -27,6 +28,17 @@ if (hello) {
     if (vars['--ws-scheme']) root.style.colorScheme = vars['--ws-scheme']
   }
   applyVars()
+
+  // Core's fonts, so `var(--ws-font)` and friends name faces the page really has. They are fetched
+  // from the tile's own origin; a page whose CSP has no `font-src 'self'` just keeps the system's.
+  const fontBase = location.protocol === 'tile:' ? '' : `tile://${hello.id}`
+  for (const f of FONT_FILES) {
+    try {
+      document.fonts.add(new FontFace(f.family, `url(${fontBase}${FONTS_PREFIX}${f.file})`, { style: f.style, weight: f.weight, display: 'swap' }))
+    } catch {
+      // no fonts API this early: the fallbacks in the stacks apply
+    }
+  }
   if (!document.documentElement) document.addEventListener('readystatechange', applyVars, { once: true })
 
   const sub = <T>(set: Set<T>, fn: T): (() => void) => {

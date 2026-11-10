@@ -49,6 +49,10 @@ The first build session's notes, open issues and second-pass list: `docs/progres
   Dev tile folders are remembered in settings (`devTiles`) and loaded at every start.
 - `bin/workshop.mjs tile dev <folder>`: loads a tile under development (reload on change, or a
   dev-server `entry`); hands the folder to the app if it is already running.
+- Fonts (`src/shared/fonts.ts`, files and licences in `assets/fonts/`, all OFL): Nunito for the
+  interface, JetBrains Mono for terminals and code, Source Serif 4 for prose that is read. Tiles
+  get them as `--ws-font`, `--ws-font-mono`, `--ws-font-serif`; the bridge loads the faces from
+  `tile://<id>/~fonts/`, so a tile's CSP needs `font-src 'self'`. Latin subsets only.
 - Themes: deck's whole catalog (`src/shared/themes.ts`), saved by main (`src/main/settings.ts`),
   picked from the top bar, pushed to every tile as `--ws-*`. Deep Space's sky is
   `src/renderer/src/cosmos.ts`. Glass is solid until its picture wall comes over from deck.

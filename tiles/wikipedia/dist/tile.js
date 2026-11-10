@@ -76,6 +76,9 @@ function el(tag, props = {}, ...kids) {
   return e
 }
 
+/** replaceChildren that skips what a condition left behind: the DOM would draw null and false as words. */
+const put = (box, ...kids) => box.replaceChildren(...kids.flat().filter((k) => k != null && k !== false))
+
 const plain = (err) => (err instanceof Error ? err.message : String(err))
 /** A click handled here goes no further, so it never reaches the picture's own click. */
 const only = (fn) => (e) => {
@@ -396,7 +399,7 @@ function renderBg() {
   const want = large || src
   const img = bgBox.firstElementChild
   if (img?.getAttribute('src') === want) return
-  bgBox.replaceChildren(want ? el('img', { class: 'wiki-img', src: want, alt: '', draggable: 'false' }) : '')
+  put(bgBox, want ? el('img', { class: 'wiki-img', src: want, alt: '', draggable: 'false' }) : '')
 }
 
 function timeThere(row) {
@@ -410,14 +413,14 @@ function timeThere(row) {
 
 /** The first place large (glyph, temperature, the word for it, then its name with today's high and low), the others a line each. */
 function renderWeather() {
-  if (overlay() !== 'picture') return weatherBox.replaceChildren()
+  if (overlay() !== 'picture') return put(weatherBox)
   const edit = only(openPlaces)
-  if (!places?.length) return weatherBox.replaceChildren(el('button', { class: 'wiki-weather wiki-weather-none', title: 'Show the weather somewhere', onclick: edit }, '+ weather'))
+  if (!places?.length) return put(weatherBox, el('button', { class: 'wiki-weather wiki-weather-none', title: 'Show the weather somewhere', onclick: edit }, '+ weather'))
   const rows = weather.filter((r) => places.some((p) => p.lat === r.place.lat && p.lon === r.place.lon))
   const [first, ...others] = rows
-  if (!first) return weatherBox.replaceChildren(el('button', { class: 'wiki-weather wiki-weather-none', title: weatherErr ?? 'Weather places', onclick: edit }, weatherErr ? 'no weather' : 'weather…'))
+  if (!first) return put(weatherBox, el('button', { class: 'wiki-weather wiki-weather-none', title: weatherErr ?? 'Weather places', onclick: edit }, weatherErr ? 'no weather' : 'weather…'))
   const now = look(first.code, first.day)
-  weatherBox.replaceChildren(
+  put(weatherBox, 
     el(
       'button',
       { class: 'wiki-weather', onclick: edit, title: `${first.place.name}: feels like ${deg(first.feels)}, wind ${first.wind ?? '–'} ${first.unit === 'F' ? 'mph' : 'km/h'} · click to change places` },
@@ -433,7 +436,7 @@ function renderWeather() {
 }
 
 function renderPicture() {
-  if (!pic) return main.replaceChildren(el('div', { class: 'wiki-empty' }, picErr ?? 'wikipedia…'))
+  if (!pic) return put(main, el('div', { class: 'wiki-empty' }, picErr ?? 'wikipedia…'))
   const steps = el(
     'span',
     { class: 'wiki-steps' },
@@ -441,7 +444,7 @@ function renderPicture() {
     el('button', { title: 'Another picture', onclick: only(() => (next(), restartCycle())) }, '›')
   )
   const tag = pic.today ? 'picture of the day' : `picture of the day · ${dayLabel(pic.date)}`
-  main.replaceChildren(
+  put(main, 
     el(
       'div',
       { class: 'wiki-text' },
@@ -465,7 +468,7 @@ function renderLightbox() {
   const want = view === 'overlay' && pic ? `${pic.date}|${at}|${shown.length}` : ''
   if (want === boxFor) return
   boxFor = want
-  if (!want) return lightbox.replaceChildren()
+  if (!want) return put(lightbox)
   const close = only(() => void ws.closeOverlay())
   const steps = el(
     'span',
@@ -473,7 +476,7 @@ function renderLightbox() {
     el('button', { title: 'The picture before', disabled: at <= 0, onclick: only(() => (prev(), restartCycle())) }, '‹'),
     el('button', { title: 'Another picture', onclick: only(() => (next(), restartCycle())) }, '›')
   )
-  lightbox.replaceChildren(
+  put(lightbox, 
     el(
       'div',
       { class: 'wikibox-scrim', onclick: close },
@@ -514,13 +517,13 @@ function renderResults() {
         )
       )
     )
-  main.replaceChildren(list)
+  put(main, list)
 }
 
 function renderArticle() {
   const a = article
   const back = hits ? el('button', { class: 'wiki-back', title: 'Back to results', onclick: only(() => ((article = null), render())) }, '‹ results') : el('button', { class: 'wiki-back', title: 'Back to the picture (Esc)', onclick: only(reset) }, '‹ picture')
-  main.replaceChildren(
+  put(main, 
     el(
       'div',
       { class: 'wiki-panel wiki-article' },
@@ -549,11 +552,11 @@ function renderPlaces() {
       } else if (e.key === 'Enter' && placeHits?.[0]) pickPlace(placeHits[0])
     })
     panel = el('div', { class: 'wiki-panel wiki-places', onclick: (e) => e.stopPropagation() }, el('div', { class: 'wiki-places-head' }), el('div', { class: 'wiki-places-list' }), input, el('div', { class: 'wiki-places-hits' }))
-    main.replaceChildren(panel)
+    put(main, panel)
   }
   const first = places === null
   const [head, list, input] = panel.children
-  head.replaceChildren(
+  put(head, 
     el('span', { class: 'wiki-tag' }, first ? 'weather: where are you?' : 'weather'),
     el(
       'span',
@@ -562,7 +565,7 @@ function renderPlaces() {
     ),
     el('button', { class: 'wiki-back', title: 'Close (Esc)', onclick: only(closePlaces) }, first ? 'not now' : 'done')
   )
-  list.replaceChildren(
+  put(list, 
     ...(places ?? []).map((p, i) =>
       el(
         'div',
@@ -583,7 +586,7 @@ function renderPlaceHits() {
   const box = main.querySelector('.wiki-places-hits')
   if (!box) return
   const input = main.querySelector('.wiki-place-input')
-  box.replaceChildren(
+  put(box, 
     placeErr && el('div', { class: 'wiki-none' }, placeErr),
     placeHits && placeHits.length === 0 && el('div', { class: 'wiki-none' }, `Nowhere called “${input?.value.trim() ?? ''}”`),
     ...(placeHits ?? []).map((p) => el('button', { class: 'wiki-hit wiki-place-hit', onclick: only(() => pickPlace(p)) }, el('span', { class: 'wiki-hit-title' }, p.name), el('span', { class: 'wiki-hit-desc' }, p.region)))

@@ -1,5 +1,28 @@
 /* Every colour is a theme variable (src/shared/themes.ts). */
 
+/* Core's fonts (src/shared/fonts.ts names the stacks; main hands them over as --ws-font*). */
+@font-face {
+  font-family: 'Nunito';
+  src: url('../../../assets/fonts/nunito.woff2') format('woff2');
+  font-weight: 200 1000;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Nunito';
+  src: url('../../../assets/fonts/nunito-italic.woff2') format('woff2');
+  font-weight: 200 1000;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../../../assets/fonts/jetbrains-mono.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -10,7 +33,9 @@ body,
   height: 100%;
   background: var(--ws-bg);
   color: var(--ws-ink);
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font: 13px/1.4 var(--ws-font, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif);
+  /* Digits that change in place (meters, clocks, counts) keep their width. */
+  font-variant-numeric: tabular-nums;
   overflow: hidden;
 }
 button {

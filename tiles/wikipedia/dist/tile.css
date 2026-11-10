@@ -10,7 +10,7 @@ body {
   overflow: hidden;
   background: var(--ws-panel);
   color: #fff;
-  font: 13px/1.45 -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font: 13px/1.45 var(--ws-font, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif);
   user-select: none;
 }
 button,
@@ -467,8 +467,10 @@ button {
 }
 .wiki-extract {
   margin: 0;
-  font-size: 12.5px;
-  line-height: 1.45;
+  /* An article is read, not operated: the reading face. */
+  font-family: var(--ws-font-serif, Georgia, serif);
+  font-size: 13.5px;
+  line-height: 1.5;
   color: rgba(255, 255, 255, 0.92);
 }
 

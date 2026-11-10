@@ -154,6 +154,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     // the way a person would, and the weather for it is drawn under the clock.
     await waitFor('the wikipedia tile to ask for a city', async () => (await wjs(`!!document.querySelector('.wiki-places .wiki-place-input')`)) === true)
     check('wikipedia page: first run asks for a city', (await wjs(`document.querySelector('.wiki-places .wiki-tag').textContent`)).includes('where are you'))
+    check('wikipedia page: the city prompt draws no missing piece as the word null', !String(await wjs(`document.body.innerText`)).includes('null'))
     await wjs(`(() => { const i = document.querySelector('.wiki-place-input'); i.value = 'Lisbon, Portugal'; i.dispatchEvent(new Event('input')); return true })()`)
     await waitFor('a place to be found', async () => (await wjs(`!!document.querySelector('.wiki-place-hit')`)) === true)
     await wjs(`document.querySelector('.wiki-place-hit').click(); document.querySelector('.wiki-places-head .wiki-back').click(); true`)
@@ -531,6 +532,8 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   await rem(`document.querySelector('[role=tab]:nth-child(2)').click(); true`)
   await waitFor('the notes tab', async () => (await rem(`document.querySelector('.note-body b')?.textContent ?? ''`)) === 'copy')
   check('reminders: a note is drawn as markdown', true)
+  check('reminders: no tab draws a missing piece as the word null', !String(await rem(`document.body.innerText`)).includes('null'))
+  check('tiles: core\'s fonts reach a tile through its own origin', (await rem(`document.fonts.load('13px Nunito').then((f) => f.length > 0 && getComputedStyle(document.body).fontFamily.includes('Nunito'))`)) === true)
   await rem(`document.querySelector('[role=tab]').click(); true`)
 
   // The + at the foot of the tile column: its menu, and "make one with Claude" (a starter tile in a
@@ -538,6 +541,9 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   await js(`document.querySelector('.tile-plus').click(); true`)
   await waitFor('the + menu', async () => (await js(`!!document.querySelector('.picker')`)) === true)
   check('plus: the menu offers another instance of a tile that allows it', String(await js(`document.querySelector('.picker').textContent`)).includes('Another Probe'))
+  await js(`document.querySelector('.picker .head .ghost').click(); true`)
+  await sleep(300)
+  check('plus: closing the menu puts the + back and leaves the window standing', (await js(`!!document.querySelector('.app') && !!document.querySelector('.tile-plus') && !document.querySelector('.picker')`)) === true)
   const newTile = (await js(`window.core.createTile('Smoke Timer', 'Count down 25 minutes')`)) as { id: string; folder: string }
   await waitFor('the new tile to load', () => !!liveByTile.get('smoke-timer'))
   await waitFor('the starter to draw', async () => String(await liveByTile.get('smoke-timer')!.wc.executeJavaScript(`document.body.textContent`).catch(() => '')).includes('Smoke Timer is running'))

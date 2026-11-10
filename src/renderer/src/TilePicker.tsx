@@ -12,7 +12,11 @@ export function TilePicker({ tiles, countOf, max, onAdd, onClose }: { tiles: Til
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
   const card = useRef<HTMLElement>(null)
-  useEffect(() => card.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), [])
+  // In braces on purpose: this Chromium's scrollIntoView returns a promise, and an effect that
+  // returns anything but a function takes the whole window down when the menu closes.
+  useEffect(() => {
+    void card.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [])
 
   const addable = tiles.filter((t) => countOf(t.manifest.id) === 0 || (t.manifest.multiple && countOf(t.manifest.id) < max))
   const dev = tiles.filter((t) => t.source === 'dev')

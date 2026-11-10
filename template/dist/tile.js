@@ -12,7 +12,8 @@ function el(tag, props = {}, ...kids) {
     else if (k.startsWith('on')) e.addEventListener(k.slice(2), v)
     else e.setAttribute(k, v)
   }
-  e.append(...kids)
+  // A condition leaves null or false behind; the DOM would draw them as words.
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k)
   return e
 }
 

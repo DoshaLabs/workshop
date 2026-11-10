@@ -8,6 +8,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
 import { BRIDGE_VERSION } from '@shared/manifest'
+import { FONT_VARS } from '@shared/fonts'
 import { COSMOS_ID, forcesDark, resolveVariant, seeThrough, themeVars } from '@shared/themes'
 import { SettingsStore, type Settings } from './settings'
 import { Door } from './door'
@@ -103,7 +104,7 @@ const variant = () => {
   return resolveVariant(s.theme, s.appearance, nativeTheme.shouldUseDarkColors)
 }
 /** The theme for a tile: the colours, and light or dark (core sets `color-scheme` from it, so native scrollbars and form controls follow). */
-const vars = (): Record<string, string> => ({ ...themeVars(variant()), '--ws-scheme': isDark(settings.get()) ? 'dark' : 'light' })
+const vars = (): Record<string, string> => ({ ...themeVars(variant()), ...FONT_VARS, '--ws-scheme': isDark(settings.get()) ? 'dark' : 'light' })
 /** What core's window needs to paint itself: the settings, the live variables, and whether there is a wall. */
 const themeState = (): ThemeState => {
   const s = settings.get()

@@ -8,13 +8,14 @@ body {
   height: 100%;
   background: var(--ws-panel);
   color: var(--ws-ink);
-  font: 12px/1.45 -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font: 12px/1.45 var(--ws-font, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif);
 }
 body {
   display: flex;
   flex-direction: column;
   --fill: color-mix(in srgb, var(--ws-ink) 6%, transparent);
-  --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --mono: var(--ws-font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  font-variant-numeric: tabular-nums;
 }
 body.pane {
   font-size: 14px;
@@ -333,6 +334,9 @@ body.pane #list > * {
   border-bottom: 1px solid var(--ws-line);
 }
 .note-body {
+  /* A note is read, not operated: the reading face. */
+  font-family: var(--ws-font-serif, Georgia, serif);
+  font-size: 1.06em;
   overflow-wrap: anywhere;
   cursor: text;
 }

@@ -128,6 +128,10 @@ what survives a reinstall and is shared between instances. Keep real data there.
   network or from a session into `innerHTML`.
 - Links and popups open in the user's browser. The page cannot navigate away from itself.
 - Use the `--ws-*` variables for every colour so the tile follows the user's theme, light or dark.
+- Use workshop's fonts so the tile looks at home: `var(--ws-font)` for the interface,
+  `var(--ws-font-mono)` for code and paths, `var(--ws-font-serif)` for prose that is read (an
+  article, a note). Workshop loads the faces into the page itself; the page's CSP must allow
+  `font-src 'self'`, as the starter's does. To ship a font of your own, put the file in `dist/`.
 - A tile is small: the column is about a third of the window. Design for 400 px wide first, and
   give `pane` view more room if `"pane": true`.
 

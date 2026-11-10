@@ -5,11 +5,12 @@
 
 import { realpath, readdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
-import { session, type Session } from 'electron'
+import { app, session, type Session } from 'electron'
 import { TILE_SCHEME, checkManifest, devServerOrigin, requestAllowed, type Manifest } from '@shared/manifest'
 import type { TileInfo, TileProblem } from '@shared/ipc'
 import { checkPlugin } from './plugin'
 import { FILES_PREFIX, type TileGrants } from './files'
+import { FONTS_PREFIX, FONT_FILES } from '@shared/fonts'
 import { createReadStream } from 'node:fs'
 import { Readable } from 'node:stream'
 
@@ -213,6 +214,12 @@ async function armOne(tile: Tile, ses: Session): Promise<void> {
     if (rel.includes('\0')) return new Response('bad path', { status: 400 })
     // A dev-server page is another origin: let it read its own tile's files (the picked ones).
     const cors: Record<string, string> = tile.devOrigin ? { 'Access-Control-Allow-Origin': tile.devOrigin } : {}
+    // Core's fonts, the same files for every tile, on the tile's own origin.
+    if (rel.startsWith(FONTS_PREFIX)) {
+      const font = FONT_FILES.find((f) => f.file === rel.slice(FONTS_PREFIX.length))
+      if (!font) return new Response('not found', { status: 404, headers: cors })
+      return new Response(await readFile(join(app.getAppPath(), 'assets', 'fonts', font.file)), { headers: { ...cors, 'Content-Type': 'font/woff2', 'Cache-Control': 'max-age=86400' } })
+    }
     if (rel.startsWith(FILES_PREFIX)) {
       if (!permissions.files) return new Response('not found', { status: 404 })
       const [handle, ...rest] = rel.slice(FILES_PREFIX.length).split('/')

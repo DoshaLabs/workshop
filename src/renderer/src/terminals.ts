@@ -7,6 +7,7 @@ import { Terminal } from '@xterm/xterm'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import type { TermPalette } from '@shared/themes'
+import { FONT_MONO } from '@shared/fonts'
 
 interface Entry {
   term: Terminal
@@ -46,7 +47,7 @@ function ensure(id: string): Entry {
   stagingEl().appendChild(el)
   const term = new Terminal({
     fontSize: 13,
-    fontFamily: 'Menlo, "SF Mono", Monaco, monospace',
+    fontFamily: FONT_MONO,
     theme: palette ?? undefined,
     cursorBlink: true,
     scrollback: 10_000,

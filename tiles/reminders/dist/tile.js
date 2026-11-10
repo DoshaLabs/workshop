@@ -69,6 +69,9 @@ function el(tag, props = {}, ...kids) {
   return e
 }
 
+/** replaceChildren that skips what a condition left behind: the DOM would draw null and false as words. */
+const put = (box, ...kids) => box.replaceChildren(...kids.flat().filter((k) => k != null && k !== false))
+
 function problem(text) {
   problemBox.textContent = text
   problemBox.hidden = !text
@@ -366,7 +369,7 @@ function render() {
   const badge = String(state.reminders.filter((r) => r.doneAt === null).length || '')
   if (badge !== lastBadge) void ws.head.set({ badge: (lastBadge = badge) }).catch(() => {})
 
-  bar.replaceChildren(
+  put(bar, 
     el(
       'div',
       { class: 'tabs', role: 'tablist' },
@@ -391,7 +394,7 @@ function render() {
   }
   stale = false
   const top = list.scrollTop
-  list.replaceChildren(...[body(all, label, reminders, inProject)].flat())
+  put(list, ...[body(all, label, reminders, inProject)].flat())
   list.scrollTop = top
 }
 
@@ -444,7 +447,7 @@ function syncComposer(all, label) {
   where.hidden = !!view.project || typing
   folder.hidden = !typing
   const t = target(all)
-  where.replaceChildren(...(t ? [] : [el('option', { value: '' }, 'project…')]), ...all.map((p) => el('option', { value: p }, label(p))), el('option', { value: OTHER }, 'Another folder…'))
+  put(where, ...(t ? [] : [el('option', { value: '' }, 'project…')]), ...all.map((p) => el('option', { value: p }, label(p))), el('option', { value: OTHER }, 'Another folder…'))
   where.value = t
 }
 
