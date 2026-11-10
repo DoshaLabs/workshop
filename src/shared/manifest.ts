@@ -72,7 +72,16 @@ export function badRelPath(p: unknown): string | null {
   return null
 }
 
-export function checkManifest(raw: unknown): Checked {
+/**
+ * A dev server's origin, if `entry` names one: http on localhost or 127.0.0.1 with a port. Only a
+ * tile loaded for development (`workshop tile dev`) may use one; an installed tile never can.
+ */
+export function devServerOrigin(entry: string): string | null {
+  const m = /^http:\/\/(localhost|127\.0\.0\.1):(\d{2,5})(\/[^\s]*)?$/.exec(entry)
+  return m && Number(m[2]) > 0 && Number(m[2]) < 65536 ? `http://${m[1]}:${m[2]}` : null
+}
+
+export function checkManifest(raw: unknown, opts: { dev?: boolean } = {}): Checked {
   const errors: string[] = []
   if (!isObj(raw)) return { ok: false, errors: ['tile.json must be a JSON object'] }
   const str = (k: string, max: number, required = true): string | undefined => {
@@ -106,7 +115,10 @@ export function checkManifest(raw: unknown): Checked {
     else if (!icon.endsWith('.svg') && !icon.endsWith('.png')) errors.push('icon: must be an .svg or .png file')
   }
   const entry = str('entry', 200)
-  if (entry !== undefined) {
+  if (entry !== undefined && /^[a-z]+:/i.test(entry)) {
+    if (!devServerOrigin(entry)) errors.push('entry: a URL entry must be http://localhost:<port>/… or http://127.0.0.1:<port>/…')
+    else if (!opts.dev) errors.push('entry: a dev server is allowed only for a tile loaded with workshop tile dev; ship the built page')
+  } else if (entry !== undefined) {
     const e = badRelPath(entry)
     if (e) errors.push(`entry: ${e}`)
     else if (!entry.endsWith('.html')) errors.push('entry: must be an .html file')
@@ -180,13 +192,15 @@ export function hostAllowed(host: string, net: string[] | undefined): boolean {
 }
 
 /** Where a request from a tile's session may go. Enforced in main on every request from a tile's session. */
-export function requestAllowed(tile: { manifest: Manifest }, url: string): boolean {
+export function requestAllowed(tile: { manifest: Manifest; devOrigin?: string | null }, url: string): boolean {
   let u: URL
   try {
     u = new URL(url)
   } catch {
     return false
   }
+  // A tile under development may also reach its own dev server, and that server's hot-reload socket.
+  if (tile.devOrigin && (u.protocol === 'http:' || u.protocol === 'ws:') && `http://${u.host}` === tile.devOrigin) return true
   switch (u.protocol) {
     case `${TILE_SCHEME}:`:
       return u.hostname === tile.manifest.id

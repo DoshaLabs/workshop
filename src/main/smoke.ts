@@ -3,7 +3,9 @@
 // drives the door over HTTP. Prints one line per check and exits non-zero if any failed.
 
 import type { BrowserWindow, WebContents } from 'electron'
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CH } from '@shared/ipc'
 import type { Door } from './door'
@@ -15,6 +17,7 @@ interface Ctx {
   userData: string
   /** What the tiles asked the browser to open (a smoke run never opens one). */
   opened: string[]
+  addDevTile: (folder: string) => Promise<string>
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -75,7 +78,7 @@ async function post(port: number, path: string, body: unknown, headers: Record<s
   return { status: res.status, json: await res.json() }
 }
 
-export async function runSmoke({ win, door, liveByTile, userData, opened }: Ctx): Promise<number> {
+export async function runSmoke({ win, door, liveByTile, userData, opened, addDevTile }: Ctx): Promise<number> {
   const results: [string, boolean, string?][] = []
   const check = (name: string, ok: boolean, detail?: string): void => void results.push([name, ok, detail])
   try {
@@ -140,6 +143,8 @@ export async function runSmoke({ win, door, liveByTile, userData, opened }: Ctx)
     const imgs = (await wiki.executeJavaScript(`new Promise((res) => setTimeout(() => res([...document.images].map((i) => i.complete && i.naturalWidth > 0)), 3000))`)) as boolean[]
     check('wikipedia page: images load', imgs.length > 0 && imgs.every(Boolean), JSON.stringify(imgs))
     check('wikipedia door: show', show.status === 200 && typeof show.json.result?.title === 'string', JSON.stringify(show.json))
+
+    await devTiles(check, liveByTile, door.port, addDevTile)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
   }
@@ -155,4 +160,57 @@ export async function runSmoke({ win, door, liveByTile, userData, opened }: Ctx)
   }
   console.log(`\n${results.length - failed} passed, ${failed} failed`)
   return failed ? 1 : 0
+}
+
+const DEV_MANIFEST = (id: string, entry: string): string => JSON.stringify({ id, name: id, version: '0.0.1', workshop: '^1', author: 'smoke', entry })
+
+/** `workshop tile dev`: a folder that reloads when its page changes, and a page from a dev server. */
+async function devTiles(
+  check: (name: string, ok: boolean, detail?: string) => void,
+  liveByTile: Ctx['liveByTile'],
+  doorPort: number,
+  addDevTile: Ctx['addDevTile']
+): Promise<void> {
+  const page = (v: number): string => `<!doctype html><script>window.v = ${v}</script>`
+  const folder = await mkdtemp(join(tmpdir(), 'ws-devtile-'))
+  await mkdir(join(folder, 'dist'))
+  await writeFile(join(folder, 'tile.json'), DEV_MANIFEST('live-edit', 'dist/index.html'))
+  await writeFile(join(folder, 'dist', 'index.html'), page(1))
+  await addDevTile(folder)
+  const v = async (): Promise<unknown> => liveByTile.get('live-edit')?.wc.executeJavaScript('window.v').catch(() => null)
+  await waitFor('the dev tile to load', async () => (await v()) === 1)
+  await writeFile(join(folder, 'dist', 'index.html'), page(2))
+  let reloaded = true
+  await waitFor('the dev tile to reload', async () => (await v()) === 2, 5000).catch(() => (reloaded = false))
+  check('dev tile: a changed page reloads', reloaded)
+
+  const server = createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/html' })
+    res.end(req.url === '/index.html' ? '<!doctype html><script>window.devReady = true</script>' : 'ok')
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  const port = (server.address() as { port: number }).port
+  try {
+    const dev = await mkdtemp(join(tmpdir(), 'ws-devserver-'))
+    await writeFile(join(dev, 'tile.json'), DEV_MANIFEST('dev-server', `http://127.0.0.1:${port}/index.html`))
+    await addDevTile(dev)
+    await waitFor('the dev-server tile to load', async () => (await liveByTile.get('dev-server')?.wc.executeJavaScript('window.devReady === true').catch(() => false)) === true)
+    const wc = liveByTile.get('dev-server')!.wc
+    const r = (await wc.executeJavaScript(`(async () => {
+      const fails = async (p) => { try { const res = await p; return !res || res.ok === false } catch { return true } }
+      return {
+        bridge: window.workshop?.id === 'dev-server',
+        ownServer: await fetch('/other').then((x) => x.ok).catch(() => false),
+        noDoor: await fails(fetch('http://127.0.0.1:${doorPort}/tile/probe', { method: 'POST' })),
+        noOtherHost: await fails(fetch('https://en.wikipedia.org/'))
+      }
+    })()`)) as Record<string, boolean>
+    for (const [k, ok] of Object.entries(r)) check(`dev-server tile: ${k}`, ok === true)
+
+    // A dev-server entry from anywhere but `workshop tile dev` is refused.
+    const { checkManifest } = await import('@shared/manifest')
+    check('dev-server entry refused outside dev', !checkManifest(JSON.parse(DEV_MANIFEST('x', `http://127.0.0.1:${port}/`))).ok)
+  } finally {
+    server.close()
+  }
 }

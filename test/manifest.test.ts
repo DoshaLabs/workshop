@@ -104,3 +104,22 @@ describe('requestAllowed', () => {
     expect(requestAllowed(tile, url)).toBe(ok)
   })
 })
+
+describe('dev server entries', () => {
+  it('only for a dev tile, and only on localhost with a port', () => {
+    expect(errs({ ...base, entry: 'http://localhost:5173/' })[0]).toMatch(/only for a tile loaded with workshop tile dev/)
+    expect(checkManifest({ ...base, entry: 'http://localhost:5173/' }, { dev: true }).ok).toBe(true)
+    expect(checkManifest({ ...base, entry: 'http://127.0.0.1:8080/index.html' }, { dev: true }).ok).toBe(true)
+    for (const entry of ['https://localhost:5173/', 'http://localhost/', 'http://evil.com:5173/', 'http://localhost:5173.evil.com/'])
+      expect(checkManifest({ ...base, entry }, { dev: true }).ok).toBe(false)
+  })
+
+  it('lets a dev tile reach its own dev server and nothing else on localhost', () => {
+    const tile = { manifest: { id: 'x', permissions: {} } as unknown as Manifest, devOrigin: 'http://localhost:5173' }
+    expect(requestAllowed(tile, 'http://localhost:5173/src/main.ts')).toBe(true)
+    expect(requestAllowed(tile, 'ws://localhost:5173/')).toBe(true)
+    expect(requestAllowed(tile, 'http://localhost:5174/')).toBe(false)
+    expect(requestAllowed(tile, 'http://127.0.0.1:5173/')).toBe(false)
+    expect(requestAllowed({ ...tile, devOrigin: null }, 'http://localhost:5173/')).toBe(false)
+  })
+})

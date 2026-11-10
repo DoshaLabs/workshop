@@ -29,12 +29,15 @@ export function App() {
   const [chips, setChips] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    void window.core.listTiles().then((r) => {
-      setTiles(r.tiles)
-      setProblems(r.problems)
-      applyVars(r.vars)
-    })
+    const load = () =>
+      void window.core.listTiles().then((r) => {
+        setTiles(r.tiles)
+        setProblems(r.problems)
+        applyVars(r.vars)
+      })
+    load()
     const offs = [
+      window.core.onTilesChanged(load),
       window.core.onTheme(applyVars),
       window.core.onTileHead((id, head) => setHeads((h) => ({ ...h, [id]: head }))),
       window.core.onTilePane((id, open) => setPane((p) => (open ? id : p === id ? null : p))),

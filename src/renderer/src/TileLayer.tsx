@@ -10,7 +10,7 @@ export function TileLayer({ tiles, pane }: { tiles: TileInfo[]; pane: string | n
   return (
     <div className="tile-layer">
       {tiles.map((t) => (
-        <TileView key={t.manifest.id} tile={t} inPane={pane === t.manifest.id} />
+        <TileView key={`${t.manifest.id}:${t.rev}`} tile={t} inPane={pane === t.manifest.id} />
       ))}
     </div>
   )

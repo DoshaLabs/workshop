@@ -15,7 +15,8 @@ const core = {
   onTileHead: (fn: (id: string, head: TileHead) => void) => on(CH.tileHead, fn),
   onTilePane: (fn: (id: string, open: boolean) => void) => on(CH.tilePane, fn),
   onTileNotify: (fn: (id: string, text: string) => void) => on(CH.tileNotify, fn),
-  onTheme: (fn: (vars: Record<string, string>) => void) => on(CH.themeChanged, fn)
+  onTheme: (fn: (vars: Record<string, string>) => void) => on(CH.themeChanged, fn),
+  onTilesChanged: (fn: () => void) => on(CH.tilesChanged, fn)
 }
 
 export type CoreApi = typeof core

@@ -16,6 +16,8 @@ export interface TileInfo {
   icon: string
   /** Where it was loaded from: shipped with core, installed, or a folder under development. */
   source: 'core' | 'installed' | 'dev'
+  /** Changes when a dev tile is loaded again: the window then makes a fresh page for it. */
+  rev: number
 }
 
 /** A tile that was found but refused, with why. Shown in the column so an author sees it. */

@@ -6,7 +6,7 @@
 import { realpath, readdir, readFile, stat } from 'node:fs/promises'
 import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 import { session, type Session } from 'electron'
-import { TILE_SCHEME, checkManifest, requestAllowed, type Manifest } from '@shared/manifest'
+import { TILE_SCHEME, checkManifest, devServerOrigin, requestAllowed, type Manifest } from '@shared/manifest'
 import type { TileInfo, TileProblem } from '@shared/ipc'
 import { checkPlugin } from './plugin'
 
@@ -25,6 +25,10 @@ export interface Tile {
   icon: string
   /** The tile's Claude Code plugin (handed to new sessions with --plugin-dir), or null. */
   plugin: string | null
+  /** A dev tile's dev server (`http://localhost:5173`), whose page is the tile's. Else null. */
+  devOrigin: string | null
+  /** Bumped each time a dev tile is loaded again, so core's window makes a fresh page for it. */
+  rev: number
 }
 
 export interface Registry {
@@ -64,17 +68,28 @@ export function inside(root: string, p: string): boolean {
   return p === root || p.startsWith(root.endsWith(sep) ? root : root + sep)
 }
 
-async function readTile(folder: string, source: Tile['source']): Promise<Omit<Tile, 'session'> | TileProblem> {
+/** Whether `url` is a page of this tile: its own origin, or its dev server. */
+export function ownsUrl(tile: Pick<Tile, 'manifest' | 'devOrigin'>, url: string): boolean {
+  return url.startsWith(`${TILE_SCHEME}://${tile.manifest.id}/`) || (!!tile.devOrigin && url.startsWith(`${tile.devOrigin}/`))
+}
+
+export async function readTile(folder: string, source: Tile['source']): Promise<Omit<Tile, 'session' | 'rev'> | TileProblem> {
   let raw: unknown
   try {
     raw = JSON.parse(await readFile(join(folder, 'tile.json'), 'utf8'))
   } catch (err) {
     return { folder, errors: [`tile.json: ${(err as Error).message}`] }
   }
-  const checked = checkManifest(raw)
+  const checked = checkManifest(raw, { dev: source === 'dev' })
   if (!checked.ok) return { folder, errors: checked.errors }
   const m = checked.manifest
   const root = await realpath(folder)
+  const devOrigin = source === 'dev' ? devServerOrigin(m.entry) : null
+  const plugin = await checkPlugin(root, m.id)
+  if (!plugin.ok) return { folder, errors: plugin.errors }
+  const icon = await readIcon(root, m.icon)
+  const common = { manifest: m, root, source, partition: `persist:tile-${m.id}`, icon, plugin: plugin.dir }
+  if (devOrigin) return { ...common, serveRoot: root, src: m.entry, devOrigin }
   const entry = resolve(root, m.entry)
   let entryReal: string
   try {
@@ -84,29 +99,19 @@ async function readTile(folder: string, source: Tile['source']): Promise<Omit<Ti
     return { folder, errors: [`entry: ${m.entry} does not exist (the built page must be in the folder; no build step runs on install)`] }
   }
   if (!inside(root, entryReal)) return { folder, errors: ['entry: points outside the tile folder'] }
-  const plugin = await checkPlugin(root, m.id)
-  if (!plugin.ok) return { folder, errors: plugin.errors }
-  let icon = ''
-  if (m.icon) {
-    try {
-      const file = await realpath(resolve(root, m.icon))
-      if (inside(root, file)) {
-        const buf = await readFile(file)
-        if (buf.length <= 256 * 1024) icon = `data:${MIME[extname(file)] ?? 'image/png'};base64,${buf.toString('base64')}`
-      }
-    } catch {
-      // no icon: core draws a letter
-    }
-  }
-  return {
-    manifest: m,
-    root,
-    serveRoot: dirname(entryReal),
-    source,
-    partition: `persist:tile-${m.id}`,
-    src: `${TILE_SCHEME}://${m.id}/${basename(entryReal)}`,
-    icon,
-    plugin: plugin.dir
+  return { ...common, serveRoot: dirname(entryReal), src: `${TILE_SCHEME}://${m.id}/${basename(entryReal)}`, devOrigin: null }
+}
+
+/** The icon as a data: URL, or '' (core then draws the name's first letter). */
+async function readIcon(root: string, icon: string | undefined): Promise<string> {
+  if (!icon) return ''
+  try {
+    const file = await realpath(resolve(root, icon))
+    if (!inside(root, file)) return ''
+    const buf = await readFile(file)
+    return buf.length <= 256 * 1024 ? `data:${MIME[extname(file)] ?? 'image/png'};base64,${buf.toString('base64')}` : ''
+  } catch {
+    return ''
   }
 }
 
@@ -138,7 +143,7 @@ export async function loadTiles(sources: { dir: string; source: Tile['source']; 
         problems.push({ folder, errors: [`id: "${t.manifest.id}" is already taken by ${tiles.get(t.manifest.id)!.root}`] })
         continue
       }
-      tiles.set(t.manifest.id, { ...t, session: session.fromPartition(t.partition) })
+      tiles.set(t.manifest.id, { ...t, rev: 0, session: session.fromPartition(t.partition) })
     }
   }
   return { tiles, problems }
@@ -150,10 +155,14 @@ export async function loadTiles(sources: { dir: string; source: Tile['source']; 
  * Traffic to undeclared hosts is also sent to a proxy that does not exist, which closes the side
  * doors a request filter cannot see (WebRTC, DNS prefetch).
  */
+const armed = new WeakSet<Session>()
+
+/** Safe to call again for the same session (a dev tile reloaded): every handler is replaced. */
 export async function armSession(tile: Tile): Promise<void> {
   const ses = tile.session
   const { id, permissions } = tile.manifest
 
+  if (ses.protocol.isProtocolHandled(TILE_SCHEME)) ses.protocol.unhandle(TILE_SCHEME)
   ses.protocol.handle(TILE_SCHEME, async (req) => {
     const u = new URL(req.url)
     if (u.hostname !== id) return new Response('not found', { status: 404 })
@@ -180,8 +189,9 @@ export async function armSession(tile: Tile): Promise<void> {
 
   await ses.setProxy({
     proxyRules: '127.0.0.1:9',
-    // `<-loopback>` takes away Chromium's implicit "never proxy localhost".
-    proxyBypassRules: [...(permissions.net ?? []), '<-loopback>'].join(',')
+    // `<-loopback>` takes away Chromium's implicit "never proxy localhost", except for a dev tile,
+    // which must reach its dev server (the request filter still holds it to that one origin).
+    proxyBypassRules: [...(permissions.net ?? []), tile.devOrigin ? '' : '<-loopback>'].filter(Boolean).join(',')
   })
 
   ses.setPermissionRequestHandler((_wc, perm, cb, details) => {
@@ -201,9 +211,12 @@ export async function armSession(tile: Tile): Promise<void> {
   })
   ses.setDevicePermissionHandler(() => false)
   ses.setDisplayMediaRequestHandler((_req, cb) => cb({}))
-  ses.on('will-download', (e) => e.preventDefault())
+  if (!armed.has(ses)) {
+    armed.add(ses)
+    ses.on('will-download', (e) => e.preventDefault())
+  }
 }
 
 export function tileInfo(t: Tile): TileInfo {
-  return { manifest: t.manifest, src: t.src, partition: t.partition, icon: t.icon, source: t.source }
+  return { manifest: t.manifest, src: t.src, partition: t.partition, icon: t.icon, source: t.source, rev: t.rev }
 }

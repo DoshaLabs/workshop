@@ -5,6 +5,10 @@
   "license": "MIT",
   "description": "Claude Code sessions in one window, beside a column of small apps anyone can write.",
   "main": "./out/main/index.js",
+  "bin": {
+    "workshop": "bin/workshop.mjs",
+    "workshop-tile": "bin/workshop-tile.mjs"
+  },
   "scripts": {
     "dev": "vite build --config vite.tile-preload.config.ts --logLevel warn && electron-vite dev --watch",
     "build": "electron-vite build && vite build --config vite.tile-preload.config.ts --logLevel warn",

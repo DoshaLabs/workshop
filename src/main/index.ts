@@ -2,8 +2,8 @@
 // arms a sandbox for each, guards every webview core's window attaches, answers the bridge and
 // runs the door. Sessions, the launcher and the rest of deck's core come over in step 3.
 
-import { BrowserWindow, Notification, app, ipcMain, nativeTheme, protocol, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { BrowserWindow, Notification, app, ipcMain, nativeTheme, protocol, session, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { mkdtempSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { CH, type DoorCall, type TileHead, type TileHello, type TileView } from '@shared/ipc'
@@ -11,16 +11,21 @@ import { BRIDGE_VERSION } from '@shared/manifest'
 import { DEFAULT_THEME, resolveVariant, themeVars } from '@shared/themes'
 import { Door } from './door'
 import { TileStore } from './storage'
-import { TILE_SCHEME, armSession, loadTiles, tileInfo, type Registry, type Tile } from './tiles'
+import { TILE_SCHEME, armSession, loadTiles, ownsUrl, readTile, tileInfo, type Registry, type Tile } from './tiles'
 import { runSmoke } from './smoke'
 
 const SMOKE = process.argv.includes('--smoke')
-const devTiles = process.argv.filter((a) => a.startsWith('--dev-tile=')).map((a) => resolve(a.slice('--dev-tile='.length)))
+const devTilesIn = (argv: string[], cwd = process.cwd()): string[] =>
+  argv.filter((a) => a.startsWith('--dev-tile=')).map((a) => resolve(cwd, a.slice('--dev-tile='.length)))
+const devTiles = devTilesIn(process.argv)
 
 if (SMOKE) {
   app.setPath('userData', mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
 }
+
+// One app per profile. `workshop tile dev ./x` while it runs hands the folder to the running app.
+if (!SMOKE && !app.requestSingleInstanceLock()) app.exit(0)
 
 // Must happen before ready: tile:// behaves like https (its own origin, fetch, CORS, storage).
 protocol.registerSchemesAsPrivileged([{ scheme: TILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
@@ -69,7 +74,7 @@ function tileOf(e: IpcMainEvent | IpcMainInvokeEvent): Tile | null {
   if (!g || !f || e.sender.isDestroyed()) return null
   const top = e.sender.mainFrame
   if (f.processId !== top.processId || f.routingId !== top.routingId) return null
-  if (!f.url.startsWith(`${TILE_SCHEME}://${g.tile.manifest.id}/`)) return null
+  if (!ownsUrl(g.tile, f.url)) return null
   return g.tile
 }
 
@@ -135,7 +140,7 @@ function guardWebviews(w: BrowserWindow): void {
       openForTile(id, url)
       return { action: 'deny' }
     })
-    const own = (url: string): boolean => url.startsWith(`${TILE_SCHEME}://${id}/`)
+    const own = (url: string): boolean => ownsUrl(tile, url)
     wc.on('will-navigate', (ev, url) => {
       if (own(url)) return
       ev.preventDefault()
@@ -150,6 +155,48 @@ function guardWebviews(w: BrowserWindow): void {
       door.dropTile(id)
     })
   })
+}
+
+const devWatchers = new Map<string, FSWatcher>()
+
+/**
+ * Loads (or loads again) a tile folder under development. It may stand in for a core or installed
+ * tile with the same id. A folder serving its own files is watched: a change to the page reloads
+ * it, a change to tile.json or plugin/ loads the tile again. A dev-server entry reloads itself.
+ */
+async function addDevTile(folder: string): Promise<string> {
+  const t = await readTile(folder, 'dev')
+  registry.problems = registry.problems.filter((p) => p.folder !== folder)
+  if ('errors' in t) {
+    registry.problems.push(t)
+    console.warn(`[tiles] refused ${folder}:\n  ${t.errors.join('\n  ')}`)
+    win?.webContents.send(CH.tilesChanged)
+    return t.errors.join('\n')
+  }
+  const id = t.manifest.id
+  const old = registry.tiles.get(id)
+  const tile: Tile = { ...t, rev: (old?.rev ?? 0) + 1, session: old?.session ?? session.fromPartition(t.partition) }
+  registry.tiles.set(id, tile)
+  await armSession(tile)
+  if (!tile.devOrigin && !devWatchers.has(folder)) {
+    let timer: NodeJS.Timeout | undefined
+    let reload = false
+    const w = watch(tile.root, { recursive: true }, (_ev, name) => {
+      const file = String(name ?? '')
+      if (file === 'tile.json' || file.startsWith('plugin')) reload = true
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        const again = reload
+        reload = false
+        if (again) void addDevTile(folder)
+        else liveByTile.get(id)?.wc.reloadIgnoringCache()
+      }, 150)
+    })
+    w.on('error', () => devWatchers.delete(folder))
+    devWatchers.set(folder, w)
+  }
+  win?.webContents.send(CH.tilesChanged)
+  return `loaded ${id} from ${tile.root}${tile.devOrigin ? ` (dev server ${tile.devOrigin})` : ', reloading on change'}`
 }
 
 function bridge(): void {
@@ -270,12 +317,17 @@ function createWindow(): void {
 
 app.whenReady().then(async () => {
   registry = await loadTiles([
-    ...devTiles.map((dir) => ({ dir, source: 'dev' as const, single: true })),
     { dir: join(app.getAppPath(), 'tiles'), source: 'core' },
     { dir: join(app.getPath('userData'), 'tiles'), source: 'installed' }
   ])
   for (const p of registry.problems) console.warn(`[tiles] refused ${p.folder}:\n  ${p.errors.join('\n  ')}`)
   await Promise.all([...registry.tiles.values()].map(armSession))
+  for (const dir of devTiles) console.log(`[tiles] ${await addDevTile(dir)}`)
+  app.on('second-instance', (_e, argv, cwd) => {
+    for (const dir of devTilesIn(argv, cwd)) void addDevTile(dir).then((m) => console.log(`[tiles] ${m}`))
+    if (win?.isMinimized()) win.restore()
+    win?.focus()
+  })
 
   await door.start()
   // Where the CLI finds the door from outside a session. Readable by this user only.
@@ -291,9 +343,18 @@ app.whenReady().then(async () => {
   })
 
   if (SMOKE) {
-    const code = await runSmoke({ win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened })
+    const code = await runSmoke({ win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened, addDevTile })
     door.stop()
     app.exit(code)
+  }
+})
+
+// The CLI reads door.json to find a running app; a stale one would point at a closed port.
+app.on('will-quit', () => {
+  try {
+    unlinkSync(join(app.getPath('userData'), 'door.json'))
+  } catch {
+    // already gone
   }
 })
 
