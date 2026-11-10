@@ -14,6 +14,8 @@ if (hello) {
   const viewSubs = new Set<(v: TileView) => void>()
   const themeSubs = new Set<(v: Record<string, string>) => void>()
   const storageSubs = new Map<string, Set<(v: unknown) => void>>()
+  const sessionSubs = new Set<(list: unknown) => void>()
+  const usageSubs = new Set<(u: unknown) => void>()
   const doorHandlers = new Map<string, (args: string[], caller: string) => unknown>()
   const perms = hello.permissions
 
@@ -22,6 +24,7 @@ if (hello) {
     const root = document.documentElement
     if (!root) return
     for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v)
+    if (vars['--ws-scheme']) root.style.colorScheme = vars['--ws-scheme']
   }
   applyVars()
   if (!document.documentElement) document.addEventListener('readystatechange', applyVars, { once: true })
@@ -62,6 +65,12 @@ if (hello) {
   })
   ipcRenderer.on(CH.storageChanged, (_e, key: string, value: unknown) => {
     for (const fn of storageSubs.get(key) ?? []) call(() => fn(value))
+  })
+  ipcRenderer.on(CH.tileSessionsChanged, (_e, list: unknown) => {
+    for (const fn of sessionSubs) call(() => fn(list))
+  })
+  ipcRenderer.on(CH.tileUsageChanged, (_e, u: unknown) => {
+    for (const fn of usageSubs) call(() => fn(u))
   })
   ipcRenderer.on(CH.doorCall, async (_e, c: DoorCall) => {
     const fn = doorHandlers.get(c.op)
@@ -126,6 +135,24 @@ if (hello) {
         return as === 'text' ? res.text() : res.arrayBuffer()
       },
       forget: (handle: string): Promise<boolean> => gate('files', () => ipcRenderer.invoke(CH.filesForget, handle))
+    },
+    sessions: {
+      /** The sessions: [{ id, name, project, status, focused, open }]. Needs "sessions": "read" or "write". */
+      list: (): Promise<unknown> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsList)),
+      watch: (fn: (list: unknown) => void): (() => void) => {
+        needs('sessions')
+        return sub(sessionSubs, fn)
+      },
+      /** Types `text` into an open session and submits it. Needs "sessions": "write". */
+      paste: (id: string, text: string): Promise<void> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsPaste, id, text))
+    },
+    usage: {
+      /** The account's 5-hour and weekly windows, and each session's context % and cost. Needs "usage". */
+      get: (): Promise<unknown> => gate('usage', () => ipcRenderer.invoke(CH.tileUsageGet)),
+      watch: (fn: (u: unknown) => void): (() => void) => {
+        needs('usage')
+        return sub(usageSubs, fn)
+      }
     },
     notify: (n: { text: string; bark?: boolean }): Promise<boolean> => gate('notify', () => ipcRenderer.invoke(CH.notify, { text: n?.text })),
     door: {

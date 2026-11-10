@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// The door's CLI: `node workshop-tile.mjs <tile-id> <op> [args…]`. Inside a workshop session,
-// core sets WORKSHOP_PORT and WORKSHOP_TOKEN; outside one, the profile's door.json is read.
+// The door's CLI: `node workshop-tile.mjs <tile-id> <op> [args…]`.
 // Prints the tile's answer (a string as is, anything else as JSON) and exits 1 on a refusal.
 
 import { readFileSync } from 'node:fs'
@@ -13,16 +12,21 @@ if (!id || !op) {
   process.exit(2)
 }
 
-let port = process.env.WORKSHOP_PORT
-let token = process.env.WORKSHOP_TOKEN
-if (!port || !token) {
-  const file = process.env.WORKSHOP_DOOR || join(homedir(), 'Library', 'Application Support', 'workshop', 'door.json')
-  try {
+// Inside a session: WORKSHOP_HOME (the profile) has the port core is on now, and WORKSHOP_AUTH is
+// this session's own header file, so core knows which session is calling. Outside one: door.json.
+let port
+let token
+try {
+  if (process.env.WORKSHOP_AUTH && process.env.WORKSHOP_HOME) {
+    port = readFileSync(join(process.env.WORKSHOP_HOME, 'port'), 'utf8').trim()
+    token = /Bearer ([0-9a-f]{48})/.exec(readFileSync(process.env.WORKSHOP_AUTH, 'utf8'))?.[1]
+  } else {
+    const file = process.env.WORKSHOP_DOOR || join(homedir(), 'Library', 'Application Support', 'workshop', 'door.json')
     ;({ port, token } = JSON.parse(readFileSync(file, 'utf8')))
-  } catch {
-    console.error(`workshop is not running (no ${file})`)
-    process.exit(1)
   }
+} catch {
+  console.error('workshop is not running')
+  process.exit(1)
 }
 
 try {

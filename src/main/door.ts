@@ -21,39 +21,65 @@ export interface DoorHost {
   answers(id: string, op: string): boolean
   /** Hands the call to one of the tile's live pages; returns which instance took it. */
   deliver(id: string, call: DoorCall): string | undefined
+  /**
+   * POST /hook/<name> from a session's Claude Code hooks (main/hooks.ts), with the session's token.
+   * Answered 204 at once whatever happens: a hook must never wait on core.
+   */
+  hook?(name: string, token: string, payload: unknown): void
 }
 
 type Reply = { ok: true; result: unknown } | { ok: false; error: string }
 
 export class Door {
   private server: Server | null = null
-  /** token → caller name. Sessions get their own when they exist (roadmap step 3). */
-  private readonly callers = new Map<string, string>()
+  /** token → who the caller is: 'outside', or a session's name (read when the call arrives). */
+  private readonly callers = new Map<string, () => string>()
   private readonly pending = new Map<string, { tile: string; instance: string; resolve: (r: Reply) => void; timer: NodeJS.Timeout }>()
   port = 0
   /** The token for callers outside any session (a terminal, the smoke test). */
   readonly token = randomBytes(24).toString('hex')
 
   constructor(private readonly host: DoorHost) {
-    this.callers.set(this.token, 'outside')
+    this.callers.set(this.token, () => 'outside')
   }
 
-  /** A token whose calls are attributed to `caller`. */
+  /** A new token whose calls are attributed to `caller`. */
   issue(caller: string): string {
     const t = randomBytes(24).toString('hex')
-    this.callers.set(t, caller)
+    this.register(t, () => caller)
     return t
   }
 
-  private callerOf(req: IncomingMessage): string | undefined {
+  /** Accept a token core made elsewhere (a session's, which outlives a restart of the app). */
+  register(token: string, who: () => string): void {
+    if (!/^[0-9a-f]{48}$/.test(token)) throw new Error('bad token')
+    this.callers.set(token, who)
+  }
+
+  revoke(token: string): void {
+    if (token !== this.token) this.callers.delete(token)
+  }
+
+  /** The token the request carries, if core issued it. */
+  private tokenOf(req: IncomingMessage): string | undefined {
     const m = /^Bearer ([0-9a-f]{48})$/.exec(req.headers.authorization ?? '')
     if (!m) return undefined
     const given = Buffer.from(m[1])
-    for (const [t, who] of this.callers) if (timingSafeEqual(Buffer.from(t), given)) return who
+    for (const t of this.callers.keys()) if (timingSafeEqual(Buffer.from(t), given)) return t
     return undefined
   }
 
-  start(port = 0): Promise<number> {
+  /** Listens on `port` if it is free (sessions find it again after a restart), else on any. */
+  async start(port = 0): Promise<number> {
+    try {
+      return await this.listen(port)
+    } catch (err) {
+      if (port === 0) throw err
+      return this.listen(0)
+    }
+  }
+
+  private listen(port: number): Promise<number> {
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => void this.handle(req, res))
       this.server.once('error', reject)
@@ -96,10 +122,25 @@ export class Door {
     }
     // A web page can POST to localhost too; refuse anything that came from a browser.
     if (req.headers.origin !== undefined) return send(403, { ok: false, error: 'not from a browser' })
+    if (req.method !== 'POST') return send(404, { ok: false, error: 'POST /tile/<id>' })
+    const token = this.tokenOf(req)
+    if (!token) return send(401, { ok: false, error: 'no valid token (WORKSHOP_AUTH)' })
+    const caller = this.callers.get(token)!()
+
+    const hook = /^\/hook\/([a-z-]{1,32})$/.exec(req.url ?? '')
+    if (hook) {
+      res.writeHead(204)
+      res.end()
+      try {
+        this.host.hook?.(hook[1], token, JSON.parse((await readBody(req)) || '{}'))
+      } catch {
+        // a hook's malformed body is nobody's problem
+      }
+      return
+    }
+
     const m = /^\/tile\/([a-z0-9-]{1,40})$/.exec(req.url ?? '')
-    if (req.method !== 'POST' || !m) return send(404, { ok: false, error: 'POST /tile/<id>' })
-    const caller = this.callerOf(req)
-    if (!caller) return send(401, { ok: false, error: 'no valid token (WORKSHOP_TOKEN)' })
+    if (!m) return send(404, { ok: false, error: 'POST /tile/<id>' })
 
     let body: { op?: unknown; args?: unknown }
     try {

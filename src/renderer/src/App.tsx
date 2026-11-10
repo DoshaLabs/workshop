@@ -8,6 +8,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ThemeState, TileHead, TileInfo, TileProblem } from '@shared/ipc'
 import { syncCosmos } from './cosmos'
 import { ThemePicker } from './ThemePicker'
+import { FocusPane, Launcher, SessionColumn } from './Sessions'
+import { setPalette } from './terminals'
+import type { SessionsState } from '@shared/sessions'
+import type { Usage } from '@shared/usage'
+import { UsageMeter } from './UsageMeter'
 import { TileLayer, type Instance } from './TileLayer'
 
 const OFF_KEY = 'workshop.off'
@@ -39,6 +44,7 @@ function applyTheme(t: ThemeState): void {
   root.dataset.wall = String(t.wall)
   root.dataset.dark = String(t.dark)
   syncCosmos(t.theme)
+  setPalette(t.term)
 }
 
 const instanceN = (key: string): number => Number(/\.(\d)$/.exec(key)?.[1] ?? 1)
@@ -55,6 +61,10 @@ export function App() {
   const [heads, setHeads] = useState<Record<string, TileHead>>({})
   const [chips, setChips] = useState<Record<string, string>>({})
   const [theme, setTheme] = useState<ThemeState | null>(null)
+  const [sessions, setSessions] = useState<SessionsState | null>(null)
+  const [usage, setUsage] = useState<Usage | null>(null)
+  /** The launcher asked for (the + in the session column), over the focused session. */
+  const [launcher, setLauncher] = useState(false)
 
   useEffect(() => {
     const load = () =>
@@ -65,7 +75,11 @@ export function App() {
         setTheme(r.theme)
       })
     load()
+    void window.core.sessions().then(setSessions)
+    void window.core.usage().then(setUsage)
     const offs = [
+      window.core.onSessions(setSessions),
+      window.core.onUsage(setUsage),
       window.core.onTilesChanged(load),
       window.core.onTheme((t) => {
         applyTheme(t)
@@ -80,6 +94,15 @@ export function App() {
     ]
     return () => offs.forEach((f) => f())
   }, [])
+
+  // A session coming into focus (started, resumed, clicked) takes the center back from a tile.
+  const focusId = sessions?.focus ?? null
+  useEffect(() => {
+    if (focusId) {
+      setPane(null)
+      setLauncher(false)
+    }
+  }, [focusId])
 
   useEffect(() => writeList(OFF_KEY, off), [off])
   useEffect(() => writeList(EXTRA_KEY, extra), [extra])
@@ -126,15 +149,27 @@ export function App() {
 
   const offTiles = tiles.filter((t) => countOf(t.manifest.id) === 0)
   const paneInst = instances.find((i) => i.key === pane)
+  const focused = sessions?.sessions.find((s) => s.id === sessions.focus && s.open) ?? null
   const label = (i: Instance): string => heads[i.key]?.title || (i.n > 1 ? `${i.tile.manifest.name} ${i.n}` : i.tile.manifest.name)
 
   return (
     <div className="app">
-      <div className="topbar">{theme && <ThemePicker theme={theme} />}</div>
-      <aside className="col sessions">
-        <div className="col-title">Sessions</div>
-        <p className="empty">Sessions arrive with the core extraction (roadmap step 3).</p>
-      </aside>
+      <div className="topbar">
+        <UsageMeter usage={usage} />
+        {theme && <ThemePicker theme={theme} />}
+      </div>
+      <SessionColumn
+        state={sessions}
+        launcher={launcher || !focused}
+        onNew={() => {
+          setPane(null)
+          setLauncher(true)
+        }}
+        onPick={() => {
+          setPane(null)
+          setLauncher(false)
+        }}
+      />
 
       <main className="col center">
         {paneInst ? (
@@ -142,16 +177,17 @@ export function App() {
             <header className="head">
               <Icon tile={paneInst.tile} />
               <span className="name">{label(paneInst)}</span>
-              <button className="ghost" title="Back to the column (Esc)" onClick={() => setPane(null)}>
+              <button className="ghost" title="Back (Esc)" onClick={() => setPane(null)}>
                 ×
               </button>
             </header>
             <div className="face pane-face" data-pane={paneInst.key} />
           </section>
+        ) : focused && !launcher ? (
+          <FocusPane session={focused} />
         ) : (
-          <section className="launcher">
-            <h1>workshop</h1>
-            <p>The launcher lives here once sessions arrive. For now: the tile column, on the right.</p>
+          <div className="center-scroll">
+            <Launcher recent={sessions?.recent ?? []} onStarted={() => setLauncher(false)} />
             {problems.length > 0 && (
               <div className="problems">
                 <h2>Tiles that were refused</h2>
@@ -167,7 +203,7 @@ export function App() {
                 ))}
               </div>
             )}
-          </section>
+          </div>
         )}
       </main>
 

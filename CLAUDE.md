@@ -4,14 +4,16 @@ A desktop app for people who use Claude Code: several Claude Code sessions in on
 column of small apps ("tiles") beside them that anyone can write, share and install. Open source,
 in the DoshaLabs GitHub org. macOS and Claude Code first.
 
-**Status (10 Nov 2026): roadmap step 1 is built (the tile host); the rest of this file is still
-the plan.** Every section says what was decided and why, so that whoever starts building, person or
+**Status (10 Nov 2026): the tile host (roadmap step 1) and sessions are built; the rest of this
+file is still the plan.** Every section says what was decided and why, so that whoever starts building, person or
 Claude session, does not have to re-derive it. When code lands, rewrite the matching section to
 describe what exists and delete the plan wording.
 
 **What exists.** `npm run dev` · `npm test` (unit) · `npm run smoke` (launches the app with a
 throwaway profile and `test/fixtures/probe`, a tile that tries every way out of the sandbox, and
 drives the door; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture of the window).
+Smoke sessions run a stand-in `claude` (`test/fixtures/fake-claude/claude`) that runs our hooks the
+way the CLI does; `WORKSHOP_REAL_CLAUDE=1 npx electron . --smoke` runs one real Haiku turn instead.
 
 - `src/shared/manifest.ts`: the tile.json validator and the per-request network rule. Unknown
   permissions are refused, `backend` is refused, `net` is https/wss to listed hosts only.
@@ -33,8 +35,19 @@ drives the door; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture
 - Themes: deck's whole catalog (`src/shared/themes.ts`), saved by main (`src/main/settings.ts`),
   picked from the top bar, pushed to every tile as `--ws-*`. Deep Space's sky is
   `src/renderer/src/cosmos.ts`. Glass is solid until its picture wall comes over from deck.
-- Not yet: sessions, `sessions`/`usage`/`transcripts` (accepted in manifests, not yet in the
-  bridge), the trusted tier.
+- Sessions (`src/main/core-sessions.ts` wires them): `sessions.ts` (tmux + node-pty, park /
+  resume / kill), `hooks.ts` (the `--settings` file), `fleet.ts`, `usage.ts`, `tmux.ts`, `env.ts`,
+  carried from deck without slots, cap or wolfpack. In the window: `Sessions.tsx` (column,
+  launcher, focus pane) and `terminals.ts`. Differences from deck: hooks go through the door's
+  server with a per-session token kept in a 0600 file named by `WORKSHOP_AUTH` (never on a
+  command line, where `ps` shows it), so core knows which session called (the door's `caller`
+  is the session's name) and a hook naming another session's id is ignored; hooks read core's
+  port from `<profile>/port`, so a session that outlived a restart still finds core. Profiles:
+  `workshop` (userData `workshop`), `workshop-dev` under `npm run dev` (its own socket and folder).
+- Bridge: `sessions.list/watch/paste` (no titles: they quote the conversation) and
+  `usage.get/watch` (the two windows, and per session context % and cost, from the status line).
+- Not yet: `transcripts`, the trusted tier, session tiles (conversations as tiles), the leash and
+  permission prompts in a tile, Foxtrot.
 
 Terms used throughout:
 

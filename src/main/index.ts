@@ -1,9 +1,9 @@
-// Core's main process. In this first cut (roadmap step 1) it is the tile host: it finds the tiles,
-// arms a sandbox for each, guards every webview core's window attaches, answers the bridge and
-// runs the door. Sessions, the launcher and the rest of deck's core come over in step 3.
+// Core's main process: the tile host (it finds the tiles, arms a sandbox for each, guards every
+// webview core's window attaches, answers the bridge and runs the door) and the sessions
+// (main/core-sessions.ts).
 
 import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protocol, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import { mkdtempSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
+import { mkdtempSync, readFileSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
@@ -15,16 +15,26 @@ import { TileGrants } from './files'
 import { TileStore } from './storage'
 import { MAX_INSTANCES, TILE_SCHEME, armSession, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
 import { runSmoke } from './smoke'
+import { startSessions, type CoreSessions } from './core-sessions'
+import type { SessionsState } from '@shared/sessions'
+import type { Usage } from '@shared/usage'
 
 const SMOKE = process.argv.includes('--smoke')
 const devTilesIn = (argv: string[], cwd = process.cwd()): string[] =>
   argv.filter((a) => a.startsWith('--dev-tile=')).map((a) => resolve(cwd, a.slice('--dev-tile='.length)))
 const devTiles = devTilesIn(process.argv)
 
+/**
+ * The profile names the tmux socket and the folder everything lives in, so a dev build (`npm run
+ * dev`) never sees the installed app's sessions and a session working ON workshop can run the dev
+ * build inside the installed one. A smoke run gets a throwaway one.
+ */
+const DEV = !!process.env.ELECTRON_RENDERER_URL
+const PROFILE = SMOKE ? `workshop-smoke-${process.pid}` : DEV ? 'workshop-dev' : 'workshop'
 if (SMOKE) {
   app.setPath('userData', mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
-}
+} else if (DEV) app.setPath('userData', `${app.getPath('userData')}-dev`)
 
 // One app per profile. `workshop tile dev ./x` while it runs hands the folder to the running app.
 if (!SMOKE && !app.requestSingleInstanceLock()) app.exit(0)
@@ -33,6 +43,7 @@ if (!SMOKE && !app.requestSingleInstanceLock()) app.exit(0)
 protocol.registerSchemesAsPrivileged([{ scheme: TILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
 
 let win: BrowserWindow | null = null
+let core: CoreSessions | null = null
 let registry: Registry = { tiles: new Map(), problems: [] }
 
 interface Guest {
@@ -62,18 +73,20 @@ const variant = () => {
   const s = settings.get()
   return resolveVariant(s.theme, s.appearance, nativeTheme.shouldUseDarkColors)
 }
-const vars = (): Record<string, string> => themeVars(variant())
+/** The theme for a tile: the colours, and light or dark (core sets `color-scheme` from it, so native scrollbars and form controls follow). */
+const vars = (): Record<string, string> => ({ ...themeVars(variant()), '--ws-scheme': isDark(settings.get()) ? 'dark' : 'light' })
 /** What core's window needs to paint itself: the settings, the live variables, and whether there is a wall. */
 const themeState = (): ThemeState => {
   const s = settings.get()
   // Glass's wall is Wikipedia's picture of the day in deck; until it comes over, Glass is solid here.
-  return { ...s, dark: isDark(s), wall: seeThrough(s.theme) && s.theme === COSMOS_ID, vars: vars() }
+  return { ...s, dark: isDark(s), wall: seeThrough(s.theme) && s.theme === COSMOS_ID, vars: vars(), term: variant().term }
 }
 
 /** The theme changed (settings or the OS): repaint the window and every tile. */
 function pushTheme(): void {
   const v = vars()
   win?.setBackgroundColor(v['--ws-bg'])
+  core?.settings.setDark(isDark(settings.get()))
   win?.webContents.send(CH.themeChanged, themeState())
   for (const g of liveByTile.values()) g.wc.send(CH.theme, v)
 }
@@ -88,7 +101,8 @@ const door = new Door({
       .sort((a, b) => b.usedAt - a.usedAt)[0]
     g?.wc.send(CH.doorCall, call)
     return g?.key
-  }
+  },
+  hook: (name, token, payload) => core?.hook(name, token, payload)
 })
 
 const grants = new Map<string, TileGrants>()
@@ -123,7 +137,7 @@ function guestOf(e: IpcMainEvent | IpcMainInvokeEvent): Guest | null {
 }
 const tileOf = (e: IpcMainEvent | IpcMainInvokeEvent): Tile | null => guestOf(e)?.tile ?? null
 
-function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify' | 'files'): Guest {
+function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage'): Guest {
   const g = guestOf(e)
   if (!g) throw new Error('not a tile')
   if (perm && !g.tile.manifest.permissions[perm]) throw new Error(`this tile did not ask for "${perm}" in tile.json`)
@@ -252,7 +266,41 @@ async function addDevTile(folder: string): Promise<string> {
   return `loaded ${id} from ${tile.root}${tile.devOrigin ? ` (dev server ${tile.devOrigin})` : ', reloading on change'}`
 }
 
+/** What a tile with "sessions" sees of them: no ids it could not use, no titles (they quote the conversation). */
+function tileSessions(s: SessionsState): { id: string; name: string; project: string; status: string; focused: boolean; open: boolean }[] {
+  return s.sessions.map((v) => ({ id: v.id, name: v.name, project: v.cwd, status: v.status, focused: v.id === s.focus, open: v.open }))
+}
+const lastPaste = new Map<string, number>()
+
+function pushSessions(s: SessionsState): void {
+  const list = tileSessions(s)
+  for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
+}
+function pushUsage(u: Usage): void {
+  for (const g of liveByTile.values()) if (g.tile.manifest.permissions.usage) g.wc.send(CH.tileUsageChanged, u)
+}
+
 function bridge(): void {
+  ipcMain.handle(CH.tileSessionsList, (e) => {
+    need(e, 'sessions')
+    return core ? tileSessions(core.sessions.getState()) : []
+  })
+  ipcMain.handle(CH.tileSessionsPaste, (e, id: string, text: string) => {
+    const { tile } = need(e, 'sessions')
+    if (tile.manifest.permissions.sessions !== 'write') throw new Error('this tile asked for "sessions": "read"; pasting needs "write"')
+    if (typeof text !== 'string' || !text.trim() || text.length > 10_000) throw new Error('sessions.paste: text of 1 to 10,000 characters')
+    const rec = core?.sessions.find(String(id))
+    if (!rec || !rec.open) throw new Error('sessions.paste: no such open session')
+    const now = Date.now()
+    if (now - (lastPaste.get(tile.manifest.id) ?? 0) < 2000) throw new Error('sessions.paste: one every two seconds')
+    lastPaste.set(tile.manifest.id, now)
+    core!.sessions.paste(rec.id, text)
+  })
+  ipcMain.handle(CH.tileUsageGet, (e) => {
+    need(e, 'usage')
+    return core?.usage.get() ?? null
+  })
+
   ipcMain.on(CH.hello, (e) => {
     const t = tileOf(e)
     if (!t) {
@@ -422,21 +470,46 @@ app.whenReady().then(async () => {
     win?.focus()
   })
 
-  await door.start()
+  // The last port, if it is free: sessions that outlived the app find core where they left it.
+  let lastPort = 0
+  try {
+    lastPort = Number(readFileSync(join(app.getPath('userData'), 'port'), 'utf8')) || 0
+  } catch {
+    // first launch
+  }
+  await door.start(lastPort)
   // Where the CLI finds the door from outside a session. Readable by this user only.
   writeFileSync(join(app.getPath('userData'), 'door.json'), JSON.stringify({ port: door.port, token: door.token }), { mode: 0o600 })
 
   bridge()
+  core = await startSessions({
+    win: () => win,
+    door,
+    home: app.getPath('userData'),
+    profile: PROFILE,
+    appPath: app.getAppPath(),
+    pluginDirs: () => [...registry.tiles.values()].map((t) => t.plugin).filter((p): p is string => !!p),
+    dark: isDark(settings.get()),
+    poll: !SMOKE,
+    pathFirst: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getAppPath(), 'test/fixtures/fake-claude') : undefined,
+    onState: pushSessions,
+    onUsage: pushUsage
+  })
   createWindow()
 
   nativeTheme.on('updated', pushTheme)
 
   if (SMOKE) {
-    const code = await runSmoke({ win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened, addDevTile })
+    const code = await runSmoke({ win: win!, door, liveByTile, userData: app.getPath('userData'), opened: smokeOpened, addDevTile, core: core! })
+    core?.stop()
+    await core?.tmux.killServer()
     door.stop()
     app.exit(code)
   }
 })
+
+// Sessions are parked, not killed: the next launch reattaches them.
+app.on('before-quit', () => core?.stop())
 
 // The CLI reads door.json to find a running app; a stale one would point at a closed port.
 app.on('will-quit', () => {

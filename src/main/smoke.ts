@@ -3,7 +3,7 @@
 // drives the door over HTTP. Prints one line per check and exits non-zero if any failed.
 
 import type { BrowserWindow, WebContents } from 'electron'
-import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,6 +18,7 @@ interface Ctx {
   /** What the tiles asked the browser to open (a smoke run never opens one). */
   opened: string[]
   addDevTile: (folder: string) => Promise<string>
+  core: import('./core-sessions').CoreSessions
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -146,12 +147,21 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     check('wikipedia door: show', show.status === 200 && typeof show.json.result?.title === 'string', JSON.stringify(show.json))
 
     await devTiles(check, liveByTile, door.port, addDevTile)
+    if (process.env.WORKSHOP_REAL_CLAUDE) {
+      await realClaude(check, ctx)
+      return finish(results, ctx)
+    }
+    await sessions(check, ctx)
     await files(check, ctx)
     await themes(check, ctx)
     await instances(check, ctx)
   } catch (err) {
     check('smoke ran to the end', false, (err as Error).message)
   }
+  return finish(results, ctx)
+}
+
+async function finish(results: [string, boolean, string?][], { win }: Ctx): Promise<number> {
   // WORKSHOP_SHOT=<file.png>: a picture of the window as the smoke left it, to eyeball the layout.
   if (process.env.WORKSHOP_SHOT) {
     await sleep(1500)
@@ -298,6 +308,7 @@ async function themes(check: (name: string, ok: boolean, detail?: string) => voi
   await win.webContents.executeJavaScript(`window.core.setSettings({ theme: 'gruvbox', appearance: 'light' }).then(() => true)`)
   await sleep(200)
   check('themes: a tile is repainted', (await panel()) === '#fbf1c7', String(await panel()))
+  check('themes: a tile follows light and dark', (await liveByTile.get('probe')!.wc.executeJavaScript(`document.documentElement.style.colorScheme`)) === 'light')
   check('themes: a tile hears onChange', (await liveByTile.get('probe')!.wc.executeJavaScript('window.themeSeen')) === '#fbf1c7')
   check('themes: workshop.theme.vars is live', (await liveByTile.get('probe')!.wc.executeJavaScript(`workshop.theme.vars['--ws-panel']`)) === '#fbf1c7')
   check('themes: the sky comes down', (await win.webContents.executeJavaScript(`!document.querySelector('.cosmos-wall')`)) === true)
@@ -310,4 +321,103 @@ async function themes(check: (name: string, ok: boolean, detail?: string) => voi
   check('themes: back to Deep Space', (await win.webContents.executeJavaScript(`!!document.querySelector('.cosmos-wall')`)) === true)
   const bridged = (await liveByTile.get('probe')!.wc.executeJavaScript(`typeof window.core`)) as string
   check('themes: a tile cannot reach core\'s settings', bridged === 'undefined')
+}
+
+/**
+ * Sessions, with the stand-in CLI (test/fixtures/fake-claude): started in tmux with our settings,
+ * hooks and the status line reaching core with the session's own token, the door attributing a
+ * call to the session, tiles seeing sessions and usage as their permissions allow, park / resume / kill.
+ */
+async function sessions(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile, userData, core }: Ctx): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  const state = () => core.sessions.getState()
+  const cwd = await realpath(await mkdtemp(join(tmpdir(), 'ws-project-')))
+
+  const made = await js(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, name: 'smoke-one', model: 'sonnet', permissionMode: 'plan' })`)
+  const id = String(made.id)
+  await waitFor('the session to start', async () => (await screen(id)).includes('FAKE CLAUDE READY'))
+  const started = JSON.parse(await readFile(join(userData, `fake-${id}.json`), 'utf8')) as { args: string[]; auth: string; session: string }
+  const a = started.args
+  check('sessions: the CLI gets our settings, its id, model and mode', a.includes('--settings') && a.includes('--session-id') && a.join(' ').includes('--model sonnet') && a.join(' ').includes('--permission-mode plan') && a.join(' ').includes('--name smoke-one'), a.join(' '))
+  check('sessions: each tile plugin is handed over', a.some((x) => x.endsWith('tiles/wikipedia/plugin')), a.join(' '))
+  check('sessions: no token on the command line', !a.some((x) => /[0-9a-f]{48}/.test(x)))
+  const authMode = (await stat(started.auth)).mode & 0o777
+  check('sessions: the auth file is private', authMode === 0o600, authMode.toString(8))
+  check('sessions: state lists it, open and focused', state().focus === id && state().sessions[0]?.open === true && state().sessions[0]?.cwd === cwd)
+
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'hello\\r'); true`)
+  await waitFor('the first turn', async () => (await screen(id)).includes('DONE hello'))
+  await sleep(300)
+  const v = state().sessions.find((s) => s.id === id)!
+  check('sessions: hooks arrive (turn ended: idle, needs you)', v.status === 'idle' && v.attention === true, `${v.status} ${v.attention}`)
+  const u = core.usage.get()
+  check('sessions: the status line reaches usage', u.fiveHour?.pct === 42 && u.sessions[id]?.costUsd === 1.23 && u.sessions[id]?.context === 17, JSON.stringify(u))
+  check('sessions: the window hears usage', (await js(`window.core.usage().then((u) => u.fiveHour && u.fiveHour.pct)`)) === 42)
+
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'door\\r'); true`)
+  await waitFor('the door call from the session', async () => (await screen(id)).includes('DONE door'))
+  const scr = await screen(id)
+  check('sessions: a door call from a session carries its name', scr.includes('"caller": "smoke-one"') || scr.includes('"caller":"smoke-one"'), scr.slice(-400))
+
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'spoof\\r'); true`)
+  await waitFor('the spoof turn', async () => (await screen(id)).includes('DONE spoof'))
+  await sleep(300)
+  check('sessions: a hook claiming another session is ignored', state().sessions.find((s) => s.id === id)!.status === 'busy')
+
+  // Tiles: the probe has "sessions": "write" and "usage"; Wikipedia has neither.
+  const probe = liveByTile.get('probe')!.wc
+  const list = (await probe.executeJavaScript(`workshop.sessions.list()`)) as { id: string; name: string; project: string; focused: boolean }[]
+  check('tiles: sessions.list', list.some((s) => s.id === id && s.name === 'smoke-one' && s.project === cwd && s.focused), JSON.stringify(list))
+  check('tiles: no titles or tokens in the list', !JSON.stringify(list).includes('title') && !/[0-9a-f]{48}/.test(JSON.stringify(list)))
+  check('tiles: usage.get', (await probe.executeJavaScript(`workshop.usage.get().then((u) => u.fiveHour.pct)`)) === 42)
+  await probe.executeJavaScript(`workshop.sessions.paste(${JSON.stringify(id)}, 'pasted by a tile')`)
+  await waitFor('the pasted turn', async () => (await screen(id)).includes('DONE pasted by a tile'))
+  check('tiles: sessions.paste types into the session', true)
+  const wiki = liveByTile.get('wikipedia')!.wc
+  const refused = (await wiki.executeJavaScript(`Promise.all([workshop.sessions.list().then(() => false, () => true), workshop.usage.get().then(() => false, () => true)])`)) as boolean[]
+  check('tiles: no sessions or usage without the permission', refused.every(Boolean))
+
+  if (process.env.WORKSHOP_SHOT_SESSION) {
+    await sleep(800)
+    await writeFile(process.env.WORKSHOP_SHOT_SESSION, (await win.webContents.capturePage()).toPNG())
+  }
+  await js(`window.core.park(${JSON.stringify(id)})`)
+  await waitFor('the session to park', async () => state().sessions.find((s) => s.id === id)?.open === false)
+  check('sessions: park keeps tmux', await core.tmux.hasSession(`ws-${id}`))
+  await js(`window.core.resume(${JSON.stringify(id)})`)
+  await sleep(300)
+  check('sessions: resume reattaches', state().sessions.find((s) => s.id === id)?.attached === true && (await screen(id)).includes('DONE pasted by a tile'))
+  await js(`window.core.kill(${JSON.stringify(id)})`)
+  await sleep(300)
+  const gone = await stat(started.auth).then(() => false, () => true)
+  check('sessions: kill ends tmux, the record and the token', !(await core.tmux.hasSession(`ws-${id}`)) && !state().sessions.some((s) => s.id === id) && gone)
+}
+
+/**
+ * WORKSHOP_REAL_CLAUDE=1: one turn of the REAL CLI (Haiku, a few cents), to prove it accepts our
+ * settings file and that its hooks and status line reach core. Run in this repo, which must be a
+ * folder the CLI already trusts (else it stops at the trust question).
+ */
+async function realClaude(check: (name: string, ok: boolean, detail?: string) => void, { win, core }: Ctx): Promise<void> {
+  const cwd = process.cwd()
+  const made = (await win.webContents.executeJavaScript(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, model: 'haiku', name: 'real-smoke', prompt: 'Reply with exactly: OK' })`)) as { id: string }
+  const seen = new Set<string>()
+  let usage = false
+  await waitFor(
+    'the real turn to end',
+    () => {
+      const v = core.sessions.getState().sessions.find((s) => s.id === made.id)
+      if (v) seen.add(v.status)
+      usage ||= !!core.usage.get().sessions[made.id]
+      return !!v && v.status === 'idle' && v.attention && usage
+    },
+    120_000
+  ).catch(() => undefined)
+  const v = core.sessions.getState().sessions.find((s) => s.id === made.id)
+  const text = (await core.tmux.screen(`ws-${made.id}`))?.text ?? ''
+  check('real CLI: the turn ran and its hooks came back (idle, needs you)', !!v && v.status === 'idle' && v.attention, `${[...seen].join(' → ')}`)
+  check('real CLI: the status line reached usage', usage, JSON.stringify(core.usage.get()))
+  check('real CLI: it answered', /\bOK\b/.test(text), text.slice(-600))
+  await core.sessions.kill(made.id)
 }

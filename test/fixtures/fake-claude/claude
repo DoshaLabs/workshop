@@ -1,0 +1,48 @@
+#!/usr/bin/env node
+// A stand-in for the `claude` CLI, used only by `npm run smoke`. Like the real one it reads the
+// --settings file, puts its `env` into its own environment, and runs its hook and status-line
+// commands through the shell with JSON on stdin. Each line typed into it is a "turn":
+//   prompt hook → (the line's action) → status line → Stop hook → prints "DONE <line>".
+// Actions: `door` calls the probe tile through $WORKSHOP_TILE; `spoof` sends a Stop hook that
+// claims another session's id. It writes what it was started with to $WORKSHOP_HOME/fake-<id>.json.
+const { execSync } = require('node:child_process')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const args = process.argv.slice(2)
+const after = (flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined)
+const sid = after('--session-id') || after('--resume')
+const settings = JSON.parse(fs.readFileSync(after('--settings'), 'utf8'))
+Object.assign(process.env, settings.env || {})
+fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-${process.env.WORKSHOP_SESSION}.json`), JSON.stringify({ args, auth: process.env.WORKSHOP_AUTH, session: process.env.WORKSHOP_SESSION }))
+
+const run = (cmd, input) => {
+  try {
+    return execSync(cmd, { input: JSON.stringify(input), shell: '/bin/sh', env: process.env, encoding: 'utf8', timeout: 10000 })
+  } catch (err) {
+    return String(err.stdout || err.message)
+  }
+}
+const hook = (event, extra = {}) => {
+  for (const group of settings.hooks[event] || []) for (const h of group.hooks) run(h.command, { session_id: sid, hook_event_name: event, ...extra })
+}
+
+console.log('FAKE CLAUDE READY')
+let buf = ''
+process.stdin.setEncoding('utf8')
+process.stdin.on('data', (chunk) => {
+  buf += chunk.replace(/\x1b\[20[01]~/g, '')
+  let i
+  while ((i = buf.search(/[\r\n]/)) >= 0) {
+    const line = buf.slice(0, i).trim()
+    buf = buf.slice(i + 1)
+    if (!line) continue
+    hook('UserPromptSubmit', { prompt: line })
+    if (line === 'door') console.log(run(`node "$WORKSHOP_TILE" probe echo from-session`, {}).replace(/\s+/g, ' '))
+    run(settings.statusLine.command, { session_id: sid, rate_limits: { five_hour: { used_percentage: 42, resets_at: Math.floor(Date.now() / 1000) + 3600 } }, cost: { total_cost_usd: 1.23 }, context_window: { used_percentage: 17 } })
+    if (line === 'spoof') {
+      for (const group of settings.hooks.Stop || []) for (const h of group.hooks) run(h.command, { session_id: '00000000-0000-0000-0000-000000000000', hook_event_name: 'Stop' })
+    } else hook('Stop')
+    console.log(`DONE ${line}`)
+  }
+})

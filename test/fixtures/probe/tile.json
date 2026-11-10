@@ -17,7 +17,9 @@
       ],
       "timeoutMs": 500
     },
-    "files": true
+    "files": true,
+    "sessions": "write",
+    "usage": true
   },
   "multiple": true
 }

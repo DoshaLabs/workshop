@@ -2,6 +2,7 @@
 // sides cannot drift apart.
 
 import type { Manifest } from './manifest'
+import type { TermPalette } from './themes'
 
 export type TileView = 'tile' | 'pane'
 
@@ -13,6 +14,8 @@ export interface ThemeState {
   /** A wall of its own behind see-through panes (Deep Space's sky, Glass). */
   wall: boolean
   vars: Record<string, string>
+  /** The terminal palette (xterm's ITheme fields). */
+  term: TermPalette
 }
 
 /** What core's window knows about a registered tile. */
@@ -89,5 +92,29 @@ export const CH = {
   tilePane: 'ws:core:tile-pane',
   tileNotify: 'ws:core:tile-notify',
   themeChanged: 'ws:core:theme',
-  setSettings: 'ws:core:set-settings'
+  setSettings: 'ws:core:set-settings',
+  // sessions: core window ⇄ main
+  sessionsGet: 'ws:core:sessions-get',
+  sessionsState: 'ws:core:sessions-state', // main → window
+  sessionNew: 'ws:core:session-new',
+  sessionResume: 'ws:core:session-resume',
+  sessionPark: 'ws:core:session-park',
+  sessionKill: 'ws:core:session-kill',
+  sessionFocus: 'ws:core:session-focus',
+  pickFolder: 'ws:core:pick-folder',
+  ptyInput: 'ws:core:pty-input', // send
+  ptyResize: 'ws:core:pty-resize', // send
+  ptyTitle: 'ws:core:pty-title', // send
+  ptyBell: 'ws:core:pty-bell', // send
+  ptyData: 'ws:core:pty-data', // main → window
+  ptyExit: 'ws:core:pty-exit', // main → window
+  openExternal: 'ws:core:open-external',
+  usageGet: 'ws:core:usage-get',
+  usageChanged: 'ws:core:usage', // main → window
+  // sessions and usage: tile page ⇄ main
+  tileSessionsList: 'ws:tile:sessions-list',
+  tileSessionsChanged: 'ws:tile:sessions-changed', // main → tile
+  tileSessionsPaste: 'ws:tile:sessions-paste',
+  tileUsageGet: 'ws:tile:usage-get',
+  tileUsageChanged: 'ws:tile:usage-changed' // main → tile
 } as const
