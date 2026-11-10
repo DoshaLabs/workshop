@@ -4,7 +4,7 @@
 // The column holds tile INSTANCES. A tile's first instance is keyed by its id; a tile with
 // `multiple: true` may have more, keyed `<id>.<n>` (n up to 4), each its own page and partition.
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { ThemeState, TileHead, TileInfo, TileProblem, TileView } from '@shared/ipc'
 import { syncCosmos } from './cosmos'
 import { ThemePicker } from './ThemePicker'
@@ -12,7 +12,8 @@ import { FocusPane, Launcher } from './Sessions'
 import { SessionColumn } from './SessionColumn'
 import { Guard } from './Guard'
 import { setPalette } from './terminals'
-import type { SessionsState } from '@shared/sessions'
+import { shortcutOrder, type SessionsState } from '@shared/sessions'
+import { stepFrom } from '@shared/shortcuts'
 import type { Usage } from '@shared/usage'
 import { UsageMeter } from './UsageMeter'
 import { TileLayer, type Instance } from './TileLayer'
@@ -136,6 +137,31 @@ export function App() {
       setLauncher(false)
     }
   }, [focusId])
+
+  // ⌘1–9, ⌘[ ⌘], ⌘N, from wherever the focus is (main catches them; shared/shortcuts.ts). A session
+  // reached this way takes the whole center: the launcher, a pane and an overlay give way.
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
+  useEffect(
+    () =>
+      window.core.onShortcut((s) => {
+        if (s.kind === 'new') {
+          setPane(null)
+          setOverlay(null)
+          setLauncher(true)
+          return
+        }
+        const st = sessionsRef.current
+        const order = shortcutOrder(st)
+        const id = s.kind === 'focus' ? (order[s.n - 1] ?? null) : stepFrom(order, st?.focus ?? null, s.dir)
+        if (!id) return
+        setPane(null)
+        setOverlay(null)
+        setLauncher(false)
+        void window.core.focusSession(id)
+      }),
+    []
+  )
 
   useEffect(() => writeList(OFF_KEY, off), [off])
   useEffect(() => writeList(EXTRA_KEY, extra), [extra])

@@ -130,5 +130,7 @@ export const CH = {
   tileUsageChanged: 'ws:tile:usage-changed', // main → tile
   // session tiles: the conversation, tailed by main (main/transcript.ts)
   transcriptGet: 'ws:core:transcript-get',
-  transcriptChanged: 'ws:core:transcript' // main → window
+  transcriptChanged: 'ws:core:transcript', // main → window
+  // ⌘1–9, ⌘[ ⌘], ⌘N, caught by main wherever the focus is (shared/shortcuts.ts)
+  shortcut: 'ws:core:shortcut' // main → window
 } as const

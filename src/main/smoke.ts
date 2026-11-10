@@ -511,6 +511,59 @@ async function sessionTiles(check: (name: string, ok: boolean, detail?: string) 
   check('session tiles: a click opens the session\'s terminal in the center', (await terminals()) === 1 && (await js(`!${tile}`)) === true)
 }
 
+/**
+ * ⌘1–9, ⌘[ ⌘], ⌘N from wherever the focus is: core's window, a terminal, inside a tile's webview
+ * (whose key events never reach core's window, so main catches them; the page must not see them).
+ * `first` is a session that is open and focused; a second one is started and ended here.
+ */
+async function shortcuts(check: (name: string, ok: boolean, detail?: string) => void, { win, core, liveByTile }: Ctx, first: string, cwd: string): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const focus = (): string | null => core.sessions.getState().focus
+  const press = (wc: WebContents, keyCode: string): void => {
+    wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers: ['meta'] })
+    wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers: ['meta'] })
+  }
+  const lands = (what: string, id: string): Promise<boolean> => waitFor(what, () => focus() === id, 3000).then(() => true, () => false)
+  const launcher = (): Promise<boolean> => js(`!!document.querySelector('.launcher')`)
+
+  const two = String((await js(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, name: 'smoke-two' })`)).id)
+  await waitFor('the second session', async () => ((await core.tmux.screen(`ws-${two}`))?.text ?? '').includes('FAKE CLAUDE READY'))
+  check('shortcuts: each session tile wears its ⌘ number, in the order they were started', (await js(`document.querySelector('.session-tile[data-session="${first}"] .key')?.textContent`)) === '⌘1')
+
+  win.webContents.focus()
+  press(win.webContents, '1')
+  check('shortcuts: ⌘1 in core\'s window focuses the first session', await lands('⌘1', first))
+
+  const probe = liveByTile.get('probe')!.wc
+  await probe.executeJavaScript(`window.metaKeys = 0; addEventListener('keydown', (e) => { if (e.metaKey) window.metaKeys++ }, true); true`)
+  probe.focus()
+  press(probe, '2')
+  check('shortcuts: ⌘2 inside a tile\'s page focuses the second session', await lands('⌘2 from a tile', two))
+  press(probe, '[')
+  check('shortcuts: ⌘[ inside a tile\'s page steps back', await lands('⌘[ from a tile', first))
+  press(probe, 'N')
+  check('shortcuts: ⌘N inside a tile\'s page opens the launcher', await waitFor('the launcher', launcher, 3000).then(() => true, () => false))
+  check('shortcuts: the tile\'s page never sees them', (await probe.executeJavaScript('window.metaKeys')) === 0)
+
+  // From inside the terminal: xterm has the keyboard, main still takes the key first.
+  press(win.webContents, '1')
+  await waitFor('the terminal', async () => (await js(`document.querySelectorAll('.term-host .xterm').length`)) === 1, 3000).catch(() => undefined)
+  check('shortcuts: ⌘1 takes the center back from the launcher', !(await launcher()) && focus() === first)
+  await js(`document.querySelector('.term-host .xterm-helper-textarea')?.focus(); true`)
+  win.webContents.focus()
+  press(win.webContents, ']')
+  check('shortcuts: ⌘] with the focus in a terminal steps on', await lands('⌘] from a terminal', two))
+  press(win.webContents, ']')
+  check('shortcuts: ⌘] wraps around', await lands('⌘] wrapping', first))
+  press(win.webContents, '9')
+  await sleep(300)
+  check('shortcuts: a number with no session does nothing', focus() === first)
+
+  await js(`window.core.kill(${JSON.stringify(two)})`)
+  await waitFor('the second session to end', () => !core.sessions.getState().sessions.some((s) => s.id === two), 3000).catch(() => undefined)
+  await js(`window.core.focusSession(${JSON.stringify(first)})`)
+}
+
 async function sessions(check: (name: string, ok: boolean, detail?: string) => void, ctx: Ctx): Promise<void> {
   const { win, door, liveByTile, userData, core } = ctx
   const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
@@ -547,6 +600,7 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   const badges = (await js(`[...document.querySelectorAll('.pane .head .badge')].map((b) => b.textContent).join(' ')`)) as string
   check('usage: the session shows its context and cost', badges.includes('ctx 17%') && badges.includes('$1.23'), badges)
   await sessionTiles(check, ctx, id)
+  await shortcuts(check, ctx, id, cwd)
 
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'door\\r'); true`)
   await waitFor('the door call from the session', async () => (await screen(id)).includes('DONE door'))

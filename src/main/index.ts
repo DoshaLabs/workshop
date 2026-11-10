@@ -9,6 +9,7 @@ import { join, resolve } from 'node:path'
 import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
 import { BRIDGE_VERSION } from '@shared/manifest'
 import { FONT_VARS } from '@shared/fonts'
+import { shortcutOf } from '@shared/shortcuts'
 import { COSMOS_ID, forcesDark, resolveVariant, seeThrough, themeVars } from '@shared/themes'
 import { SettingsStore, type Settings } from './settings'
 import { Door } from './door'
@@ -93,6 +94,20 @@ function escClosesOverlay(wc: WebContents): void {
       ev.preventDefault()
       closeOverlay()
     }
+  })
+}
+
+/**
+ * Core's shortcuts (⌘1–9, ⌘[ ⌘], ⌘N) work wherever the focus is: a key pressed in a tile's
+ * webview or in a terminal is caught here, before the page sees it, and handed to core's window.
+ * Registered before a tile's gesture listener, so a shortcut never counts as a click in the tile.
+ */
+function coreShortcuts(wc: WebContents): void {
+  wc.on('before-input-event', (ev, input) => {
+    const s = shortcutOf(input)
+    if (!s) return
+    ev.preventDefault()
+    win?.webContents.send(CH.shortcut, s)
   })
 }
 
@@ -237,6 +252,7 @@ function guardWebviews(w: BrowserWindow): void {
       if (input.type === 'mouseDown' || input.type === 'touchStart' || input.type === 'gestureTap') g.gestureAt = Date.now()
     })
     escClosesOverlay(wc)
+    coreShortcuts(wc)
     wc.on('before-input-event', (ev, input) => {
       if (input.type === 'keyDown' && input.key !== 'Escape' && !ev.defaultPrevented) g.gestureAt = Date.now()
     })
@@ -558,6 +574,7 @@ function createWindow(): void {
   })
   guardWebviews(win)
   escClosesOverlay(win.webContents)
+  coreShortcuts(win.webContents)
   if (SMOKE) {
     win.webContents.on('console-message', (e) => console.log(`[window] ${e.message}`))
     win.webContents.on('did-attach-webview', (_e, wc) => {
