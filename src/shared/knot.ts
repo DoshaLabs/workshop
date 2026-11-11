@@ -149,11 +149,19 @@ export const MIN_CONTRAST = 3
  * the ink.
  */
 export function ensureContrast(c: RGB, surfaces: RGB[], ink: RGB, min = MIN_CONTRAST): RGB {
-  for (let t = 0; t <= 1.0001; t += 0.05) {
-    const x = mix(c, ink, Math.min(1, t))
-    if (surfaces.every((s) => contrast(x, s) >= min)) return x
+  const ok = (x: RGB): boolean => surfaces.every((s) => contrast(x, s) >= min)
+  if (ok(c)) return c
+  if (!ok(ink)) return ink
+  // Bisected, not stepped: in steps of 5% two neighbouring shades could land a step apart, and
+  // drawn large the strand showed it as a band.
+  let lo = 0
+  let hi = 1
+  for (let i = 0; i < 12; i++) {
+    const t = (lo + hi) / 2
+    if (ok(mix(c, ink, t))) hi = t
+    else lo = t
   }
-  return ink
+  return mix(c, ink, hi)
 }
 
 /** The theme colours a Knot is drawn from (CSS variables `--ws-*`, or a ThemeVariant's fields). */
@@ -179,12 +187,19 @@ const STOPS: Record<KnotMode, (keyof KnotTheme)[]> = {
   dead: ['dead', 'muted', 'dead']
 }
 
-export const SHADES = 24
-/** Depth bands, near to far. Far strands are pulled toward the surface, never made see-through (which washed out on light themes). */
-export const DEPTHS = [0, 0.2, 0.4]
+/**
+ * Steps along the gradient, and from near to far. Both are fine enough that no step shows even
+ * at the brand clip's 600 px (at 24 shades and three depth bands the strand read as blocks).
+ */
+export const SHADES = 96
+export const DEPTH_STEPS = 24
+/** How far the farthest strand is pulled toward the surface; never made see-through (that washed out on light themes). */
+export const FAR = 0.4
+/** Depth (0 far, 1 near) → how far toward the surface: none in front, FAR at the back, eased between. */
+export const farOf = (depth: number): number => FAR * Math.max(0, Math.min(1, (0.8 - depth) / 0.65))
 
 export interface KnotPalette {
-  /** [shade][depth band] → CSS colour; every one meets MIN_CONTRAST against every surface. */
+  /** [shade][depth step, near to far] → CSS colour; every one meets MIN_CONTRAST against every surface. */
   strand: string[][]
   /** The pulse's core, per shade: the strand colour pushed toward the ink. */
   pulse: string[]
@@ -230,7 +245,7 @@ export function knotPalette(theme: KnotTheme, mode: KnotMode, coat: KnotCoat = '
     const f = (i / SHADES) * (stops.length - 1)
     const k = Math.min(stops.length - 2, Math.floor(f))
     const base = mix(stops[k], stops[k + 1], f - k)
-    strand.push(DEPTHS.map((d) => hex(ensureContrast(mix(base, panel, d), surfaces, ink))))
+    strand.push(Array.from({ length: DEPTH_STEPS }, (_, d) => hex(ensureContrast(mix(base, panel, (FAR * d) / (DEPTH_STEPS - 1)), surfaces, ink))))
     pulse.push(hex(ensureContrast(mix(base, ink, 0.55), surfaces, ink)))
   }
   return { strand, pulse }
@@ -263,8 +278,12 @@ export interface KnotDraw {
   segs?: number
 }
 
-/** Segments for a box of side S: about three per pixel of side, at least 48. */
-export const segsFor = (S: number): number => Math.max(48, Math.min(160, Math.round(S * 3)))
+/**
+ * Segments for a box of side S: about three per pixel of side, at least 48, up to 160 at the app's
+ * sizes; drawn larger, enough that no segment is much longer than the strand is wide, or each
+ * joint's round end shows as a lump.
+ */
+export const segsFor = (S: number): number => Math.max(48, Math.min(Math.max(160, Math.round(S * 1.2)), Math.round(S * 3)))
 
 /**
  * Draws the Knot. The strand thins with the radius, but only part of the way and never below a
@@ -281,30 +300,50 @@ export function drawKnot(ctx: KnotCtx, { S, ph, palette, size, flare = 0, segs =
   const head = (((ph / TAU) % 1) + 1) % 1
   const reach = 0.82 - 0.3 * flare
   const shift = ph / TAU
-  ctx.lineCap = 'round'
-  for (const j of order) {
-    const f = j / segs
-    const depth = Math.max(0, Math.min(1, (pts[j][2] + 1.8) / 3.6))
-    const d = (f - head + 1) % 1
-    const glow = d > reach ? ((d - reach) / (1 - reach)) ** 2 : 0
-    const shade = Math.floor(((((f * 2 + shift) % 1) + 1) % 1) * SHADES) % SHADES
-    const band = depth > 0.62 ? 0 : depth > 0.32 ? 1 : 2
-    ctx.strokeStyle = palette.strand[shade][band]
-    ctx.lineWidth = Math.max(1, lw * (0.75 + 0.45 * depth) * (1 + glow * (0.7 + 0.6 * flare)))
+  const glowOf = (j: number): number => {
+    const d = ((j / segs - head) % 1 + 1) % 1
+    return d > reach ? ((d - reach) / (1 - reach)) ** 2 : 0
+  }
+  const shadeOf = (j: number): number => Math.floor(((((j / segs) * 2 + shift) % 1 + 1) % 1) * SHADES) % SHADES
+  const segment = (j: number): void => {
     ctx.beginPath()
     ctx.moveTo(pts[j][0], pts[j][1])
     ctx.lineTo(pts[j + 1][0], pts[j + 1][1])
     ctx.stroke()
-    if (glow > 0.55) {
-      ctx.strokeStyle = palette.pulse[shade]
-      ctx.lineWidth = Math.max(1, lw * 0.55)
-      ctx.beginPath()
-      ctx.moveTo(pts[j][0], pts[j][1])
-      ctx.lineTo(pts[j + 1][0], pts[j + 1][1])
-      ctx.stroke()
+  }
+  // The pulse's bright core, which comes in with the glow rather than at a step.
+  const core = (j: number): void => {
+    const g = glowOf(j)
+    if (g <= CORE_FROM) return
+    ctx.strokeStyle = palette.pulse[shadeOf(j)]
+    ctx.lineWidth = Math.max(1, lw * 0.55 * Math.min(1, (g - CORE_FROM) / (1 - CORE_FROM) * 2))
+    segment(j)
+  }
+  const drawn = new Uint8Array(segs)
+  // How many segments a round end reaches over: the widest stroke's half width, in segment lengths.
+  let len = 0
+  for (let j = 0; j < segs; j++) len += Math.hypot(pts[j + 1][0] - pts[j][0], pts[j + 1][1] - pts[j][1])
+  const reachOver = Math.ceil((lw * 1.2 * (1.7 + 0.6 * flare)) / 2 / Math.max(0.1, len / segs)) + 1
+  ctx.lineCap = 'round'
+  for (const j of order) {
+    const depth = Math.max(0, Math.min(1, (pts[j][2] + 1.8) / 3.6))
+    const glow = glowOf(j)
+    ctx.strokeStyle = palette.strand[shadeOf(j)][Math.round((farOf(depth) / FAR) * (DEPTH_STEPS - 1))]
+    ctx.lineWidth = Math.max(1, lw * (0.75 + 0.45 * depth) * (1 + glow * (0.7 + 0.6 * flare)))
+    segment(j)
+    drawn[j] = 1
+    // Back to front, a segment's round end lands on its neighbours' cores, which beaded the pulse
+    // into dots; the neighbours it reaches that are already drawn get theirs back (they are along
+    // the same strand at about the same depth, so this never shows through a crossing).
+    for (let k = -reachOver; k <= reachOver; k++) {
+      const n = (j + k + segs) % segs
+      if ((k === 0 || drawn[n]) && glowOf(n) > CORE_FROM) core(n)
     }
   }
 }
+
+/** Where the pulse's core starts, as a share of its glow. */
+const CORE_FROM = 0.3
 
 /**
  * The strand's width grows with the box, tuned for the app's 24 to 88 px. Drawn far larger (the

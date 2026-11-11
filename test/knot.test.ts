@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BOX, MIN_CONTRAST, MODES, P, TAU, contrast, drawKnot, ensureContrast, goldOf, knotMode, knotPalette, knotPoints, parseColor, wrapClock, type KnotCtx, type KnotMode, type KnotTheme } from '@shared/knot'
+import { BOX, MIN_CONTRAST, MODES, P, TAU, contrast, drawKnot, ensureContrast, goldOf, knotMode, knotPalette, knotPoints, parseColor, segsFor, wrapClock, type KnotCtx, type KnotMode, type KnotTheme } from '@shared/knot'
 import { THEMES } from '@shared/themes'
 
 /** A canvas context that only records what it was asked to draw with. */
@@ -186,4 +186,45 @@ describe('contrast, every theme, every mode, both coats, both sizes', () => {
       }
     })
   }
+})
+
+// Colin, 11 Nov 2026: at the brand clip's size the strand showed lighter and darker blocks, and lumps
+// at its joints.
+describe('the strand is smooth at any size', () => {
+  it('no visible step between neighbouring shades or depths, every theme and mode', () => {
+    const step = (a: string, b: string): number => {
+      const [x, y] = [parseColor(a)!, parseColor(b)!]
+      return Math.max(...x.map((v, i) => Math.abs(v - y[i])))
+    }
+    let worst = { by: 0, at: '' }
+    for (const { name, theme } of variants) {
+      for (const mode of MODE_LIST) {
+        const { strand } = knotPalette(theme, mode)
+        for (let i = 0; i < strand.length; i++) {
+          for (let d = 0; d < strand[i].length; d++) {
+            const near = [step(strand[i][d], strand[(i + 1) % strand.length][d])]
+            if (d + 1 < strand[i].length) near.push(step(strand[i][d], strand[i][d + 1]))
+            const by = Math.max(...near)
+            if (by > worst.by) worst = { by, at: `${name} ${mode} shade ${i} depth ${d}` }
+          }
+        }
+      }
+    }
+    // Most steps are under 8 (of 255; the three depth bands this replaced were about 40 apart). Where
+    // a colour pulled toward the panel meets the contrast floor and turns toward the ink, one step
+    // is about twice that: a bend in the strand's gradient, not a band.
+    expect(worst.by, worst.at).toBeLessThanOrEqual(16)
+  })
+  it('a segment is never longer than the strand is wide, up to the brand clip', () => {
+    for (const S of [BOX.mark, 120, 300, 605, 1000]) {
+      const segs = segsFor(S)
+      const pts = knotPoints(0.7, segs)
+      const sc = S / 2 / 2.2
+      let longest = 0
+      for (let j = 0; j < segs; j++) longest = Math.max(longest, Math.hypot(pts[j + 1][0] - pts[j][0], pts[j + 1][1] - pts[j][1]) * sc)
+      // The narrowest strand drawKnot makes at full size, after fineLine (a far strand is 0.75 wide).
+      const width = (S / 16) * 0.75 * (S <= 120 ? 1 : Math.max(0.5, 120 / S + 0.35))
+      expect(longest).toBeLessThanOrEqual(width)
+    }
+  })
 })

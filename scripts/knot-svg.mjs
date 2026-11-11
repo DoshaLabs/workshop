@@ -9,7 +9,7 @@
 // The frames are drawn by the app's own code: `drawKnot` from src/shared/knot.ts, with the
 // palette `knotPalette` makes from Deep Space's colours in src/shared/themes.ts, into a context
 // that records each stroke. So the picture is the real Knot: a cinquefoil, the (2,5) torus knot, its strands
-// sorted back to front, the depth bands and the pulse riding the strand.
+// sorted back to front, shaded with depth, and the pulse riding the strand.
 //
 // The loop is seamless because the curve closes after P = 2 loops (knot.ts, `knotPoints`): the
 // frames cover exactly P loops and the CSS steps through them forever. Under
@@ -53,6 +53,13 @@ function rng(seed) {
 // ── The Knot as frames ───────────────────────────────────────────────────────
 
 /**
+ * A colour rounded to steps of 6 (of 255) per channel. The app's gradient is finer than an eye can
+ * tell at this size; rounded, neighbouring strokes share a class and merge into one path, which
+ * keeps the files near their old size with the finer strand.
+ */
+const coarse = (hex) => '#' + [1, 3, 5].map((i) => Math.min(255, Math.round(parseInt(hex.slice(i, i + 2), 16) / 6) * 6).toString(16).padStart(2, '0')).join('')
+
+/**
  * The strokes `drawKnot` makes for one frame, as [colour, width, x1, y1, x2, y2], in the order it
  * makes them (back to front). Widths are rounded to half a pixel so strokes can share a class.
  */
@@ -71,7 +78,7 @@ function strokes(S, ph, palette, segs) {
       from = [x, y]
     },
     lineTo(x, y) {
-      list.push([this.strokeStyle, Math.round(this.lineWidth * thin * 2) / 2, from[0], from[1], x, y])
+      list.push([coarse(this.strokeStyle), Math.round(this.lineWidth * thin * 2) / 2, from[0], from[1], x, y])
     },
     stroke() {}
   }
@@ -180,7 +187,7 @@ function knotSvg() {
   const S = 240
   const pad = 20
   const W = S + pad * 2
-  const k = knotFrames({ S, frames: PER_LOOP * P, segs: 84, prefix: 'k', x: pad, y: pad, seconds: LOOP * P })
+  const k = knotFrames({ S, frames: PER_LOOP * P, segs: 170, prefix: 'k', x: pad, y: pad, seconds: LOOP * P })
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${W}" width="${W}" height="${W}" role="img" aria-label="The Knot, workshop's mark: a cinquefoil, the (2,5) torus knot, turning, a pulse riding its strand">
 <title>The Knot</title>
 <defs>${SKY_DEFS}<clipPath id="disc"><circle cx="${W / 2}" cy="${W / 2}" r="${W / 2}"/></clipPath></defs>
@@ -199,7 +206,7 @@ function bannerSvg() {
   const S = 300
   const kx = 104
   const ky = (H - S) / 2
-  const k = knotFrames({ S, frames: PER_LOOP * P, segs: 80, prefix: 'b', x: kx, y: ky, seconds: LOOP * P })
+  const k = knotFrames({ S, frames: PER_LOOP * P, segs: 190, prefix: 'b', x: kx, y: ky, seconds: LOOP * P })
   // "workshop" and the tagline, set from their outlines beside the knot.
   const word = words.word
   const wordSize = 150

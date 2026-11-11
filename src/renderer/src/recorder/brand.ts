@@ -1,6 +1,6 @@
 // The brand clip: workshop's mark for a Reel or a Story, made rather than filmed. Deep Space's sky
 // (cosmos.ts's Sky, its nebulae drawn smaller than the window's so the stars show round them and
-// the flight held near the middle), the Knot turning as it does while a session works, and the
+// the flight held near the middle), the Knot in its working colours, turning slower than a session's, and the
 // word "workshop" under it, centred as one. Drawn into its own 1080 × 1920 canvas on a clock: the
 // recorder shows that canvas inside its frame as the preview and records it as it is, so no screen
 // is captured and no Screen Recording permission is asked for. The sound is the take's as ever.
@@ -16,6 +16,8 @@ const space = themeById(COSMOS_ID).dark
 const KNOT = 0.56
 const WORD = 0.6
 const GAP = 0.06
+/** The knot turns this many times slower than a working session's: at full speed, filling a phone, it rushed (Colin, 11 Nov 2026). */
+const PACE = 2.5
 
 export class Brand {
   readonly canvas = document.createElement('canvas')
@@ -53,7 +55,7 @@ export class Brand {
     const now = performance.now()
     const dt = Math.min(0.1, (now - this.last) / 1000)
     this.last = now
-    this.clock = wrapClock(this.clock + dt / MODES.work.loop)
+    this.clock = wrapClock(this.clock + dt / (MODES.work.loop * PACE))
     const { ctx } = this
     const W = OUT_W
     const H = OUT_H
