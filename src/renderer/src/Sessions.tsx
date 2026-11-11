@@ -12,7 +12,7 @@ import { Mascot } from './Mascot'
 import { KnotCanvas } from './Knot'
 import { useFileDrop } from './drop'
 import { ParkButton } from './SessionColumn'
-import { PauseButton, SessionAsks } from './Leash'
+import { PauseButton, SessionAsks, StopButton } from './Leash'
 
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
@@ -243,7 +243,7 @@ export function FocusPane({ session, usage, n }: { session: SessionView; usage: 
         <span className="session-folder" title={session.cwd}>
           {tilde(session.cwd)}
         </span>
-        {session.cli !== 'codex' && <PauseButton s={session} />}
+        {session.cli === 'codex' ? <StopButton s={session} /> : <PauseButton s={session} />}
         <ParkButton id={session.id} />
       </header>
       <SessionAsks s={session} where="center" />

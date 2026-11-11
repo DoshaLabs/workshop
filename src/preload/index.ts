@@ -47,8 +47,8 @@ const core = {
   park: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionPark, id),
   kill: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionKill, id),
   focusSession: (id: string | null): Promise<void> => ipcRenderer.invoke(CH.sessionFocus, id),
-  /** The leash: pause a session (its next tool call waits), resume it, or refuse the call it holds. */
-  leash: (id: string, action: 'pause' | 'resume' | 'refuse'): Promise<void> => ipcRenderer.invoke(CH.sessionLeash, id, action),
+  /** The leash: pause a session (its next tool call waits), resume it, or refuse the call it holds; `stop` interrupts a Codex session's turn. */
+  leash: (id: string, action: 'pause' | 'resume' | 'refuse' | 'stop'): Promise<unknown> => ipcRenderer.invoke(CH.sessionLeash, id, action),
   /** Answer a permission prompt from the session's tile. False if the terminal answered it first. */
   answerPermission: (id: string, askId: string, allow: boolean): Promise<boolean> => ipcRenderer.invoke(CH.sessionPermission, id, askId, allow),
   pickFolder: (start?: string): Promise<string | null> => ipcRenderer.invoke(CH.pickFolder, start),

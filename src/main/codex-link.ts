@@ -65,6 +65,8 @@ export class CodexLink {
   private joined = false
   private readonly t: Transcript
   private readonly requests = new Map<string, OpenRequest>()
+  /** The running turn, from `turn/started` (null between turns, or before core saw one start). */
+  private turnId: string | null = null
   private readonly fileItems = new Map<string, unknown>()
 
   constructor(
@@ -220,6 +222,25 @@ export class CodexLink {
     return true
   }
 
+  /**
+   * Stop the running turn (⏸'s place on a Codex session, Colin, 11 Nov 2026: Codex cannot hold a
+   * call from outside, so the head offers Stop): `turn/interrupt`, as Esc in the terminal. The
+   * turn id is the one core saw start, else the newest turn still in progress. False when no
+   * turn runs or the server is not reachable.
+   */
+  async interrupt(): Promise<boolean> {
+    if (!this.joined || !this.threadId) return false
+    let turnId = this.turnId
+    if (!turnId) {
+      const r = await this.call<{ data?: { id?: unknown; status?: unknown }[] }>('thread/turns/list', { threadId: this.threadId, limit: 1, sortDirection: 'desc' }).catch(() => null)
+      const t = r?.data?.[0]
+      if (t && t.status === 'inProgress' && typeof t.id === 'string') turnId = t.id
+    }
+    if (!turnId) return false
+    await this.call('turn/interrupt', { threadId: this.threadId, turnId })
+    return true
+  }
+
   private drop(key: string): void {
     if (!this.requests.delete(key)) return
     this.on.askGone(key)
@@ -273,7 +294,13 @@ export class CodexLink {
         if (st) this.on.status(st.status, st.needsYou)
         break
       }
+      case 'turn/started': {
+        const turn = p.turn as { id?: unknown } | undefined
+        if (typeof turn?.id === 'string') this.turnId = turn.id
+        break
+      }
       case 'turn/completed':
+        this.turnId = null
         this.dropAll()
         this.on.turnDone()
         break

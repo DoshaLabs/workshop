@@ -258,6 +258,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   handle(CH.sessionLeash, (id: string, action: string) => {
     const s = sessions.find(String(id))
     if (!s) return
+    // A Codex session has no pause (its CLI cannot hold a call from outside): Stop interrupts its turn.
+    if (s.cli === 'codex') return action === 'stop' ? codexLinks.get(s.id)?.interrupt().catch(() => false) : undefined
     if (action === 'pause') leash.pause(s.id)
     else if (action === 'resume') leash.resume(s.id)
     else if (action === 'refuse') leash.refuseHeld(s.id)

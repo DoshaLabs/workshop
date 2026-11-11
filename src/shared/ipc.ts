@@ -135,7 +135,7 @@ export const CH = {
   sessionPark: 'ws:core:session-park',
   sessionKill: 'ws:core:session-kill',
   sessionFocus: 'ws:core:session-focus',
-  /** The leash: (id, 'pause' | 'resume' | 'refuse'). Core's window only (main/leash.ts). */
+  /** The leash: (id, 'pause' | 'resume' | 'refuse'), or 'stop' for a Codex session (turn/interrupt). Core's window only (main/leash.ts). */
   sessionLeash: 'ws:core:session-leash',
   /** A permission prompt answered from a session's tile: (id, askId, allow) → whether it was still open. */
   sessionPermission: 'ws:core:session-permission',

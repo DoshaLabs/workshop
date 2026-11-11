@@ -269,8 +269,8 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   session's approval requests of its own thread are the session's asks (`Leash.offer`, the same
   card as Claude's), answered only on a click (`accept` / `decline`), dropped when the terminal
   answers (`serverRequest/resolved`); a permissions request is shown for the terminal only;
-  no other request is ever answered. Not yet: the leash
-  (no ⏸), commits, the wolfpack, the door as MCP, both plans' windows in the top bar. Hook ids
+  no other request is ever answered. No pause (Codex cannot hold a call from outside): ■ Stop
+  on its heads while a turn runs, two clicks, `turn/interrupt` (Colin, 11 Nov 2026). Not yet: commits, the wolfpack, the door as MCP, both plans' windows in the top bar. Hook ids
   match through `isSession` (never on ''). Smoke: `test/fixtures/fake-codex/codex` (speaks the
   app-server protocol), `smoke-codex.ts`.
 - `transcripts` (bridge 1.7): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed

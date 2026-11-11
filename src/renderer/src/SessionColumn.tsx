@@ -20,7 +20,7 @@ import { ChatView } from './ChatView'
 import { Guard } from './Guard'
 import { useTranscript } from './transcripts'
 import { SessionUsage } from './UsageMeter'
-import { PauseButton, SessionAsks } from './Leash'
+import { PauseButton, SessionAsks, StopButton } from './Leash'
 import { useAgents } from './agents-store'
 import { PackTile } from './PackTile'
 
@@ -162,7 +162,7 @@ function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number
           </span>
         )}
         <SessionUsage id={s.id} usage={usage} />
-        {s.cli !== 'codex' && <PauseButton s={s} />}
+        {s.cli === 'codex' ? <StopButton s={s} /> : <PauseButton s={s} />}
         <ParkButton id={s.id} />
       </header>
       <div className="session-body">

@@ -6,7 +6,8 @@
 // pause; park and resume reattach; after its tmux dies it starts again (a known thread resumed by
 // id); a clean exit ends both windows and parks it; kill removes the socket. Phase 3: an approval
 // shows on the session as Allow / Deny, is answered only on a click, and goes when the terminal
-// answers first; a permissions request and a question are never answered by core.
+// answers first; a permissions request and a question are never answered by core. No pause: Stop
+// (two clicks) interrupts the running turn.
 
 import type { BrowserWindow } from 'electron'
 import { execFileSync } from 'node:child_process'
@@ -153,12 +154,33 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   await noCard()
   check('codex: answered in the terminal, it goes', (await card()) === null && (await answers()).length === 2)
 
+  // Stop (item 2, Colin's choice: Codex cannot hold a call from outside): ■ while a turn runs, two clicks, turn/interrupt.
+  const stopBtn = (): Promise<number> => js(`document.querySelectorAll('[data-leash="stop"]').length`)
+  check('codex: no Stop while no turn runs', (await stopBtn()) === 0)
+  await js(`window.core.leash(${JSON.stringify(id)}, 'pause')`)
+  check('codex: a Codex session cannot be paused (no leash file, nothing held)', !core.sessions.view(id)?.leash.paused && !existsSync(join(core.leash.dir, `${id}.paused`)))
+  core.sessions.input(id, 'slow\r')
+  await waitFor('the slow turn', () => core.sessions.view(id)?.status === 'busy', 5000).catch(() => undefined)
+  await waitFor('Stop', async () => (await stopBtn()) > 0, 5000).catch(() => undefined)
+  check('codex: Stop shows while a turn runs, in place of pause', (await stopBtn()) > 0 && (await js(`document.querySelectorAll('.session-tile[data-session="${id}"] .leash-toggle, .focus-pane .leash-toggle').length`)) === 0)
+  await js(`document.querySelector('[data-leash="stop"]')?.click(); true`)
+  await sleep(300)
+  const armedTxt = (await js(`document.querySelector('[data-leash="stop"]')?.textContent`)) as string
+  check('codex: the first click only arms it', armedTxt === 'stop' && !existsSync(`${sock}.interrupts.json`), armedTxt)
+  await js(`document.querySelector('[data-leash="stop"]')?.click(); true`)
+  await waitFor('the interrupt', () => existsSync(`${sock}.interrupts.json`), 5000).catch(() => undefined)
+  const ints = JSON.parse(await readFile(`${sock}.interrupts.json`, 'utf8').catch(() => '[]')) as { threadId?: string; turnId?: string }[]
+  check('codex: the second click interrupts the running turn (its id from turn/started)', ints.length === 1 && ints[0].threadId === threadId && /^[0-9a-f-]{36}$/.test(ints[0].turnId ?? ''), JSON.stringify(ints))
+  await waitFor('idle after the stop', () => core.sessions.view(id)?.status === 'idle', 5000).catch(() => undefined)
+  const lastTool = [...(core.transcripts.get(id)?.blocks ?? [])].reverse().find((b) => b.kind === 'tool')
+  check('codex: stopped, the session is idle, its command marked failed, and Stop goes', core.sessions.view(id)?.status === 'idle' && lastTool?.kind === 'tool' && lastTool.label === 'sleep 600' && lastTool.error && (await stopBtn()) === 0, JSON.stringify(lastTool))
+
   // Its tile in the column: the codex badge, and no pause (the leash is Claude Code's hooks).
   await js(`document.querySelector('.session-plus')?.click(); true`)
   const tile = `document.querySelector('.session-tile[data-session="${id}"]')`
   await waitFor('its tile', async () => (await js(`!!${tile}`)) === true, 5000).catch(() => undefined)
   const head = (await js(`(() => { const t = ${tile}; return t && { badges: [...t.querySelectorAll('.head .badge')].map((b) => b.textContent.trim()), pause: !!t.querySelector('.head .leash-toggle') } })()`)) as { badges: string[]; pause: boolean } | null
-  check('codex: its tile wears a codex badge and no pause', !!head && head.badges.includes('codex') && !head.pause, JSON.stringify(head))
+  check('codex: its tile wears a codex badge and no pause (Stop instead, while a turn runs)', !!head && head.badges.includes('codex') && !head.pause, JSON.stringify(head))
   await waitFor('its conversation', async () => (await js(`!!${tile}?.querySelector('.chat-tool')`)) === true, 5000).catch(() => undefined)
   const drawn = (await js(`(() => { const t = ${tile}; return t && { user: t.querySelector('.chat-user')?.textContent, bold: t.querySelector('.chat-text strong')?.textContent, tool: t.querySelector('.chat-tool')?.textContent, title: t.querySelector('.subname')?.textContent } })()`)) as Record<string, string> | null
   check('codex: its tile draws the conversation as a Claude session\'s: prompt, markdown, tool line, title', !!drawn && drawn.user === 'hello codex' && drawn.bold === 'hello.txt' && /touch hello\.txt/.test(drawn.tool ?? '') && (drawn.title ?? '').includes('Make hello.txt'), JSON.stringify(drawn))

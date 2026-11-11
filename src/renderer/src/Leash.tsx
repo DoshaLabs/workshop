@@ -7,7 +7,7 @@
 //
 // The tool call is text: React writes it as text nodes, never HTML, and nothing in it is a link.
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { HeldCall, PermissionAsk, ToolCallView } from '@shared/leash'
 import type { SessionView } from '@shared/sessions'
 
@@ -28,6 +28,41 @@ export function PauseButton({ s }: { s: SessionView }) {
       }}
     >
       {paused ? '▶' : '⏸'}
+    </button>
+  )
+}
+
+/**
+ * ■ on a Codex session's head while a turn runs: Stop, in ⏸'s place (Colin, 11 Nov 2026: Codex
+ * cannot hold a call from outside, so the choice was a stop). Two clicks: the first arms it for
+ * three seconds. Core interrupts the turn (turn/interrupt), as Esc in the terminal; you carry on
+ * by typing there.
+ */
+export function StopButton({ s }: { s: SessionView }) {
+  const [armed, setArmed] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const t = window.setTimeout(() => setArmed(false), 3000)
+    return () => window.clearTimeout(t)
+  }, [armed])
+  const running = s.status === 'busy' || s.status === 'blocked'
+  useEffect(() => {
+    if (!running) setArmed(false)
+  }, [running])
+  if (!running) return null
+  return (
+    <button
+      className={`ghost leash-stop ${armed ? 'armed' : ''}`}
+      data-leash="stop"
+      title={armed ? 'Click again to stop this turn' : 'Stop: interrupt this turn, as Esc in the terminal'}
+      onClick={(e) => {
+        stop(e)
+        if (!armed) return setArmed(true)
+        setArmed(false)
+        void window.core.leash(s.id, 'stop')
+      }}
+    >
+      {armed ? 'stop' : '■'}
     </button>
   )
 }

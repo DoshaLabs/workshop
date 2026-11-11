@@ -17,7 +17,9 @@
 //   plus a question (item/tool/requestUserInput, which core must never answer). Every answer a
 //   client sends is written to <path>.answers.json; the first answer to a request resolves it
 //   (`serverRequest/resolved` to everyone, the item done or declined, status idle), as typing
-//   `yes` in the TUI resolves them all.
+//   `yes` in the TUI resolves them all. `slow` starts a turn that runs (a command in progress)
+//   until a client sends turn/interrupt (writes <path>.interrupts.json; the command fails, the
+//   turn completes `interrupted`, its open requests resolve, status idle).
 //   `exit` ends the TUI cleanly (status 0), `crash` with status 3.
 
 const fs = require('node:fs')
@@ -80,8 +82,24 @@ function server() {
     notify(th, done ? 'item/completed' : 'item/started', { item: it, turnId, completedAtMs: at })
   }
   const exec = (id, status, exitCode) => ({ type: 'commandExecution', id, command: "/bin/zsh -lc 'touch hello.txt'", cwd: process.cwd(), status, exitCode, aggregatedOutput: null, commandActions: [], processId: null, source: 'agent', pluginId: null, scriptPath: null, durationMs: null })
+  const interrupts = []
+  /** The running turn per thread: { id, cmd? } */
+  const running = new Map()
+  const startTurn = (th) => {
+    const t = { id: randomUUID(), status: 'inProgress' }
+    th.turns = [...(th.turns || []), t]
+    running.set(th.thread.id, t)
+    notify(th, 'turn/started', { turn: { id: t.id, items: [], status: 'inProgress' } })
+    return t
+  }
+  const endTurn = (th, t, st) => {
+    t.status = st
+    running.delete(th.thread.id)
+    notify(th, 'turn/completed', { turn: { id: t.id, items: [], status: st } })
+  }
   const turn = (th, text) => {
-    const turnId = randomUUID()
+    const t = startTurn(th)
+    const turnId = t.id
     status(th, { type: 'active', activeFlags: [] })
     item(th, turnId, { type: 'userMessage', id: randomUUID(), clientId: null, content: [{ type: 'text', text, text_elements: [] }] }, true)
     const c = randomUUID()
@@ -89,7 +107,7 @@ function server() {
     item(th, turnId, exec(c, 'completed', 0), true)
     item(th, turnId, { type: 'agentMessage', id: randomUUID(), text: `Made **hello.txt** for: ${text}\n\n- one\n- two`, phase: null, memoryCitation: null, delivery: null, questions: null }, true)
     notify(th, 'thread/tokenUsage/updated', { turnId, tokenUsage: { total: { totalTokens: 13931 }, last: { totalTokens: 25840, inputTokens: 25000, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 840, reasoningOutputTokens: 0 }, modelContextWindow: 258400 } })
-    notify(th, 'turn/completed', { turn: { id: turnId, items: [], status: 'completed' } })
+    endTurn(th, t, 'completed')
     status(th, { type: 'idle' })
     if (!named) {
       named = true
@@ -143,6 +161,27 @@ function server() {
           th.subs.add(ws)
           return reply({ thread: th.thread, model: 'fake', cwd: th.thread.cwd })
         }
+        case 'thread/turns/list': {
+          const th = threads.get(p.threadId)
+          const data = th ? [...(th.turns || [])].reverse().slice(0, p.limit || 50).map((t) => ({ id: t.id, items: [], status: t.status })) : []
+          return reply({ data, nextCursor: null, backwardsCursor: null })
+        }
+        case 'turn/interrupt': {
+          interrupts.push(p)
+          fs.writeFileSync(`${sock}.interrupts.json`, JSON.stringify(interrupts))
+          const th = threads.get(p.threadId)
+          const t = th && running.get(th.thread.id)
+          if (!t || t.id !== p.turnId) return send(ws, { id: m.id, error: { code: -32600, message: 'no such turn' } })
+          reply({})
+          if (t.cmd) item(th, t.id, { ...t.cmd, status: 'failed', exitCode: null }, true)
+          for (const r of pending.filter((x) => x.th === th)) {
+            pending.splice(pending.indexOf(r), 1)
+            notify(th, 'serverRequest/resolved', { requestId: r.id })
+          }
+          endTurn(th, t, 'interrupted')
+          status(th, { type: 'idle' })
+          return
+        }
         case 'thread/items/list': {
           const th = threads.get(p.threadId)
           const data = th ? [...th.items].reverse().slice(0, p.limit || 50) : []
@@ -171,6 +210,12 @@ function server() {
             status(th, { type: 'active', activeFlags: ['waitingOnApproval', 'waitingOnUserInput'] })
             request(th, 'item/permissions/requestApproval', { itemId: 'p', environmentId: null, cwd: process.cwd(), reason: 'needs the network', permissions: { network: { enabled: true } } })
             request(th, 'item/tool/requestUserInput', { itemId: 'q', questions: [{ id: 'q1', header: 'Pick', question: 'Which?', options: null }] })
+          } else if (p.text === 'slow') {
+            const t = startTurn(th)
+            status(th, { type: 'active', activeFlags: [] })
+            item(th, t.id, { type: 'userMessage', id: randomUUID(), clientId: null, content: [{ type: 'text', text: 'slow', text_elements: [] }] }, true)
+            t.cmd = { ...exec(randomUUID(), 'inProgress', null), command: "/bin/zsh -lc 'sleep 600'" }
+            item(th, t.id, t.cmd, false)
           } else if (p.text === 'yes' && pending.length) {
             for (const r of pending.splice(0)) resolve(r, 'accept')
           } else turn(th, p.text)
