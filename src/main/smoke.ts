@@ -343,6 +343,14 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
     !!cover && cover.left === 0 && cover.right === cover.w && cover.bottom === cover.h && cover.top === cover.strip && cover.strip === 88 && cover.name === 'Wikipedia',
     JSON.stringify(cover)
   )
+  // Nothing core draws comes through it: the middle of every cell is the overlay's page. (A
+  // session's prompt bar is checked with the session tiles, which do not exist yet here.)
+  const through = (await js(`(() => {
+    const over = document.querySelector('.tile-page.over')
+    const seen = [...document.querySelectorAll('.tile')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.top + r.height / 2 > 88 && r.top + r.height / 2 < innerHeight)
+    return { seen: seen.length, through: seen.filter((r) => !over.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))).length }
+  })()`)) as { seen: number; through: number }
+  check('overlay: no cell of either column shows through it', through.seen > 0 && through.through === 0, JSON.stringify(through))
   await waitFor('the large picture', async () => (await wjs(`(() => { const i = document.querySelector('.wikibox-img'); return !!i && i.complete && i.naturalWidth > 0 })()`)) === true, 15_000).catch(() => undefined)
   const big = (await wjs(`(() => {
     const i = document.querySelector('.wikibox-img'), r = i?.getBoundingClientRect()
@@ -541,6 +549,21 @@ async function sessionTiles(check: (name: string, ok: boolean, detail?: string) 
   check('session tiles: Claude\'s title, the status mark, model, context and cost on the head', !!seen && seen.title === 'Smoke conversation' && seen.dot && seen.badges.includes('Sonnet') && seen.badges.includes('ctx 17%') && seen.badges.includes('$1.23'), JSON.stringify(seen))
   check('session tiles: prose in the reading face, prompts and tools in the interface and mono faces', !!seen && seen.prose.includes('Source Serif 4') && seen.prompt.includes('Nunito') && seen.toolFont.includes('JetBrains Mono'), JSON.stringify(seen && [seen.prose, seen.prompt, seen.toolFont]))
   check('session tiles: no terminal mounted while no session is in the center', (await terminals()) === 0)
+  // A tile page over the window (the overlay's class and box, set and undone in one task, so
+  // nothing repaints in between) covers a session's prompt bar: once it had a z-index of its own
+  // and came through the Wikipedia lightbox.
+  const under = (await js(`(() => {
+    const bar = ${tile}?.querySelector('.tile-prompt'), page = document.querySelector('.tile-page')
+    if (!bar || !page) return { bar: !!bar, page: !!page }
+    const r = bar.getBoundingClientRect(), was = page.getAttribute('style')
+    page.classList.add('over')
+    Object.assign(page.style, { visibility: 'visible', left: '0px', top: '88px', width: innerWidth + 'px', height: (innerHeight - 88) + 'px' })
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    page.classList.remove('over')
+    page.setAttribute('style', was)
+    return { bar: true, page: true, covered: page.contains(hit), hit: hit?.className }
+  })()`)) as { bar: boolean; page: boolean; covered?: boolean; hit?: string }
+  check('session tiles: the overlay covers a session\'s prompt bar', under.covered === true, JSON.stringify(under))
 
   // The prompt bar types into the session without bringing it into focus.
   await js(`(() => {
