@@ -1,6 +1,6 @@
 // Tails each open session's transcript so its tile can show the conversation itself instead of
-// the CLI's screen (CLAUDE.md §7). Carried from deck's main/transcript.ts, sessions only (the
-// subagent tails come with the wolfpack).
+// the CLI's screen (CLAUDE.md §7), and each subagent's (the wolfpack, main/agents.ts), whose file
+// the tracker hands over once it has SEEN it. Carried from deck's main/transcript.ts.
 //
 // Claude Code appends one JSON line per event to
 //   <CLAUDE_CONFIG_DIR or ~/.claude>/projects/<encoded cwd>/<session id>.jsonl
@@ -24,7 +24,12 @@ const TITLE_CHUNK = 1 << 20
 
 interface Tail {
   id: string
+  /** The CLI's session id, whose file is looked for by name; '' for a subagent (its path is handed over). */
   sessionId: string
+  /** One of the wolfpack's (syncAgents), not an open session's. */
+  agent: boolean
+  /** A subagent's own file: every line is marked `isSidechain`. */
+  sidechain: boolean
   path: string | null
   lookedAt: number
   offset: number
@@ -47,12 +52,37 @@ export class TranscriptWatcher {
   /** Keep exactly these sessions (core id → the CLI's session id) under watch. */
   sync(sessions: { id: string; claudeSessionId: string }[]): void {
     const keep = new Set(sessions.map((s) => s.id))
-    for (const id of this.tails.keys()) if (!keep.has(id)) this.tails.delete(id)
+    for (const [id, t] of this.tails) if (!t.agent && !keep.has(id)) this.tails.delete(id)
     for (const s of sessions) {
       const had = this.tails.get(s.id)
       if (had && had.sessionId === s.claudeSessionId) continue
-      this.tails.set(s.id, { id: s.id, sessionId: s.claudeSessionId, path: null, lookedAt: 0, offset: 0, rest: '', decoder: new StringDecoder('utf8'), transcript: emptyTranscript(s.id), dirty: false })
+      this.tails.set(s.id, fresh(s.id, s.claudeSessionId, false, null))
     }
+    this.timers()
+  }
+
+  /**
+   * Keep exactly these members of the wolfpack under watch (`agent:<id>`): a subagent by the
+   * transcript the tracker has SEEN (null until it has; a path that moved, because the stop hook
+   * named another file, starts the tail over), a helper session by its CLI session id, looked for
+   * by name like any session's.
+   */
+  syncAgents(agents: { id: string; path: string | null; sessionId?: string }[]): void {
+    const keep = new Set(agents.map((a) => a.id))
+    for (const [id, t] of this.tails) if (t.agent && !keep.has(id)) this.tails.delete(id)
+    for (const a of agents) {
+      const had = this.tails.get(a.id)
+      if (a.sessionId) {
+        if (!had || had.sessionId !== a.sessionId) this.tails.set(a.id, fresh(a.id, a.sessionId, true, null))
+        continue
+      }
+      if (had && (had.path === a.path || a.path === null)) continue
+      this.tails.set(a.id, fresh(a.id, '', true, a.path))
+    }
+    this.timers()
+  }
+
+  private timers(): void {
     if (this.tails.size > 0 && !this.timer) this.timer = setInterval(() => this.poll(), POLL_MS)
     if (this.tails.size === 0 && this.timer) {
       clearInterval(this.timer)
@@ -92,6 +122,7 @@ export class TranscriptWatcher {
 
   private read(t: Tail): void {
     if (!t.path) {
+      if (!t.sessionId) return // a subagent's: handed over by the tracker once it has seen the file
       if (Date.now() - t.lookedAt < LOOK_MS) return
       t.lookedAt = Date.now()
       t.path = this.locate(t.sessionId)
@@ -156,6 +187,10 @@ export class TranscriptWatcher {
   }
 }
 
+function fresh(id: string, sessionId: string, agent: boolean, path: string | null): Tail {
+  return { id, sessionId, agent, sidechain: agent && !sessionId, path, lookedAt: 0, offset: 0, rest: '', decoder: new StringDecoder('utf8'), transcript: emptyTranscript(id), dirty: false }
+}
+
 /**
  * Reads from `t.offset` to `end`, folding in every whole line. `partialStart`: the read begins in
  * the middle of a line, whose end is dropped unread.
@@ -175,7 +210,7 @@ function consume(t: Tail, fd: number, end: number, partialStart = false): void {
       lines.shift()
       skip = false
     }
-    for (const line of lines) if (applyLine(t.transcript, line)) t.dirty = true
+    for (const line of lines) if (applyLine(t.transcript, line, t.sidechain)) t.dirty = true
     // Trimmed as it goes, not once at the end, so a tool result's search for its call stays short.
     trimTranscript(t.transcript)
   }

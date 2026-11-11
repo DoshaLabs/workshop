@@ -37,6 +37,16 @@ export interface HookPayload {
   agent_type?: string
   agent_transcript_path?: string
   last_assistant_message?: string
+  // The wolfpack (main/agents.ts). PreToolUse and PostToolUse carry the tool; a subagent's own
+  // tool calls carry its agent_id and agent_type (seen on Claude Code 2.1.322).
+  tool_name?: string
+  tool_input?: Record<string, unknown>
+  tool_use_id?: string
+}
+
+/** What a PreToolUse hook may answer (the leash's): nothing lets the call through. */
+export interface PreToolDecision {
+  hookSpecificOutput: { hookEventName: 'PreToolUse'; permissionDecision: 'allow' | 'deny' | 'ask'; permissionDecisionReason?: string }
 }
 
 /** /hook/<name> → the event it carries. `status` is the status line, not a hook. */

@@ -30,8 +30,12 @@ export function emptyTranscript(id: string): Transcript {
   return { id, blocks: [], title: null, found: false }
 }
 
-/** Fold one transcript line into `t`. Returns true when something a tile shows changed. */
-export function applyLine(t: Transcript, line: string): boolean {
+/**
+ * Fold one transcript line into `t`. Returns true when something a tile shows changed.
+ * `sidechain`: the file is a subagent's own (`subagents/agent-<id>.jsonl`), every line of which is
+ * marked `isSidechain`; in a session's file those lines are not the conversation.
+ */
+export function applyLine(t: Transcript, line: string, sidechain = false): boolean {
   if (!line.trim()) return false
   let o: Json
   try {
@@ -45,8 +49,8 @@ export function applyLine(t: Transcript, line: string): boolean {
     t.title = o.aiTitle
     return true
   }
-  // A subagent's lines (the wolfpack's, not this round) and the CLI's own notes are not the conversation.
-  if (o.isSidechain || o.isMeta) return false
+  // In a session's file, a subagent's lines (its own tile shows them) and the CLI's own notes are not the conversation.
+  if ((o.isSidechain && !sidechain) || o.isMeta) return false
   const msg = o.message as Json | undefined
   if (!msg || typeof msg !== 'object') return false
   const ts = Date.parse(String(o.timestamp ?? '')) || Date.now()

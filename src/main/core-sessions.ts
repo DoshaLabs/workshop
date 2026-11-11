@@ -12,7 +12,7 @@ import type { Usage } from '@shared/usage'
 import type { Door } from './door'
 import { shellEnv } from './env'
 import { Fleet } from './fleet'
-import { HOOK_ROUTES, SessionSettings } from './hooks'
+import { HOOK_ROUTES, SessionSettings, type HookPayload } from './hooks'
 import { SessionManager } from './sessions'
 import { Tmux } from './tmux'
 import { TranscriptWatcher } from './transcript'
@@ -20,6 +20,9 @@ import { UsageTracker } from './usage'
 import { startPreview } from './preview'
 import { keepImage } from './drops'
 import { CommitRecorder, CommitStore, type CommitRecord } from './commits'
+import { AgentTracker } from './agents'
+import type { AgentsState } from '@shared/agents'
+import type { Transcript } from '@shared/transcript'
 
 export interface CoreSessions {
   sessions: SessionManager
@@ -27,6 +30,10 @@ export interface CoreSessions {
   tmux: Tmux
   settings: SessionSettings
   transcripts: TranscriptWatcher
+  /** The wolfpack's subagents (main/agents.ts). */
+  agents: AgentTracker
+  /** Every open session's subagents and helpers, as the window shows them. */
+  agentsState(): AgentsState
   /** Which session made which commit, as far as core saw (main/commits.ts). */
   commits: CommitRecorder
   /** Route a /hook/<name> call (the door's server hands them here). */
@@ -57,6 +64,8 @@ export interface Options {
   onUsage: (u: Usage) => void
   /** Core recorded a commit a session made: the whole list of records. */
   onCommits?: (all: CommitRecord[]) => void
+  /** A transcript changed (a session's, or `agent:<id>`): tiles with "transcripts" may hear of it. */
+  onTranscript?: (t: Transcript) => void
 }
 
 export async function startSessions(o: Options): Promise<CoreSessions> {
@@ -75,8 +84,17 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
 
   // Where the CLI the sessions run writes its transcripts: its config folder, as the sessions see it.
   const projects = join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects')
-  const transcripts = new TranscriptWatcher(projects, (t) => send(CH.transcriptChanged, t))
-  const watchOpen = (s: SessionsState): void => transcripts.sync(s.sessions.filter((x) => x.open).map((x) => ({ id: x.id, claudeSessionId: x.claudeSessionId })))
+  let agents: AgentTracker | null = null
+  const transcripts = new TranscriptWatcher(projects, (t) => {
+    send(CH.transcriptChanged, t)
+    agents?.onTranscript(t)
+    o.onTranscript?.(t)
+  })
+  const watchOpen = (s: SessionsState): void => {
+    const open = s.sessions.filter((x) => x.open)
+    transcripts.sync(open.map((x) => ({ id: x.id, claudeSessionId: x.claudeSessionId })))
+    agents?.keepParents(new Set(open.map((x) => x.id)))
+  }
 
   const sessions = new SessionManager({
     tmux,
@@ -101,6 +119,14 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     send(CH.usageChanged, u)
     o.onUsage(u)
   })
+  const agentsState = (): AgentsState => ({ agents: tracker.list(), leash: tracker.hasLeash() })
+  const tracker = new AgentTracker(
+    { open: (id) => !!sessions.find(id)?.open, paste: (id, text) => sessions.paste(id, text) },
+    projects,
+    (list) => transcripts.syncAgents(list),
+    () => send(CH.agentsState, agentsState())
+  )
+  agents = tracker
   await sessions.init()
   const commits = new CommitRecorder(new CommitStore(join(o.home, 'commits.json')), (all) => o.onCommits?.(all))
 
@@ -128,6 +154,11 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   handle(CH.sessionFocus, (id: string | null) => sessions.focus(id === null ? null : String(id)))
   handle(CH.usageGet, () => usage.get())
   handle(CH.transcriptGet, (id: string) => transcripts.get(String(id)))
+  handle(CH.agentsGet, () => agentsState())
+  handle(CH.agentPause, (id: string) => tracker.pause(String(id)))
+  handle(CH.agentResume, (id: string) => tracker.resume(String(id)))
+  handle(CH.agentKill, (id: string) => tracker.kill(String(id)))
+  handle(CH.agentDismiss, (id: string) => tracker.dismiss(String(id)))
   handle(CH.openExternal, (url: string) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
@@ -152,12 +183,14 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     tmux,
     settings,
     transcripts,
+    agents: tracker,
+    agentsState,
     commits,
     hook(name, token, payload) {
       const rec = sessions.byToken(token)
       if (!rec) return // a call from outside any session: hooks are only for sessions
       if (name === 'status') return usage.onStatus(rec.id, payload)
-      const p = (payload ?? {}) as { session_id?: string }
+      const p = (payload ?? {}) as HookPayload
       // A Bash call ended (PostToolUse): if it made commits, they are recorded as this session's.
       if (name === 'tool') {
         if (p.session_id === rec.claudeSessionId) void commits.onTool({ id: rec.id, name: rec.name }, payload).catch((err) => console.warn('[workshop] commits:', err))
@@ -165,7 +198,10 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
       }
       const event = HOOK_ROUTES[name]
       // A session reports for itself only: the payload must name the session its token belongs to.
-      if (event && p.session_id === rec.claudeSessionId) sessions.onHook(event, p)
+      if (!event || p.session_id !== rec.claudeSessionId) return
+      sessions.onHook(event, p)
+      // A subagent's hooks carry its PARENT's session id (and its own agent_id): they are the parent's.
+      tracker.onHook(rec, event, p)
     },
     async call(name, token, payload) {
       const rec = sessions.byToken(token)
@@ -174,6 +210,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     },
     stop() {
       fleet.stop()
+      tracker.stop()
       transcripts.stop()
       preview.stop()
       sessions.detachAll()
