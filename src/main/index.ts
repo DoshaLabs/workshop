@@ -68,6 +68,9 @@ let smokeStartDeadline: NodeJS.Timeout | null = null
 function smokeStartFailed(why: string): void {
   console.log(`FAIL  core started  (${why.replace(/\s+/g, ' ').slice(0, 600)})`)
   console.log('\n0 passed, 1 failed')
+  // app.exit has been seen to hang here (11 Nov 2026: the run sat four minutes after this line), so
+  // the process goes regardless a moment later.
+  setTimeout(() => process.kill(process.pid, 'SIGKILL'), 3000)
   app.exit(1)
 }
 const PROFILE = RESTARTED ? process.env.WORKSHOP_SMOKE_PROFILE! : SMOKE ? `workshop-smoke-${process.pid}` : NAMED ?? (DEV ? 'workshop-dev' : 'workshop')
