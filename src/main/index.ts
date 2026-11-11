@@ -16,7 +16,7 @@ import { SettingsStore, type Settings } from './settings'
 import { Door } from './door'
 import { TileGrants } from './files'
 import { TileStore } from './storage'
-import { MAX_INSTANCES, TILE_SCHEME, armSession, coreFile, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
+import { MAX_INSTANCES, TILE_SCHEME, armSession, setNetStandIn, coreFile, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
 import { runRestarted, runSmoke } from './smoke'
 import { scaffoldTile } from './scaffold'
 import { startSessions, type CoreSessions } from './core-sessions'
@@ -37,6 +37,7 @@ import type { Transcript } from '@shared/transcript'
 import { parseBuildInfo } from '@shared/update'
 import { Updater, bundleOf } from './updates'
 import { placeWindow } from './window-bounds'
+import { smokeNet } from './smoke-net'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
 const RESTARTED = process.argv.includes('--smoke-restarted')
@@ -57,10 +58,28 @@ const DEV = !!process.env.ELECTRON_RENDERER_URL
  * before it is installed (docs/progress/2026-11-10-dist.md).
  */
 const NAMED = !SMOKE && /^[a-z0-9][a-z0-9-]{0,40}$/.test(process.env.WORKSHOP_PROFILE ?? '') ? process.env.WORKSHOP_PROFILE! : null
+/** How long a smoke run's core may take to start before the run fails (smoke only). */
+const SMOKE_START_S = 60
+/** Running until the smoke checks begin; then cleared. */
+let smokeStartDeadline: NodeJS.Timeout | null = null
+function smokeStartFailed(why: string): void {
+  console.log(`FAIL  core started  (${why.replace(/\s+/g, ' ').slice(0, 600)})`)
+  console.log('\n0 passed, 1 failed')
+  app.exit(1)
+}
 const PROFILE = RESTARTED ? process.env.WORKSHOP_SMOKE_PROFILE! : SMOKE ? `workshop-smoke-${process.pid}` : NAMED ?? (DEV ? 'workshop-dev' : 'workshop')
 if (SMOKE) {
   app.setPath('userData', RESTARTED ? process.env.WORKSHOP_SMOKE_HOME! : mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
+  // No smoke run depends on the internet: the Wikipedia tile's hosts are answered from canned data
+  // (smoke-net.ts). WORKSHOP_LIVE_NET=1 runs the same checks against the real services.
+  if (process.env.WORKSHOP_LIVE_NET !== '1') setNetStandIn(smokeNet)
+  // A core that cannot start must fail the run at once, not leave it waiting on a window that never
+  // comes: a startup error, or no checks begun within the deadline, ends the run with a FAIL line.
+  smokeStartDeadline = setTimeout(() => smokeStartFailed(`no checks began within ${SMOKE_START_S} s`), SMOKE_START_S * 1000)
+  process.on('unhandledRejection', (err) => {
+    if (smokeStartDeadline) smokeStartFailed(err instanceof Error ? (err.stack ?? err.message) : String(err))
+  })
 } else if (NAMED) app.setPath('userData', join(app.getPath('appData'), NAMED))
 else if (DEV) app.setPath('userData', `${app.getPath('userData')}-dev`)
 /**
@@ -956,6 +975,8 @@ app.whenReady().then(async () => {
 
   if (SMOKE) {
     const ctx = { win: win!, door, liveByTile, backends, music: music.host, recorder: recorder!, userData: app.getPath('userData'), opened: smokeOpened, launches: smokeLaunches, addDevTile, core: core!, profile: PROFILE }
+    if (smokeStartDeadline) clearTimeout(smokeStartDeadline)
+    smokeStartDeadline = null
     const code = RESTARTED ? await runRestarted(ctx) : await runSmoke(ctx)
     core?.stop()
     backends.stopAll()

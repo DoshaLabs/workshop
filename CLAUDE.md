@@ -16,6 +16,9 @@ drives the door, and ends by restarting core on the same profile, so sessions ar
 and a reboot; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture of the window).
 Smoke sessions run a stand-in `claude` (`test/fixtures/fake-claude/claude`) that runs our hooks the
 way the CLI does; `WORKSHOP_REAL_CLAUDE=1 npx electron . --smoke` runs one real Haiku turn instead.
+Smoke needs no network: the Wikipedia tile's hosts are answered from canned data inside its own
+session, behind its request filter (`src/main/smoke-net.ts`; `WORKSHOP_LIVE_NET=1` uses the real
+services). A core that fails to start ends the run at once with `FAIL core started`.
 The first build session's notes, open issues and second-pass list: `docs/progress/2026-11-10.md`.
 
 `npm run dist` builds `dist/mac-arm64/workshop.app` (electron-builder, signed with the keychain's
