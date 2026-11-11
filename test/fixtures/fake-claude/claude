@@ -11,6 +11,14 @@
 // Like the real CLI it appends each turn to $CLAUDE_CONFIG_DIR/projects/<its folder>/<session id>.jsonl
 // (the file appears at the first prompt): the prompt, prose with markdown, a tool call and its
 // result, a subagent's line and a meta line (which a tile must not show), and a title.
+// `agent <how>` runs a subagent the way Claude Code 2.1.322 does (seen with a real Haiku run,
+// docs/progress/2026-11-11-wolfpack.md): SubagentStart with the parent's session id, the agent's own
+// transcript at <parent's folder>/<session id>/subagents/agent-<id>.jsonl (every line isSidechain)
+// with an agent-<id>.meta.json sidecar, then SubagentStop naming the file. <how>: `stop` (that, with
+// a beat between start and stop), `nostop` (no stop hook, the sidecar says finished and the file is
+// old: the web-fetch agent's way), `hold` (it never ends), `fork` (a stop for an agent that wrote no
+// transcript: the CLI's internal forks), `workflow` (under workflows/wf_<run>/, its stop naming no
+// file). The agent's id goes to $WORKSHOP_HOME/fake-agent-<how>.txt.
 const { execSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -66,6 +74,39 @@ const write = (o) => {
   fs.mkdirSync(path.dirname(transcript), { recursive: true })
   fs.appendFileSync(transcript, JSON.stringify({ sessionId: sid, timestamp: new Date().toISOString(), isSidechain: false, ...o }) + '\n')
 }
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+const agent = (how) => {
+  const aid = 'a' + require('node:crypto').randomBytes(8).toString('hex')
+  fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-agent-${how}.txt`), aid)
+  const base = path.join(path.dirname(transcript), sid, 'subagents')
+  const dir = how === 'workflow' ? path.join(base, 'workflows', 'wf_run1') : base
+  const file = path.join(dir, `agent-${aid}.jsonl`)
+  const meta = (finished) => ({ agentType: how === 'workflow' ? 'workflow-subagent' : 'general-purpose', isBuiltIn: true, description: `smoke ${how}`, ...(how === 'workflow' ? { workflowPhase: 'Build' } : {}), spawnDepth: 1, requestShape: 'background', pickedEffortModel: 'claude-haiku-5-5', finished })
+  const type = how === 'workflow' ? 'workflow-subagent' : 'general-purpose'
+  if (how === 'fork') {
+    hook('SubagentStop', { transcript_path: transcript, cwd: process.cwd(), agent_id: aid, agent_type: type, agent_transcript_path: file, last_assistant_message: 'fork' })
+    return
+  }
+  hook('SubagentStart', { transcript_path: transcript, cwd: process.cwd(), agent_id: aid, agent_type: type })
+  fs.mkdirSync(dir, { recursive: true })
+  const line = (o) => fs.appendFileSync(file, JSON.stringify({ isSidechain: true, agentId: aid, sessionId: sid, timestamp: new Date().toISOString(), ...o }) + '\n')
+  line({ type: 'user', message: { role: 'user', content: `Brief for the ${how} agent: read the README.` } })
+  line({ type: 'attachment', attachment: { type: 'deferred_tools_delta' } })
+  line({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `toolu_${aid}`, name: 'Read', input: { file_path: path.join(process.cwd(), 'README.md') } }] } })
+  line({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${aid}`, content: 'ok' }] } })
+  line({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `The ${how} agent read it.` }] } })
+  fs.writeFileSync(file.replace(/\.jsonl$/, '.meta.json'), JSON.stringify(meta(how === 'nostop')))
+  if (how === 'nostop') {
+    const old = new Date(Date.now() - 60_000)
+    fs.utimesSync(file, old, old)
+    return
+  }
+  if (how === 'hold') return
+  sleep(1500)
+  fs.writeFileSync(file.replace(/\.jsonl$/, '.meta.json'), JSON.stringify(meta(true)))
+  hook('SubagentStop', { transcript_path: transcript, cwd: process.cwd(), agent_id: aid, agent_type: type, ...(how === 'workflow' ? {} : { agent_transcript_path: file }), last_assistant_message: `The ${how} agent read it.` })
+}
+
 let calls = 0
 const turn = (line) => {
   write({ type: 'user', origin: { kind: 'human' }, promptSource: 'typed', message: { role: 'user', content: line } })
@@ -98,6 +139,7 @@ process.stdin.on('data', (chunk) => {
     if (line.startsWith('tile ')) console.log(run(`node "$WORKSHOP_TILE" ${line.slice(5)} 2>&1`, {}).replace(/\s+/g, ' '))
     if (line.startsWith('doc ')) console.log(run(`node "$WORKSHOP_DOC" ${line.slice(4)} 2>&1`, {}).replace(/\s+/g, ' '))
     if (line.startsWith('bash ')) console.log(`BASH ${bash(line.slice(5)).replace(/\s+/g, ' ')}`)
+    if (line.startsWith('agent ')) agent(line.slice(6).trim())
     run(settings.statusLine.command, { session_id: sid, rate_limits: { five_hour: { used_percentage: 42, resets_at: Math.floor(Date.now() / 1000) + 3600 } }, cost: { total_cost_usd: 1.23 }, context_window: { used_percentage: 17 } })
     if (line === 'spoof') {
       for (const group of settings.hooks.Stop || []) for (const h of group.hooks) run(h.command, { session_id: '00000000-0000-0000-0000-000000000000', hook_event_name: 'Stop' })

@@ -21,6 +21,7 @@ import { uiSmoke, wheelSmoke } from './smoke-ui'
 import { musicSmoke } from './smoke-music'
 import type { MusicHost } from './music'
 import { recorderSmoke } from './smoke-recorder'
+import { agentsSmoke, transcriptsSmoke } from './smoke-agents'
 import type { Recorder } from './recorder'
 
 interface Ctx {
@@ -194,7 +195,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await sleep(200)
     const wikiStore = JSON.parse(await readFile(join(userData, 'tile-data', 'wikipedia', 'store.json'), 'utf8')) as { places?: { name: string }[] }
     check('wikipedia page: the place is kept in workshop.storage', wikiStore.places?.[0]?.name === 'Lisbon', JSON.stringify(wikiStore))
-    await waitFor('the picture of the day', async () => (await wjs(`!!document.querySelector('.wiki-text .wiki-title')`)) === true)
+    await waitFor('the picture of the day', async () => (await wjs(`!!document.querySelector('.wiki-text .wiki-caption')`)) === true)
     const show = await post(door.port, '/tile/wikipedia', { op: 'show', args: ['Red fox'] }, auth)
     check('wikipedia door: show opens the article in the tile', (await wjs(`document.querySelector('.wiki-article .wiki-title')?.textContent ?? ''`)).includes('Red fox'))
     const found = await post(door.port, '/tile/wikipedia', { op: 'search', args: ['red', 'fox'] }, auth)
@@ -321,7 +322,7 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
     wiki.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
     wiki.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
   }
-  await waitFor('the picture to be up', async () => (await wjs(`document.body.classList.contains('wiki-picture') && !!document.querySelector('.wiki-text .wiki-title')`)) === true)
+  await waitFor('the picture to be up', async () => (await wjs(`document.body.classList.contains('wiki-picture') && !!document.querySelector('.wiki-text .wiki-caption')`)) === true)
 
   const bare = (await wjs(`workshop.openOverlay().then(() => 'opened', (e) => e.message)`)) as string
   check('overlay: refused without a click in the page', /click or key/.test(bare), bare)
@@ -781,6 +782,8 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   if (builder) await js(`window.core.kill(${JSON.stringify(builder.id)})`)
   await js(`window.core.focusSession(${JSON.stringify(id)})`)
   await sleep(200)
+  await agentsSmoke(check, ctx, id)
+  await transcriptsSmoke(check, ctx, id)
 
   if (process.env.WORKSHOP_SHOT_SESSION) {
     await sleep(800)
