@@ -5,7 +5,7 @@ column of small apps ("tiles") beside them that anyone can write, share and inst
 in the DoshaLabs GitHub org. macOS and Claude Code first.
 
 **Status (10 Nov 2026): the tile host (roadmap step 1), sessions, the status mark (section 8), the three-tab
-`+` menu with install, the preview pane and the trusted tier are built; the rest of this
+`+` menu with install, the preview pane, the trusted tier, the leash and permission prompts are built; the rest of this
 file is still the plan.** Every section says what was decided and why, so that whoever starts building, person or
 Claude session, does not have to re-derive it. When code lands, rewrite the matching section to
 describe what exists and delete the plan wording.
@@ -200,8 +200,16 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   --git-common-dir`, so worktrees of one repo share it; `workshop.sessions` gives it as `root`
   beside `project` (the start folder). A store that cannot be parsed is moved aside
   (`store.json.broken-<time>`), never written over. Long transcripts are read from the end.
-- Not yet: `transcripts` for tiles, subagent tiles and the wolfpack, the leash
-  and permission prompts in a tile.
+- The leash and permission prompts (`src/main/leash.ts`, `src/shared/leash.ts`, `Leash.tsx`;
+  `docs/progress/2026-11-11-leash.md`): ⏸ on a session's heads writes `<profile>/leash/<id>.paused`;
+  its PreToolUse hook (`leash.sh`) exits at once without it and otherwise holds the call on
+  `/ask/pretool` (Resume, or Refuse and stay paused). A PermissionRequest hook (`ask.sh`) holds
+  `/ask/permission` while the CLI shows its dialog: the tile, or the center head, shows the tool
+  and its input as text with Allow and Deny, the mark goes to needs you, and the terminal can
+  still answer (core sees it through the hook hanging up, the poll's `waitingFor`, PostToolUse,
+  Stop). Both scripts retry a core that is restarting; a pause is a file and outlives core.
+  Core's window only: tiles see none of it.
+- Not yet: `transcripts` for tiles, subagent tiles and the wolfpack.
 
 Terms used throughout:
 
@@ -631,8 +639,9 @@ the working version.
   / UserPromptSubmit hooks make it instant. After a Stop, the poll's "busy" is not believed until
   the next prompt (a background shell outliving the turn reads as busy). (`fleet.ts`, `hooks.ts`)
 - **A local hooks server** (127.0.0.1 only) receives the hooks and is the door for tiles. Hook
-  commands never block Claude (`curl -m 2 …; exit 0`), with one deliberate exception: PreToolUse
-  → `/pretool`, which holds a tool call while the user has that agent paused (the leash).
+  commands never block Claude (`curl -m 2 …; exit 0`), with two deliberate exceptions on
+  `/ask/*`: PreToolUse, held only while the user has that session paused (the leash; unpaused it
+  costs no request), and PermissionRequest, held until the tile or the terminal answers.
 - **`--settings` merges** with the user's own settings, so their hooks keep firing. `statusLine`
   is a single object and would replace theirs, so ours posts the status JSON to core and then
   runs the user's own command on the same input.
@@ -803,7 +812,7 @@ already uses most of them:
 | Extension point | What workshop uses it for |
 |---|---|
 | `--settings <file>` | Our hooks, env vars, status line and theme, merged over the user's own |
-| Hooks | Status (Notification, Stop, UserPromptSubmit), which session made a commit (PostToolUse on Bash), subagent tiles (SubagentStart / Stop), the leash (PreToolUse), session context (SessionStart) |
+| Hooks | Status (Notification, Stop, UserPromptSubmit), which session made a commit (PostToolUse on Bash), subagent tiles (SubagentStart / Stop), the leash (PreToolUse), permission prompts (PermissionRequest), session context (SessionStart) |
 | `--plugin-dir` (repeatable) | Core's own skills, and each installed tile's `plugin/` folder |
 | `statusLine` | The account's rate-limit windows and each session's context percentage |
 | `--session-id` | Our own UUID, which is how hooks and poll rows are matched to a tile |
@@ -812,9 +821,10 @@ already uses most of them:
 
 **What to build that the Claude app has and deck lacks:**
 
-1. **Answer permission prompts from a tile.** Today they exist only in the terminal. The leash
-   already holds every tool call at `/pretool`, so approve and deny buttons should be reachable
-   the same way. This is the biggest gap. (Not yet verified end to end.)
+1. **Answer permission prompts from a tile.** Built (11 Nov 2026) on the `PermissionRequest`
+   hook, not PreToolUse: on 2.1.322 it runs while the CLI shows its dialog, and whichever answers
+   first wins (`decision.behavior` allow / deny). Verified by hand on the real CLI; not yet with a
+   real session in the app (`docs/progress/2026-11-11-leash.md`).
 2. A diff review pane (the git tile's Changes tab covers most of it).
 
 ### Bring your own model
@@ -862,7 +872,8 @@ screen points at Foxtrot's download for anyone who wants the fox (section 8).
 - **The worker swap's two coat colours** in `FOXTROT` are read off Elthen's sheet (deck had them).
   Two hex values are not his art, but Colin should confirm; without them the default gold tint applies.
 - **Does the tile index work as a Claude Code plugin marketplace** as is?
-- **Permission prompts in a tile**: confirm the PreToolUse route can carry an approve / deny.
+- **The leash's two choices**: a pause outlives core (quit with a session paused and its next
+  call waits up to an hour), and Refuse keeps the session paused. Both are Colin's to confirm.
 - **When to open the trusted tier** to outside authors, and what its review looks like.
 - **The reader**: what "handles any language" means concretely (which books, which translator).
 

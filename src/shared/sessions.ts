@@ -2,6 +2,7 @@
 // CLI in its own tmux session (CLAUDE.md §7): it survives the app quitting, and closing it in
 // the window only parks it.
 
+import type { LeashView } from './leash'
 import { ordered } from './order'
 
 export type SessionStatus = 'starting' | 'busy' | 'idle' | 'blocked' | 'dead' | 'unknown'
@@ -32,6 +33,8 @@ export interface SessionView extends SessionRecord {
   attention: boolean
   attached: boolean
   tmuxAlive: boolean
+  /** Paused, a held tool call, permission prompts the tile can answer (main/leash.ts). Core's window only: never sent to a tile. */
+  leash: LeashView
 }
 
 export interface SessionsState {

@@ -195,7 +195,8 @@ const door = new Door({
     return g && pageOf(g)
   },
   hook: (name, token, payload) => core?.hook(name, token, payload),
-  core: (name, token, payload) => (core ? core.call(name, token, payload) : Promise.reject(new Error('workshop is starting')))
+  core: (name, token, payload) => (core ? core.call(name, token, payload) : Promise.reject(new Error('workshop is starting'))),
+  ask: (name, token, payload, gone) => (core ? core.ask(name, token, payload, gone) : Promise.reject(new Error('workshop is starting')))
 })
 
 /**

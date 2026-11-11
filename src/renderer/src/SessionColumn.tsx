@@ -5,8 +5,8 @@
 // (the only terminal mounted, so the only WebGL context any session holds), and its tile leaves the
 // column, as in deck: the center's head carries its ⌘ number, status and park button, and the
 // conversation would only repeat the terminal beside it. A + for a new session, then the parked
-// sessions as a card at the foot. deck's grid tile (components/Tile.tsx) without slots, the
-// wolfpack or the leash.
+// sessions as a card at the foot. deck's grid tile (components/Tile.tsx) without slots or the
+// wolfpack. The leash (⏸ on the head) and a permission prompt answered from the tile are Leash.tsx.
 
 import { Mascot } from './Mascot'
 import { useEffect, useState } from 'react'
@@ -19,6 +19,7 @@ import { ChatView } from './ChatView'
 import { Guard } from './Guard'
 import { useTranscript } from './transcripts'
 import { SessionUsage } from './UsageMeter'
+import { PauseButton, SessionAsks } from './Leash'
 
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
@@ -149,11 +150,15 @@ function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number
           </span>
         )}
         <SessionUsage id={s.id} usage={usage} />
+        <PauseButton s={s} />
         <ParkButton id={s.id} />
       </header>
       <div className="session-body">
         <Guard what="This conversation" reset={t}>
           <ChatView id={s.id} status={s.status} attention={s.attention} />
+        </Guard>
+        <Guard what="This prompt" reset={s.leash}>
+          <SessionAsks s={s} where="tile" />
         </Guard>
       </div>
     </article>
