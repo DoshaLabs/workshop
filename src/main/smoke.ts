@@ -574,6 +574,23 @@ async function sessionTiles(check: (name: string, ok: boolean, detail?: string) 
   await js(`${tile}.querySelector('.chat').click(); true`)
   await waitFor('the terminal in the center', async () => (await terminals()) === 1, 3000).catch(() => undefined)
   check('session tiles: a click opens the session\'s terminal in the center', (await terminals()) === 1 && (await js(`!${tile}`)) === true)
+
+  // The overlay covers the terminal too, xterm's own positioned layers included (helpers at 5, link
+  // decorations at 6–8): they once came through the Wikipedia lightbox, because the tile pages'
+  // layer was a stacking context of its own at level 0. Set and undone in one task, as above.
+  const overTerm = (await js(`(() => {
+    const app = document.querySelector('.app'), page = document.querySelector('.tile-page')
+    const parts = [...document.querySelectorAll('.term-host .xterm, .term-host .xterm *')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0 && r.top + r.height / 2 > 88)
+    if (!app || !page || !parts.length) return { page: !!page, parts: parts.length }
+    const was = page.getAttribute('style')
+    app.classList.add('overlaid'); page.classList.add('over')
+    Object.assign(page.style, { visibility: 'visible', left: '0px', top: '88px', width: innerWidth + 'px', height: (innerHeight - 88) + 'px' })
+    const through = parts.filter((r) => !page.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2))).length
+    app.classList.remove('overlaid'); page.classList.remove('over')
+    page.setAttribute('style', was)
+    return { page: true, parts: parts.length, through }
+  })()`)) as { page: boolean; parts: number; through?: number }
+  check('session tiles: the overlay covers the terminal in the center, xterm\'s layers and all', overTerm.parts > 0 && overTerm.through === 0, JSON.stringify(overTerm))
 }
 
 /**

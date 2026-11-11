@@ -638,9 +638,14 @@ button {
   display: flex;
 }
 /* A page over the whole window sits above everything in it (tile pages, session tiles, the top
-   bar at 10), and below only its own strip (20). */
-.tile-page.over {
+   bar at 10, xterm's own layers at 1–11 in the center), and below only its own strip (20). A
+   z-index ranks an element only inside its stacking context, and .tile-layer, being fixed, is one:
+   the layer itself has to rise, or 15 (or any number) only beats the other tile pages. */
+.app.overlaid .tile-layer {
   z-index: 15;
+}
+.tile-page.over {
+  z-index: 1;
 }
 
 /* ---- a tile over the whole window (permissions.overlay). The strip is core's: the tile's page is
