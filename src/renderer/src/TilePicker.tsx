@@ -292,7 +292,10 @@ function Market({ tiles, row, onOn }: { tiles: TileInfo[]; row: RowFn; onOn: (id
   const useIndex = async (): Promise<void> => {
     setProblem('')
     try {
-      setIndex(await window.core.menu.setIndex(source))
+      const st = await window.core.menu.setIndex(source)
+      setIndex(st)
+      // Emptied: back to the default, whose address the field then shows.
+      if (!source.trim()) setSource(st.source ?? '')
     } catch (err) {
       setProblem(said(err))
     }
@@ -349,9 +352,11 @@ function Market({ tiles, row, onOn }: { tiles: TileInfo[]; row: RowFn; onOn: (id
       })}
 
       <h3>From the index</h3>
-      {!index?.source ? (
+      {!index ? (
+        <p className="picker-note">Reading the index…</p>
+      ) : !index.source ? (
         <p className="picker-note">
-          The marketplace will list tiles anyone can write and submit: each one pinned to a commit of its own git repo, with the permissions it asks for shown here before anything is downloaded. Install, update and remove from this tab. The index does not exist yet; if you have one, give its address below.
+          No index is set. An index lists tiles anyone can write and submit, each pinned to a commit of its own git repo, with what it asks for shown here before anything is downloaded. Give the address of one below.
         </p>
       ) : index.problem ? (
         <p className="picker-problem">{index.problem}</p>
@@ -375,7 +380,7 @@ function Market({ tiles, row, onOn }: { tiles: TileInfo[]; row: RowFn; onOn: (id
         <div className="pick-line">
           <input value={source} placeholder="https://…/tiles.json, or a file" onChange={(e) => setSource(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void useIndex()} />
           <button className="pick-act" onClick={() => void useIndex()}>
-            {source.trim() ? 'Read' : 'Clear'}
+            {source.trim() ? 'Read' : 'Default'}
           </button>
         </div>
       )}
