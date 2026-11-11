@@ -12,8 +12,12 @@
 //   ignore it), writes its argv to <path>.tui.json, prints `FAKE CODEX <argv>` and `CONNECTED`.
 //   Each line typed is a turn: status active, the prompt, `touch hello.txt` run, a markdown reply,
 //   token usage, turn completed, status idle, and a name for the thread after the first. `ask`
-//   instead asks for approval of `rm -rf build` (a server request to every subscriber; any answer
-//   is written to <path>.answers.json, so smoke can see core never answers) until `yes` is typed.
+//   instead asks for approval of `rm -rf build` (a server request to every subscriber), `askfile`
+//   for a file change (its fileChange item first, as the real one), `askperm` for permissions
+//   plus a question (item/tool/requestUserInput, which core must never answer). Every answer a
+//   client sends is written to <path>.answers.json; the first answer to a request resolves it
+//   (`serverRequest/resolved` to everyone, the item done or declined, status idle), as typing
+//   `yes` in the TUI resolves them all.
 //   `exit` ends the TUI cleanly (status 0), `crash` with status 3.
 
 const fs = require('node:fs')
@@ -48,7 +52,8 @@ function server() {
   }
   /** id → { thread, items: [{turnId, item, startedAtMs, completedAtMs}], subs: Set<ws> } */
   const threads = new Map()
-  let pendingAsk = null
+  /** Open server requests: { th, id, itemId? } */
+  let pending = []
   let reqId = 1000
   let named = false
   const send = (ws, m) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ jsonrpc: '2.0', ...m }))
@@ -95,6 +100,16 @@ function server() {
     }
   }
   const answers = []
+  const request = (th, method, params, fileItem) => {
+    const r = { th, id: reqId++, fileItem }
+    pending.push(r)
+    for (const ws of th.subs) send(ws, { id: r.id, method, params: { threadId: th.thread.id, turnId: 't', startedAtMs: Date.now(), ...params } })
+  }
+  const resolve = (r, decision) => {
+    notify(r.th, 'serverRequest/resolved', { requestId: r.id })
+    if (r.fileItem) item(r.th, 't', { ...r.fileItem, status: decision === 'accept' ? 'completed' : 'declined' }, true)
+    if (!pending.some((x) => x.th === r.th)) status(r.th, { type: 'idle' })
+  }
   const hs = http.createServer((_q, r) => r.writeHead(426).end())
   const wss = new WebSocketServer({ server: hs, path: '/rpc' })
   wss.on('connection', (ws) => {
@@ -106,9 +121,11 @@ function server() {
       try { m = JSON.parse(String(data)) } catch { return }
       const reply = (result) => send(ws, { id: m.id, result })
       if (m.id !== undefined && !m.method) {
-        // An answer to a server request.
+        // An answer to a server request: the first one wins.
         answers.push(m)
         fs.writeFileSync(`${sock}.answers.json`, JSON.stringify(answers))
+        const at = pending.findIndex((r) => r.id === m.id)
+        if (at >= 0) resolve(pending.splice(at, 1)[0], m.result?.decision)
         return
       }
       const p = m.params || {}
@@ -143,12 +160,19 @@ function server() {
           if (!th) return
           if (p.text === 'ask') {
             status(th, { type: 'active', activeFlags: ['waitingOnApproval'] })
-            pendingAsk = { th, id: reqId++ }
-            for (const s of th.subs) send(s, { id: pendingAsk.id, method: 'item/commandExecution/requestApproval', params: { threadId: th.thread.id, turnId: 't', itemId: 'i', command: 'rm -rf build', cwd: process.cwd(), reason: 'clean' } })
-          } else if (p.text === 'yes' && pendingAsk) {
-            notify(pendingAsk.th, 'serverRequest/resolved', { requestId: pendingAsk.id })
-            status(pendingAsk.th, { type: 'idle' })
-            pendingAsk = null
+            request(th, 'item/commandExecution/requestApproval', { kind: 'command', itemId: 'i', environmentId: null, command: "/bin/zsh -lc 'rm -rf build'", cwd: process.cwd(), reason: 'clean' })
+          } else if (p.text === 'askfile') {
+            const itemId = randomUUID()
+            const fc = { type: 'fileChange', id: itemId, status: 'inProgress', changes: [{ path: path.join(process.cwd(), 'notes.md'), kind: { type: 'add' }, diff: '+# Notes' }] }
+            item(th, 't', fc, false)
+            status(th, { type: 'active', activeFlags: ['waitingOnApproval'] })
+            request(th, 'item/fileChange/requestApproval', { itemId, reason: null }, fc)
+          } else if (p.text === 'askperm') {
+            status(th, { type: 'active', activeFlags: ['waitingOnApproval', 'waitingOnUserInput'] })
+            request(th, 'item/permissions/requestApproval', { itemId: 'p', environmentId: null, cwd: process.cwd(), reason: 'needs the network', permissions: { network: { enabled: true } } })
+            request(th, 'item/tool/requestUserInput', { itemId: 'q', questions: [{ id: 'q1', header: 'Pick', question: 'Which?', options: null }] })
+          } else if (p.text === 'yes' && pending.length) {
+            for (const r of pending.splice(0)) resolve(r, 'accept')
           } else turn(th, p.text)
           return reply({})
         }

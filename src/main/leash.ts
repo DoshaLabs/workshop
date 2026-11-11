@@ -30,7 +30,8 @@ import {
   waitingOnPermission,
   type HeldCall,
   type LeashView,
-  type PermissionAsk
+  type PermissionAsk,
+  type ToolCallView
 } from '@shared/leash'
 
 /** The answer to a held request: the hook's stdout, or null for none (204). */
@@ -46,7 +47,8 @@ interface Ask {
   call: { tool_name?: unknown; tool_input?: unknown }
   /** The fleet poll has seen the session waiting on a permission prompt since this one came. */
   seen: boolean
-  answer: Answer
+  /** Closes the ask: Allow / Deny from the tile, or null when the terminal answered (nothing is sent). */
+  decide: (allow: boolean | null) => void
 }
 
 export interface ToolPayload {
@@ -127,40 +129,70 @@ export class Leash {
         view: { id: randomUUID(), ...describeTool(payload.tool_name, payload.tool_input), at: Date.now() },
         call: { tool_name: payload.tool_name, tool_input: payload.tool_input },
         seen: false,
-        answer: (body) => {
+        decide: (allow) => {
           if (done) return
           done = true
-          const list = (this.asks.get(id) ?? []).filter((x) => x !== a)
-          if (list.length) this.asks.set(id, list)
-          else this.asks.delete(id)
-          this.writeAsking(id)
-          this.changed(id)
-          resolve(body)
+          this.dropAsk(id, a)
+          resolve(allow === null ? null : permissionAnswer(allow))
         }
       }
-      this.asks.set(id, [...(this.asks.get(id) ?? []), a])
-      this.writeAsking(id)
-      gone(() => a.answer(null))
-      this.changed(id)
+      this.addAsk(id, a)
+      gone(() => a.decide(null))
     })
+  }
+
+  /**
+   * A prompt that is not a held hook: a Codex session's approval request (main/codex-link.ts).
+   * `reply` is called once, only when the user clicks Allow or Deny on the tile. Returns the
+   * function that drops it unanswered (the terminal answered, the request went away).
+   */
+  offer(id: string, call: ToolCallView, reply: (allow: boolean) => void, opts: { terminal?: boolean } = {}): () => void {
+    let done = false
+    const a: Ask = {
+      view: { id: randomUUID(), ...call, at: Date.now(), ...(opts.terminal ? { terminal: true } : {}) },
+      call: {},
+      seen: false,
+      decide: (allow) => {
+        if (done) return
+        done = true
+        this.dropAsk(id, a)
+        if (allow !== null) reply(allow)
+      }
+    }
+    this.addAsk(id, a)
+    return () => a.decide(null)
+  }
+
+  private addAsk(id: string, a: Ask): void {
+    this.asks.set(id, [...(this.asks.get(id) ?? []), a])
+    this.writeAsking(id)
+    this.changed(id)
+  }
+
+  private dropAsk(id: string, a: Ask): void {
+    const list = (this.asks.get(id) ?? []).filter((x) => x !== a)
+    if (list.length) this.asks.set(id, list)
+    else this.asks.delete(id)
+    this.writeAsking(id)
+    this.changed(id)
   }
 
   /** The user clicked Allow or Deny on the tile. False if that prompt is gone (the terminal answered first). */
   answer(id: string, askId: string, allow: boolean): boolean {
     const a = (this.asks.get(id) ?? []).find((x) => x.view.id === askId)
-    if (!a) return false
-    a.answer(permissionAnswer(allow))
+    if (!a || a.view.terminal) return false
+    a.decide(allow)
     return true
   }
 
   /** The terminal answered every open prompt (the turn ended, a new prompt was typed). */
   settle(id: string): void {
-    for (const a of [...(this.asks.get(id) ?? [])]) a.answer(null)
+    for (const a of [...(this.asks.get(id) ?? [])]) a.decide(null)
   }
 
   /** A tool call finished (PostToolUse): the prompt that asked about it was answered in the terminal. */
   settleCall(id: string, done: ToolPayload): void {
-    for (const a of [...(this.asks.get(id) ?? [])]) if (sameCall(a.call, done)) a.answer(null)
+    for (const a of [...(this.asks.get(id) ?? [])]) if (sameCall(a.call, done)) a.decide(null)
   }
 
   /** A fleet poll row for the session (`claude agents --json`). */
@@ -168,7 +200,7 @@ export class Leash {
     const now = Date.now()
     for (const a of [...(this.asks.get(id) ?? [])]) {
       if (waitingOnPermission(entry)) a.seen = true
-      else if (answeredInTerminal(entry, a.seen, now - a.view.at)) a.answer(null)
+      else if (answeredInTerminal(entry, a.seen, now - a.view.at)) a.decide(null)
     }
   }
 

@@ -6,13 +6,17 @@
 // symlink into /private/tmp/codex-daemon-<uid>/ (macOS caps a socket path near 104 bytes), so core
 // dials the symlink's target. Seen with codex-cli 0.167.1.
 //
-// Core NEVER answers a server request here. Approvals go to every client and the first answer
-// wins, so even an error from core would decide one; the terminal answers until the leash for
-// Codex (phase 3) answers on purpose.
+// Core answers ONE kind of server request, and only on purpose: an approval of the session's own
+// thread (a command, a file change) the user clicked Allow or Deny for on its tile (phase 3,
+// `answer`). Approvals go to every client and the first answer wins, so anything else (another
+// thread's request, a question, a tool call, a token refresh) is never answered at all, not even
+// with an error, which would count as an answer. An approval answered in the terminal first is
+// dropped on `serverRequest/resolved` (sent to every client), or when the thread, once seen
+// waiting on it, stops waiting, or when the turn ends or the socket closes.
 
 import { existsSync, realpathSync } from 'node:fs'
 import WebSocket from 'ws'
-import { applyCodexItem, codexContext, codexStatus, pickThread, type CodexThread } from '@shared/codex'
+import { applyCodexItem, codexAsk, codexContext, codexDecision, codexStatus, codexWaitingOnApproval, pickThread, type CodexAsk, type CodexThread } from '@shared/codex'
 import { codexThreadId } from '@shared/cli'
 import type { SessionStatus } from '@shared/sessions'
 import { emptyTranscript, type Transcript } from '@shared/transcript'
@@ -33,7 +37,22 @@ export interface CodexLinkEvents {
   transcript(t: Transcript): void
   /** Context used, %. */
   context(pct: number): void
+  /** An approval is waiting in the terminal: show it. `key` names it to `answer`. */
+  ask(key: string, ask: CodexAsk): void
+  /** That approval is gone, answered or not: stop showing it. */
+  askGone(key: string): void
 }
+
+interface OpenRequest {
+  /** The request's own id, as the server sent it (number or string): the reply carries it back. */
+  rpcId: number | string
+  method: string
+  /** The thread was seen waiting on an approval since this request came. */
+  seen: boolean
+}
+
+/** File-change items kept for the approval that follows them (their diffs are on the item). */
+const KEEP_ITEMS = 32
 
 export class CodexLink {
   private ws: WebSocket | null = null
@@ -45,6 +64,8 @@ export class CodexLink {
   private threadId: string | null
   private joined = false
   private readonly t: Transcript
+  private readonly requests = new Map<string, OpenRequest>()
+  private readonly fileItems = new Map<string, unknown>()
 
   constructor(
     readonly sessionId: string,
@@ -75,6 +96,7 @@ export class CodexLink {
       p.fail(new Error('stopped'))
     }
     this.pending.clear()
+    this.dropAll()
   }
 
   get transcript(): Transcript {
@@ -108,6 +130,8 @@ export class CodexLink {
     ws.on('close', () => {
       if (this.ws !== ws) return
       this.ws = null
+      // A request belongs to the connection it came on: it cannot be answered on the next one.
+      this.dropAll()
       for (const p of this.pending.values()) {
         clearTimeout(p.timer)
         p.fail(new Error('closed'))
@@ -165,6 +189,14 @@ export class CodexLink {
     await this.history()
   }
 
+  private keepFileItem(item: unknown): void {
+    const it = item as { type?: unknown; id?: unknown } | null
+    if (it?.type !== 'fileChange' || typeof it.id !== 'string') return
+    this.fileItems.delete(it.id)
+    this.fileItems.set(it.id, it)
+    while (this.fileItems.size > KEEP_ITEMS) this.fileItems.delete(this.fileItems.keys().next().value as string)
+  }
+
   private async history(): Promise<void> {
     const r = await this.call<{ data?: { item?: unknown; completedAtMs?: number | null; startedAtMs?: number | null }[] }>('thread/items/list', { threadId: this.threadId, limit: HISTORY, sortDirection: 'desc' }).catch(() => null)
     if (!r?.data) return
@@ -172,6 +204,40 @@ export class CodexLink {
     for (const e of [...r.data].reverse()) applyCodexItem(this.t, e.item, e.completedAtMs != null, e.completedAtMs ?? e.startedAtMs ?? Date.now())
     this.t.found = true
     this.on.transcript(this.t)
+  }
+
+  /**
+   * The user clicked Allow or Deny for this approval on the tile: the only reply core ever sends to
+   * a server request. False when it is gone (the terminal answered first) or not connected.
+   */
+  answer(key: string, allow: boolean): boolean {
+    const r = this.requests.get(key)
+    const ws = this.ws
+    if (!r || !ws || ws.readyState !== WebSocket.OPEN) return false
+    if (r.method === 'item/permissions/requestApproval') return false
+    this.drop(key)
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: r.rpcId, result: codexDecision(allow) }))
+    return true
+  }
+
+  private drop(key: string): void {
+    if (!this.requests.delete(key)) return
+    this.on.askGone(key)
+  }
+
+  private dropAll(): void {
+    for (const key of [...this.requests.keys()]) this.drop(key)
+  }
+
+  /** A server request: kept (and shown) if it is an approval of the session's thread; otherwise left alone. */
+  private request(rpcId: number | string, method: string, params: Record<string, unknown>): void {
+    if (!this.joined || !this.threadId) return
+    const ask = codexAsk(method, params, this.threadId, this.fileItems.get(String(params.itemId)))
+    if (!ask) return
+    const key = String(rpcId)
+    if (this.requests.has(key)) return
+    this.requests.set(key, { rpcId, method, seen: false })
+    this.on.ask(key, ask)
   }
 
   private message(raw: string): void {
@@ -190,17 +256,25 @@ export class CodexLink {
       else p.done(m.result ?? {})
       return
     }
-    // A request for the clients (an approval…): never answered here (see the top of this file).
-    if (m.id !== undefined || !m.method) return
+    if (!m.method) return
     const p = m.params ?? {}
+    // A request for the clients: an approval of ours is kept for the tile; never answered here.
+    if (m.id !== undefined) return this.request(m.id, m.method, p)
     if (!this.joined || p.threadId !== this.threadId) return
     switch (m.method) {
+      case 'serverRequest/resolved':
+        // Answered by someone (the terminal, or core itself a moment ago).
+        if (p.requestId !== undefined && p.requestId !== null) this.drop(String(p.requestId))
+        break
       case 'thread/status/changed': {
+        if (codexWaitingOnApproval(p.status)) for (const r of this.requests.values()) r.seen = true
+        else for (const [key, r] of [...this.requests]) if (r.seen) this.drop(key)
         const st = codexStatus(p.status)
         if (st) this.on.status(st.status, st.needsYou)
         break
       }
       case 'turn/completed':
+        this.dropAll()
         this.on.turnDone()
         break
       case 'thread/name/updated':
@@ -208,6 +282,7 @@ export class CodexLink {
         break
       case 'item/started':
       case 'item/completed':
+        this.keepFileItem(p.item)
         if (applyCodexItem(this.t, p.item, m.method === 'item/completed')) {
           this.t.found = true
           this.on.transcript(this.t)

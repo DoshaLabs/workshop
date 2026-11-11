@@ -4,6 +4,7 @@
 // test/codex.test.ts. Shapes are codex-cli 0.167.1's app-server protocol (v2), read from
 // `codex app-server generate-ts`; anything unknown is skipped, never thrown on.
 
+import { toolView, type ToolCallView } from './leash'
 import type { SessionStatus } from './sessions'
 import { TRANSCRIPT_KEEP, type ChatBlock, type Transcript } from './transcript'
 
@@ -62,13 +63,74 @@ export function codexContext(u: unknown): number | null {
   return Math.min(100, Math.round((used / win) * 100))
 }
 
-/**
- * The command as you would read it: Codex runs each through the shell (`/bin/zsh -lc 'touch x'`);
- * the line shows `touch x`.
- */
-export function codexCommand(cmd: string): string {
+/** A command without the shell Codex wraps it in (`/bin/zsh -lc 'touch x'` is `touch x`), whole. */
+export function codexShell(cmd: string): string {
   const m = /^\S*\/(?:ba|z|)sh\s+-l?c\s+(['"])([\s\S]*)\1\s*$/.exec(cmd.trim())
-  return firstLine(m ? m[2].replace(/'\\''/g, "'") : cmd)
+  return m ? m[2].replace(/'\\''/g, "'") : cmd.trim()
+}
+
+/** The command as a tool line shows it: unwrapped, its first line. */
+export function codexCommand(cmd: string): string {
+  return firstLine(codexShell(cmd))
+}
+
+/** The server requests that are approvals core may show (and answer only on the user's click). */
+export const CODEX_APPROVALS = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval'] as const
+
+/** An approval request as the session's ask: what to show, and whether the tile may answer it. */
+export interface CodexAsk extends ToolCallView {
+  /** False: answerable in the terminal only (a permissions request's answer is a grant, not a yes). */
+  answerable: boolean
+}
+
+/**
+ * A server request as the window shows it, or null when it is not an approval of the session's
+ * own thread (core then leaves it alone: never answered, never shown). `item`: the thread item
+ * the request is about, when core has seen it (a file change's diffs are on its item, not on the
+ * request).
+ */
+export function codexAsk(method: string, params: unknown, threadId: string, item?: unknown): CodexAsk | null {
+  const p = params as Json | null
+  if (!p || typeof p !== 'object' || p.threadId !== threadId) return null
+  const reason = str(p.reason)
+  switch (method) {
+    case 'item/commandExecution/requestApproval': {
+      const net = p.networkApprovalContext as Json | null | undefined
+      const kind = str(p.kind)
+      const label = net && str(net.host) ? `network: ${str(net.host)}` : reason || (kind === 'writeStdin' ? 'input to a running command' : str(p.cwd))
+      return { ...toolView('Bash', label, codexShell(str(p.command))), answerable: true }
+    }
+    case 'item/fileChange/requestApproval': {
+      const it = item as Json | undefined
+      const changes = it?.type === 'fileChange' && Array.isArray(it.changes) ? (it.changes as Json[]) : []
+      const paths = changes.map((c) => str(c.path)).filter(Boolean)
+      const label = paths.length ? `${paths[0]}${paths.length > 1 ? ` +${paths.length - 1}` : ''}` : reason || str(p.grantRoot)
+      const body = changes.map((c) => str(c.diff)).filter(Boolean).join('\n')
+      return { ...toolView('Edit', label, body), answerable: true }
+    }
+    case 'item/permissions/requestApproval': {
+      let body = ''
+      try {
+        body = p.permissions ? JSON.stringify(p.permissions, null, 2) : ''
+      } catch {
+        body = ''
+      }
+      return { ...toolView('Permissions', reason || str(p.cwd), body), answerable: false }
+    }
+    default:
+      return null
+  }
+}
+
+/** The reply to a command or file-change approval: Allow runs it once, Deny declines it and the turn goes on. */
+export function codexDecision(allow: boolean): { decision: 'accept' | 'decline' } {
+  return { decision: allow ? 'accept' : 'decline' }
+}
+
+/** Whether a thread status has an approval waiting (the TUI is showing its dialog). */
+export function codexWaitingOnApproval(s: unknown): boolean {
+  const o = s as { type?: unknown; activeFlags?: unknown } | null
+  return o?.type === 'active' && Array.isArray(o.activeFlags) && o.activeFlags.includes('waitingOnApproval')
 }
 
 function userText(content: unknown): string {

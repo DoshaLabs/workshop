@@ -249,7 +249,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   `shared/column.ts` `placeFloat`), always inside the window. The tile layer rises to 12 while one
   is up, over the terminal; the box is 13. Main refuses the `float` view to a tile without the
   flag. Smoke's probe declares it (`floats` in `smoke.ts`; `WORKSHOP_SHOT_FLOAT=x.png`).
-- Codex sessions (`docs/progress/2026-11-11-codex.md`, phases 1 and 2): `src/shared/cli.ts` (`cli:
+- Codex sessions (`docs/progress/2026-11-11-codex.md`, phases 1, 2 and 3 in part): `src/shared/cli.ts` (`cli:
   'claude' | 'codex'` on a session, absent = Claude Code; `cliSessionId` was `claudeSessionId`,
   renamed on load). A Codex session is one tmux session, two windows: the TUI (attached) waiting
   for the socket, then `codex --remote unix://<profile>/codex/<id>.sock -C <cwd>`, a clean exit
@@ -259,13 +259,17 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   it finds the session's thread (not a subagent's or an ephemeral one) and keeps its id, joins with
   `thread/resume`, reads `thread/items/list`, and follows status, items (as ChatBlocks, kept by
   `TranscriptWatcher.put`, so the tile and the `transcripts` bridge serve both CLIs), Codex's
-  thread name as the title, and context % (no cost: Codex gives none). It NEVER answers a server
-  request (approvals go to every client, first answer wins). The launcher offers Codex only when
+  thread name as the title, and context % (no cost: Codex gives none). It answers a server request
+  only on a click on an approval (approvals go to every client, first answer wins). The launcher offers Codex only when
   it is on PATH (`core.clis()`), with its own modes (`CODEX_MODES`). Worktrees: 0.167.1 refuses
   `--worktree` with `--remote`, so core makes one (`src/main/worktree.ts`):
   `<project root>/.workshop/worktrees/<name>` on `worktree-<name>`, `/.workshop/` in the repo's
   `info/exclude`, trusted for that session's server only (`-c projects={…}`, nothing written to
-  the user's config; Colin, 11 Nov 2026). Not yet: answering approvals from the tile, the leash
+  the user's config; Colin, 11 Nov 2026). Approvals (phase 3): a Codex
+  session's approval requests of its own thread are the session's asks (`Leash.offer`, the same
+  card as Claude's), answered only on a click (`accept` / `decline`), dropped when the terminal
+  answers (`serverRequest/resolved`); a permissions request is shown for the terminal only;
+  no other request is ever answered. Not yet: the leash
   (no ⏸), commits, the wolfpack, the door as MCP, both plans' windows in the top bar. Hook ids
   match through `isSession` (never on ''). Smoke: `test/fixtures/fake-codex/codex` (speaks the
   app-server protocol), `smoke-codex.ts`.

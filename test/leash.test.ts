@@ -154,6 +154,36 @@ describe('Leash', () => {
     expect(await c).toBeNull()
   })
 
+  it('an offered prompt (a Codex approval): replies only on Allow or Deny, never when dropped or for the terminal', () => {
+    const l = new Leash(tmp(), never)
+    const replies: boolean[] = []
+    const drop = l.offer('abc123', { tool: 'Bash', label: 'clean', body: 'rm -rf build' }, (allow) => replies.push(allow))
+    const v = l.view('abc123').asks
+    expect(v).toHaveLength(1)
+    expect(v[0]).toMatchObject({ tool: 'Bash', body: 'rm -rf build' })
+    expect(v[0].terminal).toBeUndefined()
+    expect(l.asking('abc123')).toBe(true)
+    expect(l.answer('abc123', v[0].id, false)).toBe(true)
+    expect(replies).toEqual([false])
+    drop() // after the answer: nothing more
+    expect(l.answer('abc123', v[0].id, true)).toBe(false)
+    expect(replies).toEqual([false])
+    // Dropped (the terminal answered): gone, no reply.
+    const drop2 = l.offer('abc123', { tool: 'Edit', label: 'a.ts', body: '' }, (allow) => replies.push(allow))
+    const id2 = l.view('abc123').asks[0].id
+    drop2()
+    expect(l.view('abc123').asks).toEqual([])
+    expect(l.answer('abc123', id2, true)).toBe(false)
+    // Terminal-only: shown, never answerable from the tile.
+    l.offer('abc123', { tool: 'Permissions', label: '', body: '{}' }, (allow) => replies.push(allow), { terminal: true })
+    const t = l.view('abc123').asks[0]
+    expect(t.terminal).toBe(true)
+    expect(l.answer('abc123', t.id, true)).toBe(false)
+    l.settle('abc123')
+    expect(l.view('abc123').asks).toEqual([])
+    expect(replies).toEqual([false])
+  })
+
   it('forget and prune clear what a gone session left', () => {
     const dir = tmp()
     writeFileSync(join(dir, 'aaaaaa.paused'), '')

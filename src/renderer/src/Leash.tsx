@@ -1,7 +1,8 @@
 // The leash and permission prompts on a session (main/leash.ts; docs/progress/2026-11-11-leash.md):
 // the pause button on its heads, and the card that shows what waits on you, at the foot of its tile
 // and under the center's head. A permission prompt shows the tool and its input with Allow and
-// Deny; the terminal keeps its own dialog, whichever answers first wins, and the card goes when the
+// Deny (a Claude Code session's PermissionRequest hook, or a Codex session's approval request);
+// the terminal keeps its own dialog, whichever answers first wins, and the card goes when the
 // terminal answered. A held call (the session paused) shows with Resume and Refuse.
 //
 // The tool call is text: React writes it as text nodes, never HTML, and nothing in it is a link.
@@ -66,13 +67,19 @@ function AskCard({ s, ask, more, where }: { s: SessionView; ask: PermissionAsk; 
       </header>
       <Call c={ask} />
       <div className="leash-actions">
-        <button className="leash-btn is-allow" data-answer="allow" disabled={busy} onClick={() => answer(true)}>
-          Allow
-        </button>
-        <button className="leash-btn is-deny" data-answer="deny" disabled={busy} onClick={() => answer(false)}>
-          Deny
-        </button>
-        <span className="leash-note">or answer in the terminal</span>
+        {ask.terminal ? (
+          <span className="leash-note">Answer in the terminal</span>
+        ) : (
+          <>
+            <button className="leash-btn is-allow" data-answer="allow" disabled={busy} onClick={() => answer(true)}>
+              Allow
+            </button>
+            <button className="leash-btn is-deny" data-answer="deny" disabled={busy} onClick={() => answer(false)}>
+              Deny
+            </button>
+            <span className="leash-note">or answer in the terminal</span>
+          </>
+        )}
       </div>
     </section>
   )

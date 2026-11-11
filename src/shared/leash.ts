@@ -20,6 +20,8 @@ export interface PermissionAsk extends ToolCallView {
   /** Core's id for this prompt (the CLI gives none: PermissionRequest carries no tool_use_id). */
   id: string
   at: number
+  /** Answerable only in the terminal: the tile shows it with no Allow / Deny (a Codex permissions request, whose answer is a grant, not a yes). */
+  terminal?: boolean
 }
 
 /** A tool call the leash is holding while the session is paused. */
@@ -46,6 +48,11 @@ const BODY_MAX = 4000
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
 const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1)}…` : s)
+
+/** A tool call as the window shows it, from parts already chosen: plain text, capped. */
+export function toolView(tool: string, label: string, body: string): ToolCallView {
+  return { tool: clip(tool || 'a tool', 80), label: clip(label.replace(/\s+/g, ' ').trim(), LABEL_MAX), body: clip(body, BODY_MAX) }
+}
 
 /** A tool call's input as the window shows it: plain text, capped. */
 export function describeTool(name: unknown, input: unknown): ToolCallView {
@@ -92,7 +99,7 @@ export function describeTool(name: unknown, input: unknown): ToolCallView {
       body = json
     }
   }
-  return { tool, label: clip(label.replace(/\s+/g, ' ').trim(), LABEL_MAX), body: clip(body, BODY_MAX) }
+  return toolView(tool, label, body)
 }
 
 /** What core answers a PermissionRequest hook with (verified on Claude Code 2.1.322). */

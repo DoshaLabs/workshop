@@ -112,6 +112,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
 
   // Codex sessions: core is a second client of each one's app-server while it is open (main/codex-link.ts).
   const codexLinks = new Map<string, CodexLink>()
+  /** `<session id>:<request key>` → drops that approval from the session's asks. */
+  const codexAsks = new Map<string, () => void>()
   const syncCodex = (live: SessionView[]): void => {
     const keep = new Set(live.map((x) => x.id))
     for (const [id, link] of codexLinks) {
@@ -129,7 +131,16 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
         turnDone: () => sessionsRef?.codexTurnDone(id),
         title: (name) => sessionsRef?.setTitle(id, name),
         transcript: (t) => transcripts.put(t),
-        context: (pct) => usageRef?.setContext(id, pct)
+        context: (pct) => usageRef?.setContext(id, pct),
+        // An approval in the terminal, shown on the tile beside it; the link answers only on a click.
+        ask: (key, a) => {
+          const { answerable, ...call } = a
+          codexAsks.set(`${id}:${key}`, leash.offer(id, call, (allow) => void link.answer(key, allow), { terminal: !answerable }))
+        },
+        askGone: (key) => {
+          codexAsks.get(`${id}:${key}`)?.()
+          codexAsks.delete(`${id}:${key}`)
+        }
       })
       codexLinks.set(id, link)
       link.start()

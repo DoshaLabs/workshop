@@ -2,7 +2,7 @@
 // tile draws, the thread's status, context use, and which loaded thread is the session's. Item
 // shapes are codex-cli 0.167.1's (seen live, docs/progress/2026-11-11-codex.md).
 import { describe, expect, it } from 'vitest'
-import { applyCodexItem, codexCommand, codexContext, codexStatus, pickThread } from '@shared/codex'
+import { applyCodexItem, codexAsk, codexCommand, codexContext, codexDecision, codexShell, codexStatus, codexWaitingOnApproval, pickThread } from '@shared/codex'
 import { TRANSCRIPT_KEEP, emptyTranscript } from '@shared/transcript'
 
 const user = (id: string, text: string) => ({ type: 'userMessage', id, clientId: null, content: [{ type: 'text', text, text_elements: [] }] })
@@ -92,5 +92,43 @@ describe('pickThread', () => {
   it('none when nothing fits yet', () => {
     expect(pickThread([T({ ephemeral: true })], '/w')).toBeNull()
     expect(pickThread([], '/w')).toBeNull()
+  })
+})
+
+describe('approvals (codexAsk)', () => {
+  const T = 'thread-1'
+  const cmd = { kind: 'command', threadId: T, turnId: 't', itemId: 'i', startedAtMs: 1, environmentId: null, command: "/bin/zsh -lc 'rm -rf build\nls'", cwd: '/w', reason: 'clean the build' }
+  it('a command: the shell unwrapped, whole, with its reason', () => {
+    expect(codexAsk('item/commandExecution/requestApproval', cmd, T)).toEqual({ tool: 'Bash', label: 'clean the build', body: 'rm -rf build\nls', answerable: true })
+    expect(codexShell("/bin/bash -c 'it'\\''s'")).toBe("it's")
+  })
+  it('a network approval names the host', () => {
+    const a = codexAsk('item/commandExecution/requestApproval', { ...cmd, networkApprovalContext: { host: 'example.com', protocol: 'https' } }, T)
+    expect(a?.label).toBe('network: example.com')
+  })
+  it('a file change shows the files and diffs from the item core saw before the request', () => {
+    const item = { type: 'fileChange', id: 'i', status: 'inProgress', changes: [{ path: '/w/a.ts', kind: { type: 'update', move_path: null }, diff: '-a\n+b' }, { path: '/w/b.ts', kind: { type: 'add' }, diff: '+c' }] }
+    const p = { threadId: T, turnId: 't', itemId: 'i', startedAtMs: 1, reason: null }
+    expect(codexAsk('item/fileChange/requestApproval', p, T, item)).toEqual({ tool: 'Edit', label: '/w/a.ts +1', body: '-a\n+b\n+c', answerable: true })
+    expect(codexAsk('item/fileChange/requestApproval', { ...p, reason: 'write' }, T)).toMatchObject({ tool: 'Edit', label: 'write', body: '' })
+  })
+  it('a permissions request is shown but answerable only in the terminal', () => {
+    const a = codexAsk('item/permissions/requestApproval', { threadId: T, turnId: 't', itemId: 'i', environmentId: null, startedAtMs: 1, cwd: '/w', reason: 'needs network', permissions: { network: true } }, T)
+    expect(a).toMatchObject({ tool: 'Permissions', label: 'needs network', answerable: false })
+  })
+  it('another thread\'s approval, and every other request, is not ours to show (or answer)', () => {
+    expect(codexAsk('item/commandExecution/requestApproval', { ...cmd, threadId: 'other' }, T)).toBeNull()
+    for (const m of ['item/tool/requestUserInput', 'mcpServer/elicitation/request', 'item/tool/call', 'account/chatgptAuthTokens/refresh', 'attestation/generate', 'execCommandApproval', 'applyPatchApproval'])
+      expect(codexAsk(m, { ...cmd }, T)).toBeNull()
+    expect(codexAsk('item/commandExecution/requestApproval', null, T)).toBeNull()
+  })
+  it('the reply: accept once, or decline (the turn goes on)', () => {
+    expect(codexDecision(true)).toEqual({ decision: 'accept' })
+    expect(codexDecision(false)).toEqual({ decision: 'decline' })
+  })
+  it('waiting on approval is an active flag', () => {
+    expect(codexWaitingOnApproval({ type: 'active', activeFlags: ['waitingOnApproval'] })).toBe(true)
+    expect(codexWaitingOnApproval({ type: 'active', activeFlags: ['waitingOnUserInput'] })).toBe(false)
+    expect(codexWaitingOnApproval({ type: 'idle' })).toBe(false)
   })
 })

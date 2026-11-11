@@ -4,7 +4,9 @@
 // app-server (window 1) started in the session's folder with the session's door env; the TUI
 // waits for the socket and connects with --remote and -C; the tile wears a codex badge and no
 // pause; park and resume reattach; after its tmux dies it starts again (a known thread resumed by
-// id); a clean exit ends both windows and parks it; kill removes the socket.
+// id); a clean exit ends both windows and parks it; kill removes the socket. Phase 3: an approval
+// shows on the session as Allow / Deny, is answered only on a click, and goes when the terminal
+// answers first; a permissions request and a question are never answered by core.
 
 import type { BrowserWindow } from 'electron'
 import { execFileSync } from 'node:child_process'
@@ -96,15 +98,60 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   check('codex: Codex\'s name for the thread is the title; the side thread\'s is ignored', core.sessions.view(id)?.title === 'Make hello.txt', String(core.sessions.view(id)?.title))
   check('codex: its context use, from token usage (25,840 of 258,400); no cost guessed', core.usage.get().sessions[id]?.context === 10 && core.usage.get().sessions[id]?.costUsd === null, JSON.stringify(core.usage.get().sessions[id]))
 
-  // An approval: the session needs you, and core never answers it (the terminal does).
+  // Approvals (phase 3, item 1): shown on the session as Allow / Deny, answered only on a click.
+  const answers = async (): Promise<{ id: number; result?: { decision?: unknown } }[]> => JSON.parse(await readFile(`${sock}.answers.json`, 'utf8').catch(() => '[]'))
+  const card = async (): Promise<{ tool: string; label: string; body: string; buttons: string[]; note: string } | null> =>
+    js(`(() => { const c = document.querySelector('.leash-card.is-ask'); return c && { tool: c.querySelector('.leash-tool')?.textContent ?? '', label: c.querySelector('.leash-label')?.textContent ?? '', body: c.querySelector('.leash-body')?.textContent ?? '', buttons: [...c.querySelectorAll('[data-answer]')].map((b) => b.dataset.answer), note: c.querySelector('.leash-note')?.textContent ?? '' } })()`)
+  const noCard = (): Promise<void> => waitFor('the card to go', async () => (await card()) === null, 5000).catch(() => undefined)
+
+  // 1. Answered in the terminal: the card goes, core sent nothing.
   core.sessions.input(id, 'ask\r')
   await waitFor('needs you', () => core.sessions.view(id)?.status === 'blocked', 5000).catch(() => undefined)
-  await sleep(1500)
+  await waitFor('the card', async () => (await card()) !== null, 5000).catch(() => undefined)
+  const c1 = await card()
+  check('codex: an approval shows on the session as Allow / Deny, the command unwrapped', !!c1 && c1.tool === 'Bash' && c1.label === 'clean' && c1.body === 'rm -rf build' && c1.buttons.join() === 'allow,deny', JSON.stringify(c1))
   check('codex: an approval waiting marks the session as needing you', core.sessions.view(id)?.status === 'blocked' && core.sessions.view(id)?.attention === true, core.sessions.view(id)?.status)
-  check('codex: core never answers the approval request (the first answer wins; the terminal\'s is the one)', !existsSync(`${sock}.answers.json`))
+  await sleep(1000)
+  check('codex: core does not answer an approval by itself', (await answers()).length === 0, JSON.stringify(await answers()))
   core.sessions.input(id, 'yes\r')
+  await noCard()
   await waitFor('idle again', () => core.sessions.view(id)?.status === 'idle', 5000).catch(() => undefined)
-  check('codex: answered in the terminal, it goes on', core.sessions.view(id)?.status === 'idle', core.sessions.view(id)?.status)
+  check('codex: answered in the terminal, the card goes and core sent nothing', (await card()) === null && (await answers()).length === 0 && core.sessions.view(id)?.status === 'idle' && core.sessions.view(id)?.leash.asks.length === 0, `${core.sessions.view(id)?.status} ${JSON.stringify(await answers())}`)
+
+  // 2. Deny on the tile: core declines that request (and only it), the TUI's dialog closes.
+  core.sessions.input(id, 'ask\r')
+  await waitFor('the card', async () => (await card()) !== null, 5000).catch(() => undefined)
+  await js(`document.querySelector('.leash-card.is-ask [data-answer="deny"]')?.click(); true`)
+  await waitFor('an answer', async () => (await answers()).length > 0, 5000).catch(() => undefined)
+  await noCard()
+  const a2 = await answers()
+  check('codex: Deny on the tile declines that approval, once', a2.length === 1 && a2[0].result?.decision === 'decline', JSON.stringify(a2))
+  await waitFor('idle again', () => core.sessions.view(id)?.status === 'idle', 5000).catch(() => undefined)
+  check('codex: the card goes and the session goes on', (await card()) === null && core.sessions.view(id)?.status === 'idle', core.sessions.view(id)?.status)
+
+  // 3. A file change: its path and diff from the item, Allow accepts.
+  core.sessions.input(id, 'askfile\r')
+  await waitFor('the card', async () => (await card()) !== null, 5000).catch(() => undefined)
+  const c3 = await card()
+  check('codex: a file change shows its file and diff', !!c3 && c3.tool === 'Edit' && c3.label === join(cwd, 'notes.md') && c3.body === '+# Notes', JSON.stringify(c3))
+  await js(`document.querySelector('.leash-card.is-ask [data-answer="allow"]')?.click(); true`)
+  await waitFor('an answer', async () => (await answers()).length > 1, 5000).catch(() => undefined)
+  await noCard()
+  const a3 = await answers()
+  check('codex: Allow on the tile accepts it', a3.length === 2 && a3[1].result?.decision === 'accept' && (await card()) === null, JSON.stringify(a3))
+
+  // 4. A permissions request (a grant, not a yes) and a question: shown for the terminal, never answered.
+  core.sessions.input(id, 'askperm\r')
+  await waitFor('the card', async () => (await card()) !== null, 5000).catch(() => undefined)
+  await sleep(800)
+  const c4 = await card()
+  check('codex: a permissions request shows with no buttons ("answer in the terminal")', !!c4 && c4.tool === 'Permissions' && c4.label === 'needs the network' && c4.buttons.length === 0 && /terminal/i.test(c4.note), JSON.stringify(c4))
+  check('codex: a question (requestUserInput) is neither shown nor answered', core.sessions.view(id)?.leash.asks.length === 1 && (await answers()).length === 2, JSON.stringify(core.sessions.view(id)?.leash.asks.map((a) => a.tool)))
+  const permAsk = core.sessions.view(id)?.leash.asks[0]
+  check('codex: the window cannot answer a terminal-only request', (await js(`window.core.answerPermission(${JSON.stringify(id)}, ${JSON.stringify(permAsk?.id ?? '')}, true)`)) === false && (await answers()).length === 2)
+  core.sessions.input(id, 'yes\r')
+  await noCard()
+  check('codex: answered in the terminal, it goes', (await card()) === null && (await answers()).length === 2)
 
   // Its tile in the column: the codex badge, and no pause (the leash is Claude Code's hooks).
   await js(`document.querySelector('.session-plus')?.click(); true`)
