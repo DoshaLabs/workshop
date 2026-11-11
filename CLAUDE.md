@@ -228,7 +228,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   still answer (core sees it through the hook hanging up, the poll's `waitingFor`, PostToolUse,
   Stop). Both scripts retry a core that is restarting; a pause is a file and outlives core.
   Core's window only: tiles see none of it.
-- The wolfpack (`docs/progress/2026-11-11-wolfpack.md`): a session's subagents (`src/main/agents.ts`)
+- The wolfpack (`docs/progress/2026-11-11-wolfpack.md`; a Codex session's: the Codex bullet): a session's subagents (`src/main/agents.ts`)
   and helper sessions (`src/main/helpers.ts`) as one pack tile under it (`PackTile.tsx`): a chip per
   agent, the chosen one's conversation (ChatView), its mark in the worker coat (the Knot gold:
   `knot.ts` `goldOf`, `--ws-worker`). Subagents from the SubagentStart / Stop hooks; transcripts
@@ -272,7 +272,10 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   no other request is ever answered. No pause (Codex cannot hold a call from outside): ■ Stop
   on its heads while a turn runs, two clicks, `turn/interrupt` (Colin, 11 Nov 2026). Commits: a
   `commandExecution` item that committed is recorded as the session's (`codexShellCall`; each
-  turn read back at its end for items the server never sent live). Not yet: the wolfpack, the door as MCP, both plans' windows in the top bar. Hook ids
+  turn read back at its end for items the server never sent live). The wolfpack: its subagents
+  (child threads) followed by `src/main/codex-pack.ts` into the same pack tile, `agent:<thread
+  id>` transcripts and asks; kill interrupts the child's turn and tells the parent in one typed
+  line (`codexKillLine`); no pause. Not yet: the door as MCP, both plans' windows in the top bar. Hook ids
   match through `isSession` (never on ''). Smoke: `test/fixtures/fake-codex/codex` (speaks the
   app-server protocol), `smoke-codex.ts`.
 - `transcripts` (bridge 1.7): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed

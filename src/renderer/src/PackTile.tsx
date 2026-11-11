@@ -7,7 +7,7 @@
 // still working is chosen until you pick one.
 //
 // Per agent, on its line: pause / resume (only when the leash is wired, since nothing else can
-// hold a tool call), kill (■, two clicks in place: the first arms it red for three seconds), and ×
+// hold a tool call; never for a Codex subagent, whose CLI cannot hold one), kill (■, two clicks in place: the first arms it red for three seconds), and ×
 // for a finished one, or the last resort for one whose stop never came.
 
 import { useEffect, useState } from 'react'
@@ -94,7 +94,7 @@ function AgentLine({ a, leash, now }: { a: AgentView; leash: boolean; now: numbe
       <span className="pack-state" title={a.needsYou ? `It waits at a prompt: answer it with claude attach ${a.attach ?? ''} in a terminal` : undefined}>
         {finished ? `✓ ${clock(a.endedAt! - a.startedAt)}` : a.needsYou ? 'needs you' : a.held ? 'paused, holding' : a.paused ? 'paused' : clock(now - a.startedAt)}
       </span>
-      {!finished && leash && a.kind === 'subagent' && (
+      {!finished && leash && a.kind === 'subagent' && a.cli !== 'codex' && (
         <button className="ghost pack-pause" title={a.paused ? 'Let it go on' : 'Hold its next tool call until you let it go on'} onClick={() => act(a.paused ? window.core.agents.resume(a.id) : window.core.agents.pause(a.id))}>
           {a.paused ? '▶' : '⏸'}
         </button>
@@ -102,7 +102,7 @@ function AgentLine({ a, leash, now }: { a: AgentView; leash: boolean; now: numbe
       {!finished && (
         <button
           className={`ghost pack-kill ${armed ? 'armed' : ''}`}
-          title={armed ? 'Click again to stop it' : a.kind === 'helper' ? 'Stop it (its conversation is kept)' : leash ? 'Stop it: its next tool call is refused, and the session is told' : 'Stop it: the tile goes, and the session is told to stop it'}
+          title={armed ? 'Click again to stop it' : a.kind === 'helper' ? 'Stop it (its conversation is kept)' : a.cli === 'codex' ? 'Stop it: the tile goes, its turn is interrupted, and the session is told' : leash ? 'Stop it: its next tool call is refused, and the session is told' : 'Stop it: the tile goes, and the session is told to stop it'}
           onClick={() => {
             if (!armed) return setArmed(true)
             setArmed(false)

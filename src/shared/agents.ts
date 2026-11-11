@@ -39,6 +39,8 @@ export interface AgentView {
   needsYou?: boolean
   /** A helper's id for `claude attach <id>` and `claude stop <id>` (the CLI's own background session). */
   attach?: string
+  /** A Codex session's subagent (a child thread on its app-server, main/codex-link.ts): no pause; kill interrupts its turn. */
+  cli?: 'codex'
 }
 
 export interface AgentsState {

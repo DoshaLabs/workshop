@@ -19,6 +19,8 @@ import WebSocket from 'ws'
 import { applyCodexItem, codexAsk, codexContext, codexDecision, codexStatus, codexWaitingOnApproval, pickThread, type CodexAsk, type CodexThread } from '@shared/codex'
 import { codexThreadId } from '@shared/cli'
 import type { SessionStatus } from '@shared/sessions'
+import type { AgentView } from '@shared/agents'
+import { CodexPack } from './codex-pack'
 import { emptyTranscript, type Transcript } from '@shared/transcript'
 
 /** Items read back when core joins a thread: about a screen and a half of a session tile. */
@@ -46,12 +48,16 @@ export interface CodexLinkEvents {
    * its turn's end with when it completed. Each item once; never one read from history at join.
    */
   itemDone?(item: unknown, completedAtMs?: number | null, startedAtMs?: number | null): void
+  /** The session's subagents (main/codex-pack.ts), as the wolfpack shows them. */
+  agents?(list: AgentView[]): void
 }
 
 interface OpenRequest {
   /** The request's own id, as the server sent it (number or string): the reply carries it back. */
   rpcId: number | string
   method: string
+  /** The thread it is about: the session's, or a subagent's. */
+  threadId: string
   /** The thread was seen waiting on an approval since this request came. */
   seen: boolean
 }
@@ -71,6 +77,8 @@ export class CodexLink {
   private threadId: string | null
   private joined = false
   private readonly t: Transcript
+  /** The session's subagents: child threads on the same server, followed through this connection. */
+  readonly pack: CodexPack
   private readonly requests = new Map<string, OpenRequest>()
   /** The running turn, from `turn/started` (null between turns, or before core saw one start). */
   private turnId: string | null = null
@@ -88,6 +96,15 @@ export class CodexLink {
   ) {
     this.threadId = codexThreadId(knownThread)
     this.t = emptyTranscript(sessionId)
+    this.pack = new CodexPack(sessionId, { call: (m, p) => this.call(m, p) }, {
+      agents: (list) => this.on.agents?.(list),
+      transcript: (t) => this.on.transcript(t),
+      item: (method, item, at, startedAt) => {
+        this.keepFileItem(item)
+        if (method === 'item/started') this.sawStart(item)
+        else this.itemDone(item, at, startedAt)
+      }
+    })
   }
 
   start(): void {
@@ -144,6 +161,7 @@ export class CodexLink {
       this.ws = null
       // A request belongs to the connection it came on: it cannot be answered on the next one.
       this.dropAll()
+      this.pack.disconnected()
       for (const p of this.pending.values()) {
         clearTimeout(p.timer)
         p.fail(new Error('closed'))
@@ -192,6 +210,7 @@ export class CodexLink {
       await new Promise((r) => setTimeout(r, 750))
     }
     if (this.stopped || !this.ws || !this.threadId) return
+    this.pack.setRoot(this.threadId)
     const resumed = await this.call<{ thread?: CodexThread }>('thread/resume', { threadId: this.threadId })
     this.joined = true
     const th = resumed.thread
@@ -199,6 +218,8 @@ export class CodexLink {
     const st = codexStatus(th?.status)
     if (st) this.on.status(st.status, st.needsYou)
     await this.history()
+    this.pack.afterHistory()
+    this.pack.rejoined()
   }
 
   private sawStart(item: unknown): void {
@@ -249,7 +270,10 @@ export class CodexLink {
     const r = await this.call<{ data?: { item?: unknown; completedAtMs?: number | null; startedAtMs?: number | null }[] }>('thread/items/list', { threadId: this.threadId, limit: HISTORY, sortDirection: 'desc' }).catch(() => null)
     if (!r?.data) return
     this.t.blocks = []
-    for (const e of [...r.data].reverse()) applyCodexItem(this.t, e.item, e.completedAtMs != null, e.completedAtMs ?? e.startedAtMs ?? Date.now())
+    for (const e of [...r.data].reverse()) {
+      applyCodexItem(this.t, e.item, e.completedAtMs != null, e.completedAtMs ?? e.startedAtMs ?? Date.now())
+      this.pack.onItem(e.item, false)
+    }
     this.t.found = true
     this.on.transcript(this.t)
   }
@@ -292,18 +316,38 @@ export class CodexLink {
     this.on.askGone(key)
   }
 
-  private dropAll(): void {
-    for (const key of [...this.requests.keys()]) this.drop(key)
+  private dropAll(threadId?: string): void {
+    for (const [key, r] of [...this.requests]) if (!threadId || r.threadId === threadId) this.drop(key)
   }
 
-  /** A server request: kept (and shown) if it is an approval of the session's thread; otherwise left alone. */
+  /** A thread's status changed: its approvals seen waiting are gone once it stops waiting. */
+  private statusOf(threadId: string, status: unknown): void {
+    const waiting = codexWaitingOnApproval(status)
+    for (const [key, r] of [...this.requests]) {
+      if (r.threadId !== threadId) continue
+      if (waiting) r.seen = true
+      else if (r.seen) this.drop(key)
+    }
+  }
+
+  /** A subagent of this session (a child thread), for the wolfpack's kill and dismiss. */
+  hasAgent(id: string): boolean {
+    return this.pack.has(id)
+  }
+
+  /**
+   * A server request: kept (and shown) if it is an approval of the session's thread or one of its
+   * subagents' (as a Claude Code subagent's prompt is its session's); otherwise left alone.
+   */
   private request(rpcId: number | string, method: string, params: Record<string, unknown>): void {
     if (!this.joined || !this.threadId) return
-    const ask = codexAsk(method, params, this.threadId, this.fileItems.get(String(params.itemId)))
+    const tid = typeof params.threadId === 'string' ? params.threadId : ''
+    if (!this.pack.family().has(tid)) return
+    const ask = codexAsk(method, params, tid, this.fileItems.get(String(params.itemId)))
     if (!ask) return
     const key = String(rpcId)
     if (this.requests.has(key)) return
-    this.requests.set(key, { rpcId, method, seen: false })
+    this.requests.set(key, { rpcId, method, threadId: tid, seen: false })
     this.on.ask(key, ask)
   }
 
@@ -327,15 +371,18 @@ export class CodexLink {
     const p = m.params ?? {}
     // A request for the clients: an approval of ours is kept for the tile; never answered here.
     if (m.id !== undefined) return this.request(m.id, m.method, p)
-    if (!this.joined || p.threadId !== this.threadId) return
+    if (!this.joined) return
+    // Answered by someone (the terminal, or core itself a moment ago), for any thread of ours.
+    if (m.method === 'serverRequest/resolved') {
+      if (p.requestId !== undefined && p.requestId !== null) this.drop(String(p.requestId))
+      return
+    }
+    if (typeof p.threadId === 'string' && m.method === 'thread/status/changed') this.statusOf(p.threadId, p.status)
+    if (typeof p.threadId === 'string' && m.method === 'turn/completed') this.dropAll(p.threadId)
+    // Anything about another thread: a subagent's (the wolfpack), or one to look at once.
+    if (p.threadId !== this.threadId) return this.pack.onNotification(m.method, p)
     switch (m.method) {
-      case 'serverRequest/resolved':
-        // Answered by someone (the terminal, or core itself a moment ago).
-        if (p.requestId !== undefined && p.requestId !== null) this.drop(String(p.requestId))
-        break
       case 'thread/status/changed': {
-        if (codexWaitingOnApproval(p.status)) for (const r of this.requests.values()) r.seen = true
-        else for (const [key, r] of [...this.requests]) if (r.seen) this.drop(key)
         const st = codexStatus(p.status)
         if (st) this.on.status(st.status, st.needsYou)
         break
@@ -347,7 +394,6 @@ export class CodexLink {
       }
       case 'turn/completed': {
         this.turnId = null
-        this.dropAll()
         const turn = p.turn as { id?: unknown } | undefined
         if (typeof turn?.id === 'string') void this.readBack(turn.id)
         this.on.turnDone()
@@ -359,6 +405,7 @@ export class CodexLink {
       case 'item/started':
       case 'item/completed':
         this.keepFileItem(p.item)
+        this.pack.onItem(p.item, true)
         if (m.method === 'item/started') this.sawStart(p.item)
         else this.itemDone(p.item, typeof p.completedAtMs === 'number' ? p.completedAtMs : null)
         if (applyCodexItem(this.t, p.item, m.method === 'item/completed')) {

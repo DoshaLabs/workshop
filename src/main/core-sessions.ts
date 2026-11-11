@@ -20,11 +20,12 @@ import { UsageTracker } from './usage'
 import { startPreview } from './preview'
 import { keepImage } from './drops'
 import { CommitRecorder, CommitStore, codexShellCall, type CommitRecord } from './commits'
+import { codexKillLine } from '@shared/codex'
 import { Leash } from './leash'
 import { CodexLink } from './codex-link'
 import { AgentTracker } from './agents'
 import { Helpers } from './helpers'
-import type { AgentsState } from '@shared/agents'
+import { agentTranscriptId, type AgentsState, type AgentView } from '@shared/agents'
 import type { Transcript } from '@shared/transcript'
 
 export interface CoreSessions {
@@ -112,6 +113,11 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
 
   // Codex sessions: core is a second client of each one's app-server while it is open (main/codex-link.ts).
   const codexLinks = new Map<string, CodexLink>()
+  /** Each open Codex session's subagents, as its link last reported them. */
+  const codexAgents = new Map<string, AgentView[]>()
+  let agentsStateRef: (() => AgentsState) | null = null
+  /** The link that follows a Codex subagent. */
+  const codexAgentLink = (agentId: string): CodexLink | undefined => [...codexLinks.values()].find((l) => l.hasAgent(agentId))
   /** `<session id>:<request key>` → drops that approval from the session's asks. */
   const codexAsks = new Map<string, () => void>()
   const syncCodex = (live: SessionView[]): void => {
@@ -121,6 +127,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
       link.stop()
       codexLinks.delete(id)
       transcripts.drop(id)
+      for (const a of codexAgents.get(id) ?? []) transcripts.drop(agentTranscriptId(a.id))
+      if (codexAgents.delete(id)) send(CH.agentsState, agentsStateRef?.())
     }
     for (const v of live) {
       if (codexLinks.has(v.id) || !sessionsRef) continue
@@ -146,6 +154,13 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
           const call = codexShellCall(item, at, startedAt)
           const rec = call && sessionsRef?.find(id)
           if (rec && commitsRef) void commitsRef.onShell({ id, name: rec.name }, call).catch((err) => console.warn('[workshop] commits:', err))
+        },
+        // Its subagents (child threads), in the wolfpack beside Claude Code sessions' own.
+        agents: (list) => {
+          const gone = (codexAgents.get(id) ?? []).filter((a) => !list.some((b) => b.id === a.id))
+          for (const a of gone) transcripts.drop(agentTranscriptId(a.id))
+          codexAgents.set(id, list)
+          send(CH.agentsState, agentsStateRef?.())
         }
       })
       codexLinks.set(id, link)
@@ -186,7 +201,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   })
   sessionsRef = sessions
   usageRef = usage
-  const agentsState = (): AgentsState => ({ agents: [...tracker.list(), ...helperList.list()], leash: tracker.hasLeash() })
+  const agentsState = (): AgentsState => ({ agents: [...tracker.list(), ...helperList.list(), ...[...codexAgents.values()].flat()], leash: tracker.hasLeash() })
+  agentsStateRef = agentsState
   // The wolfpack's tails: the subagents' files once seen, and the helpers' by session id.
   let subagentTails: { id: string; path: string | null }[] = []
   const syncTails = (): void => transcripts.syncAgents([...subagentTails, ...helperList.tails()])
@@ -286,11 +302,28 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   const helperPause = (): never => {
     throw new Error('a helper is a background session of its own: stop it, or open it with claude attach')
   }
-  handle(CH.agentPause, (id: string) => (helperList.has(String(id)) ? helperPause() : tracker.pause(String(id))))
-  handle(CH.agentResume, (id: string) => (helperList.has(String(id)) ? helperPause() : tracker.resume(String(id))))
-  // A helper is stopped with the CLI's own `claude stop` (kill, or clearing a finished one); a subagent as tracker.kill says.
-  handle(CH.agentKill, (id: string) => (helperList.has(String(id)) ? helperList.stop(String(id)) : tracker.kill(String(id))))
-  handle(CH.agentDismiss, (id: string) => (helperList.has(String(id)) ? helperList.stop(String(id)) : tracker.dismiss(String(id))))
+  const codexPause = (): never => {
+    throw new Error('a Codex subagent cannot be paused: stop it, or answer it in the terminal')
+  }
+  handle(CH.agentPause, (id: string) => (helperList.has(String(id)) ? helperPause() : codexAgentLink(String(id)) ? codexPause() : tracker.pause(String(id))))
+  handle(CH.agentResume, (id: string) => (helperList.has(String(id)) ? helperPause() : codexAgentLink(String(id)) ? codexPause() : tracker.resume(String(id))))
+  // A helper is stopped with the CLI's own `claude stop` (kill, or clearing a finished one); a Codex
+  // subagent's turn is interrupted (Codex tells its parent); a Claude subagent as tracker.kill says.
+  handle(CH.agentKill, async (id: string) => {
+    const cx = codexAgentLink(String(id))
+    if (cx) {
+      const killed = await cx.pack.kill(String(id))
+      // The parent is told in one typed line, as a Claude Code session is (main/agents.ts kill).
+      if (killed?.running && sessions.find(cx.sessionId)?.open) sessions.paste(cx.sessionId, codexKillLine(killed))
+      return
+    }
+    return helperList.has(String(id)) ? helperList.stop(String(id)) : tracker.kill(String(id))
+  })
+  handle(CH.agentDismiss, (id: string) => {
+    const cx = codexAgentLink(String(id))
+    if (cx) return void cx.pack.dismiss(String(id))
+    return helperList.has(String(id)) ? helperList.stop(String(id)) : tracker.dismiss(String(id))
+  })
   handle(CH.openExternal, (url: string) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
   })

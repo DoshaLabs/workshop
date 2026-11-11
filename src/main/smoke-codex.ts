@@ -7,7 +7,8 @@
 // id); a clean exit ends both windows and parks it; kill removes the socket. Phase 3: an approval
 // shows on the session as Allow / Deny, is answered only on a click, and goes when the terminal
 // answers first; a permissions request and a question are never answered by core. No pause: Stop
-// (two clicks) interrupts the running turn. A commit a Codex command made is the session's.
+// (two clicks) interrupts the running turn. A commit a Codex command made is the session's. Its
+// subagents (child threads) show in a pack tile under it, with kill and no pause.
 
 import type { BrowserWindow } from 'electron'
 import { execFileSync } from 'node:child_process'
@@ -189,6 +190,33 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   const quietSha = (() => { try { return gc('rev-parse', 'HEAD') } catch { return '' } })()
   await waitFor('its record', () => core.commits.store.has(quietSha), 5000).catch(() => undefined)
   check('codex: a commit whose command the server never sent live is found when its turn is read back', quietSha !== headSha && core.commits.store.all().find((x) => x.sha === quietSha)?.session === id)
+
+  // The wolfpack (item 4): a Codex subagent is a child thread; it shows in a pack tile under the session.
+  await js(`document.querySelector('.session-plus')?.click(); true`) // the column shows the session's tile and its pack
+  core.sessions.input(id, 'spawn\r')
+  const pack = `document.querySelector('.pack-tile[data-pack="${id}"]')`
+  await waitFor('the pack tile', async () => (await js(`!!${pack}?.querySelector('.pack-chip')`)) === true, 8000).catch(() => undefined)
+  await waitFor('its words', async () => /OK/.test((await js(`${pack}?.querySelector('.chat')?.textContent ?? ''`)) as string), 5000).catch(() => undefined)
+  const p1 = (await js(`(() => { const p = ${pack}; return p && { chips: [...p.querySelectorAll('.pack-chip-name')].map((x) => x.textContent), chat: p.querySelector('.chat')?.textContent ?? '', kind: p.querySelector('.pack-kind')?.textContent ?? '', pause: !!p.querySelector('.pack-pause') } })()`)) as { chips: string[]; chat: string; kind: string; pause: boolean } | null
+  check('codex: a subagent shows in a pack tile under its session: its name, kind, and what it said', !!p1 && p1.chips.join() === 'Beauvoir' && /OK/.test(p1.chat) && /gpt-fake/.test(p1.kind), JSON.stringify(p1))
+  const pa = core.agentsState().agents.find((a) => a.parent === id)
+  check('codex: it finished when its parent heard so', !!pa && pa.endedAt !== null && pa.cli === 'codex', JSON.stringify(pa && { endedAt: pa.endedAt, cli: pa.cli }))
+  core.sessions.input(id, 'spawnslow\r')
+  await waitFor('the running one', () => core.agentsState().agents.filter((a) => a.parent === id && a.endedAt === null).length === 1, 8000).catch(() => undefined)
+  await waitFor('its kill button', async () => (await js(`!!${pack}?.querySelector('.pack-kill')`)) === true, 5000).catch(() => undefined)
+  const runId = core.agentsState().agents.find((a) => a.parent === id && a.endedAt === null)?.id ?? ''
+  check('codex: a running subagent has kill and no pause (Codex cannot hold its calls)', (await js(`!!${pack}?.querySelector('.pack-kill') && !${pack}?.querySelector('.pack-pause')`)) === true)
+  await js(`${pack}?.querySelector('.pack-kill')?.click(); true`)
+  await sleep(200)
+  await js(`${pack}?.querySelector('.pack-kill')?.click(); true`)
+  await waitFor('it goes', () => !core.agentsState().agents.some((a) => a.id === runId), 5000).catch(() => undefined)
+  const flat = async (): Promise<string> => (await screen(id)).replace(/\n/g, '') // the pane wraps long lines
+  await waitFor('the parent told', async () => (await flat()).includes('The user stopped your sub-agent'), 5000).catch(() => undefined)
+  const ints2 = JSON.parse(await readFile(`${sock}.interrupts.json`, 'utf8').catch(() => '[]')) as { threadId?: string }[]
+  check('codex: kill (two clicks): the tile goes, the subagent\'s turn (not the session\'s) is interrupted, and the session is told in one typed line', ints2.some((x) => x.threadId === runId) && !ints2.slice(1).some((x) => x.threadId === threadId) && !core.agentsState().agents.some((a) => a.id === runId) && (await flat()).includes('The user stopped your sub-agent “Beauvoir” (/root/ok_agent)'), `${JSON.stringify(ints2)} ${(await flat()).slice(-400)}`)
+  await waitFor('idle', () => core.sessions.view(id)?.status === 'idle', 5000).catch(() => undefined)
+  for (const a of core.agentsState().agents.filter((x) => x.parent === id)) await js(`window.core.agents.dismiss(${JSON.stringify(a.id)})`)
+  check('codex: × clears them', core.agentsState().agents.filter((x) => x.parent === id).length === 0)
 
   // Its tile in the column: the codex badge, and no pause (the leash is Claude Code's hooks).
   await js(`document.querySelector('.session-plus')?.click(); true`)

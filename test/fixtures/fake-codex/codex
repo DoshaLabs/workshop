@@ -22,7 +22,14 @@
 //   turn completes `interrupted`, its open requests resolve, status idle). `commit` really runs
 //   `git commit --allow-empty -m codex` in the server's folder and reports it as a command item;
 //   `quietcommit` does the same but stores the item without sending it (as 0.167.1 did for a
-//   thread's first turn), so only reading the turn back finds it.
+//   thread's first turn), so only reading the turn back finds it. Subagents, as 0.167.1 runs
+//   them: a child thread (parentThreadId, a nickname, source.subAgent.thread_spawn) whose events go
+//   only to its own subscribers, and `subAgentActivity` items on the parent. `spawn`: the child
+//   answers OK at once (before anyone can subscribe), then the parent says done. `spawnslow`: the
+//   child runs a command until its turn is interrupted, which the parent hears as `interrupted`.
+//   `spawnask`: the child asks to approve a command (sent to the child's and the parent's
+//   subscribers, as the TUI follows only the parent); `yes` resolves it. A child refuses
+//   thread/resume for its first 400 ms.
 //   `exit` ends the TUI cleanly (status 0), `crash` with status 3.
 
 const fs = require('node:fs')
@@ -121,13 +128,15 @@ function server() {
     }
   }
   const answers = []
-  const request = (th, method, params, fileItem) => {
+  const request = (th, method, params, fileItem, alsoTo) => {
     const r = { th, id: reqId++, fileItem }
     pending.push(r)
-    for (const ws of th.subs) send(ws, { id: r.id, method, params: { threadId: th.thread.id, turnId: 't', startedAtMs: Date.now(), ...params } })
+    const to = new Set([...th.subs, ...(alsoTo ? alsoTo.subs : [])])
+    for (const ws of to) send(ws, { id: r.id, method, params: { threadId: th.thread.id, turnId: 't', startedAtMs: Date.now(), ...params } })
   }
   const resolve = (r, decision) => {
     notify(r.th, 'serverRequest/resolved', { requestId: r.id })
+    if (r.th.root) notify(r.th.root.th, 'serverRequest/resolved', { requestId: r.id })
     if (r.fileItem) item(r.th, 't', { ...r.fileItem, status: decision === 'accept' ? 'completed' : 'declined' }, true)
     if (!pending.some((x) => x.th === r.th)) status(r.th, { type: 'idle' })
   }
@@ -161,8 +170,15 @@ function server() {
         case 'thread/resume': {
           const th = threads.get(p.threadId)
           if (!th) return send(ws, { id: m.id, error: { code: -32600, message: 'no such thread' } })
+          // A subagent just spawned is not ready to join yet (as 0.167.1 seemed to answer).
+          if (th.born && Date.now() - th.born < 400) return send(ws, { id: m.id, error: { code: -32600, message: 'thread not loaded' } })
           th.subs.add(ws)
           return reply({ thread: th.thread, model: 'fake', cwd: th.thread.cwd })
+        }
+        case 'thread/unsubscribe': {
+          const th = threads.get(p.threadId)
+          if (th) th.subs.delete(ws)
+          return reply({})
         }
         case 'thread/turns/list': {
           const th = threads.get(p.threadId)
@@ -183,6 +199,13 @@ function server() {
           }
           endTurn(th, t, 'interrupted')
           status(th, { type: 'idle' })
+          // A subagent stopped: its parent hears it, and its turn ends.
+          if (th.root && running.get(th.root.th.thread.id) === th.root.turn) {
+            const { th: parent, turn: pt } = th.root
+            item(parent, pt.id, { type: 'subAgentActivity', id: randomUUID(), kind: 'interrupted', agentThreadId: th.thread.id, agentPath: '/root/ok_agent', model: null, reasoningEffort: null }, true)
+            endTurn(parent, pt, 'completed')
+            status(parent, { type: 'idle' })
+          }
           return
         }
         case 'thread/items/list': {
@@ -214,6 +237,34 @@ function server() {
             status(th, { type: 'active', activeFlags: ['waitingOnApproval', 'waitingOnUserInput'] })
             request(th, 'item/permissions/requestApproval', { itemId: 'p', environmentId: null, cwd: process.cwd(), reason: 'needs the network', permissions: { network: { enabled: true } } })
             request(th, 'item/tool/requestUserInput', { itemId: 'q', questions: [{ id: 'q1', header: 'Pick', question: 'Which?', options: null }] })
+          } else if (p.text === 'spawn' || p.text === 'spawnslow' || p.text === 'spawnask') {
+            const t = startTurn(th)
+            status(th, { type: 'active', activeFlags: [] })
+            item(th, t.id, { type: 'userMessage', id: randomUUID(), clientId: null, content: [{ type: 'text', text: p.text, text_elements: [] }] }, true)
+            const child = makeThread(randomUUID(), false)
+            Object.assign(child.thread, { parentThreadId: th.thread.id, agentNickname: 'Beauvoir', agentRole: null, model: 'gpt-fake', source: { subAgent: { thread_spawn: { parent_thread_id: th.thread.id, depth: 1, agent_path: '/root/ok_agent', agent_nickname: 'Beauvoir', agent_role: null } } } })
+            child.root = { th, turn: t }
+            child.born = Date.now()
+            item(th, t.id, { type: 'subAgentActivity', id: randomUUID(), kind: 'started', agentThreadId: child.thread.id, agentPath: '/root/ok_agent', model: 'gpt-fake', reasoningEffort: null }, true)
+            const ct = startTurn(child)
+            status(child, { type: 'active', activeFlags: [] })
+            if (p.text === 'spawn') {
+              item(child, ct.id, { type: 'agentMessage', id: randomUUID(), text: 'OK', phase: null, memoryCitation: null, delivery: null, questions: null }, true)
+              endTurn(child, ct, 'completed')
+              status(child, { type: 'idle' })
+              item(th, t.id, { type: 'subAgentActivity', id: randomUUID(), kind: 'completed', agentThreadId: child.thread.id, agentPath: '/root/ok_agent', model: null, reasoningEffort: null }, true)
+              item(th, t.id, { type: 'agentMessage', id: randomUUID(), text: 'done', phase: null, memoryCitation: null, delivery: null, questions: null }, true)
+              endTurn(th, t, 'completed')
+              status(th, { type: 'idle' })
+            } else if (p.text === 'spawnslow') {
+              ct.cmd = { ...exec(randomUUID(), 'inProgress', null), command: "/bin/zsh -lc 'sleep 600'" }
+              item(child, ct.id, ct.cmd, false)
+            } else {
+              setTimeout(() => {
+                status(child, { type: 'active', activeFlags: ['waitingOnApproval'] })
+                request(child, 'item/commandExecution/requestApproval', { kind: 'command', itemId: 'ci', environmentId: null, command: "/bin/zsh -lc 'rm -rf dist'", cwd: process.cwd(), reason: 'child cleans' }, undefined, th)
+              }, 300)
+            }
           } else if (p.text === 'commit' || p.text === 'quietcommit') {
             const quiet = p.text === 'quietcommit'
             const t = startTurn(th)

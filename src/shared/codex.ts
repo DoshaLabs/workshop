@@ -216,3 +216,61 @@ function push(t: Transcript, b: ChatBlock): void {
   t.blocks.push(b)
   if (t.blocks.length > TRANSCRIPT_KEEP) t.blocks.splice(0, t.blocks.length - TRANSCRIPT_KEEP)
 }
+
+// ---- subagents (the wolfpack): child threads on the session's own server
+
+/** A subagent as its thread describes it: spawned by a thread of the session's family (the session's own, or another subagent's). */
+export interface CodexChild {
+  id: string
+  parent: string
+  /** Codex's name for it ("Beauvoir"). */
+  nick: string
+  role: string
+  /** Its place in the team ("/root/ok_agent"). */
+  path: string
+  model: string
+}
+
+/**
+ * Whether a thread is a subagent of the family (`family`: the session's thread and the subagents
+ * already followed): spawned by one of them (`source.subAgent.thread_spawn`), not ephemeral. A
+ * review, a compaction or a memory pass has a parent too and is not one.
+ */
+export function codexChild(thread: unknown, family: ReadonlySet<string>): CodexChild | null {
+  const t = thread as Json | null
+  if (!t || typeof t.id !== 'string' || t.ephemeral === true) return null
+  const parent = str(t.parentThreadId)
+  if (!parent || !family.has(parent) || family.has(t.id)) return null
+  const spawn = ((t.source as Json | null)?.subAgent as Json | null)?.thread_spawn as Json | null | undefined
+  if (!spawn || typeof spawn !== 'object') return null
+  return { id: t.id, parent, nick: str(t.agentNickname) || str(spawn.agent_nickname), role: str(t.agentRole) || str(spawn.agent_role), path: str(spawn.agent_path), model: str(t.model) }
+}
+
+/** A `subAgentActivity` item on a thread: which subagent, and what happened to it. */
+export interface CodexActivity {
+  thread: string
+  kind: 'started' | 'interacted' | 'interrupted' | 'completed'
+  path: string
+  model: string
+}
+
+export function codexActivity(item: unknown): CodexActivity | null {
+  const it = item as Json | null
+  if (it?.type !== 'subAgentActivity' || typeof it.agentThreadId !== 'string') return null
+  const kind = it.kind
+  if (kind !== 'started' && kind !== 'interacted' && kind !== 'interrupted' && kind !== 'completed') return null
+  return { thread: it.agentThreadId, kind, path: str(it.agentPath), model: str(it.model) }
+}
+
+/** A subagent's task as a few words, from its place in the team: "/root/ok_agent" → "ok agent". */
+export function codexAgentTask(path: string): string {
+  return (path.split('/').filter(Boolean).pop() ?? '').replace(/[_-]+/g, ' ').trim()
+}
+
+/**
+ * The line typed into a Codex session when the user kills one of its subagents (as a Claude Code
+ * session's): without it, the parent waits on it and sets it going again (seen on 0.167.1).
+ */
+export function codexKillLine(a: { name: string; path: string }): string {
+  return `[workshop] The user stopped your sub-agent “${a.name}”${a.path ? ` (${a.path})` : ''}. Close it with close_agent if it is still open. No explanation needed: carry on without it, and do not relaunch it unless asked.`
+}
