@@ -8,7 +8,7 @@ import { applyLine, emptyTranscript } from '@shared/transcript'
 import type { SessionRecord } from '@shared/sessions'
 
 const SID = '11111111-2222-4333-8444-555555555555'
-const rec = { id: 'abc123', claudeSessionId: SID } as SessionRecord
+const rec = { id: 'abc123', cliSessionId: SID } as SessionRecord
 
 /** A projects folder laid out as Claude Code 2.1.322 writes it, and a tracker over it. */
 function setup() {

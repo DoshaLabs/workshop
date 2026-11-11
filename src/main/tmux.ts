@@ -59,6 +59,12 @@ export class Tmux {
     if (r.code !== 0) throw new Error(`tmux new-session failed: ${r.stderr.trim() || r.stdout.trim()}`)
   }
 
+  /** Add a window to a session, in the background: the attached window stays the active one. */
+  async newWindow(opts: { session: string; name: string; cwd: string; command: string }): Promise<void> {
+    const r = await this.run(['new-window', '-d', '-t', `${opts.session}:`, '-n', opts.name, '-c', opts.cwd, opts.command])
+    if (r.code !== 0) throw new Error(`tmux new-window failed: ${r.stderr.trim() || r.stdout.trim()}`)
+  }
+
   /** Ends the whole server and removes its socket file (the smoke test's throwaway socket). */
   async killServer(): Promise<void> {
     await this.run(['kill-server'])

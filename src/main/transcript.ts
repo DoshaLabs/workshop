@@ -50,13 +50,13 @@ export class TranscriptWatcher {
   ) {}
 
   /** Keep exactly these sessions (core id → the CLI's session id) under watch. */
-  sync(sessions: { id: string; claudeSessionId: string }[]): void {
+  sync(sessions: { id: string; cliSessionId: string }[]): void {
     const keep = new Set(sessions.map((s) => s.id))
     for (const [id, t] of this.tails) if (!t.agent && !keep.has(id)) this.tails.delete(id)
     for (const s of sessions) {
       const had = this.tails.get(s.id)
-      if (had && had.sessionId === s.claudeSessionId) continue
-      this.tails.set(s.id, fresh(s.id, s.claudeSessionId, false, null))
+      if (had && had.sessionId === s.cliSessionId) continue
+      this.tails.set(s.id, fresh(s.id, s.cliSessionId, false, null))
     }
     this.timers()
   }

@@ -1008,7 +1008,8 @@ app.whenReady().then(async () => {
     pluginDirs: () => [coreFile('plugin'), ...[...registry.tiles.values()].map((t) => t.plugin).filter((p): p is string => !!p)],
     dark: isDark(settings.get()),
     poll: !SMOKE,
-    pathFirst: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getAppPath(), 'test/fixtures/fake-claude') : undefined,
+    // The smoke run's stand-in CLIs: `claude`, and `codex` with its app-server.
+    pathFirst: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? ['fake-claude', 'fake-codex'].map((d) => join(app.getAppPath(), 'test/fixtures', d)).join(':') : undefined,
     claudeConfigDir: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getPath('userData'), 'claude-config') : undefined,
     onState: pushSessions,
     onUsage: pushUsage,

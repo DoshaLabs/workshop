@@ -1,7 +1,8 @@
-// A session as core keeps it and as the window shows it. A session is the unchanged `claude`
-// CLI in its own tmux session (CLAUDE.md §7): it survives the app quitting, and closing it in
-// the window only parks it.
+// A session as core keeps it and as the window shows it. A session is an unchanged agent CLI
+// (`claude`, or `codex` with its own app-server: shared/cli.ts) in its own tmux session (CLAUDE.md
+// §7): it survives the app quitting, and closing it in the window only parks it.
 
+import type { CliKind } from './cli'
 import type { LeashView } from './leash'
 import { ordered } from './order'
 
@@ -11,8 +12,14 @@ export interface SessionRecord {
   /** Core's id: 6 hex. */
   id: string
   tmuxName: string
-  /** Our UUID, handed to the CLI with --session-id: how hooks and the fleet poll find the session. */
-  claudeSessionId: string
+  /** The CLI it runs; absent in records from before Codex, which are Claude Code. */
+  cli?: CliKind
+  /**
+   * The CLI's id for the conversation. Claude Code: our UUID, handed over with --session-id (how
+   * hooks and the fleet poll find the session). Codex: its thread id, '' until core learns it from
+   * the session's app-server (Codex takes no id of ours).
+   */
+  cliSessionId: string
   cwd: string
   worktree: boolean
   model: string
@@ -23,6 +30,14 @@ export interface SessionRecord {
   activeAt?: number
   /** Attached in the window (true) or parked (false). */
   open: boolean
+}
+
+/**
+ * Whether a hook's or a poll row's session id is this session's. Never on an empty id: a Codex
+ * session's is '' until core learns it, and '' must not match a hook that names none.
+ */
+export function isSession(rec: Pick<SessionRecord, 'cliSessionId'>, sid: unknown): boolean {
+  return typeof sid === 'string' && sid !== '' && sid === rec.cliSessionId
 }
 
 export interface SessionView extends SessionRecord {
@@ -47,6 +62,8 @@ export interface SessionsState {
 }
 
 export interface NewSessionOpts {
+  /** Claude Code unless 'codex'. */
+  cli?: CliKind
   cwd: string
   worktree?: boolean
   /** The new worktree's name (`claude --worktree <name>`, whose branch is `worktree-<name>`); the CLI picks one when absent. */

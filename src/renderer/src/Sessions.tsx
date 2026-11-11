@@ -3,6 +3,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { MODELS, PERMISSION_MODES } from '@shared/models'
+import { CLIS, CODEX_MODES, type CliKind } from '@shared/cli'
 import type { LaunchPrefill, SessionView } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import { fit, focusTerminal, mount, unmount } from './terminals'
@@ -16,11 +17,19 @@ import { PauseButton, SessionAsks } from './Leash'
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
 
+/** Codex's model: its own config's until core reads the server's model list (Codex plan, phase 2). */
+const CODEX_MODELS = [{ id: '', label: 'Default', hint: 'Your Codex config’s model (`model` in ~/.codex/config.toml), else its own default' }]
+/** Each CLI's own default permission mode in the launcher. */
+const DEFAULT_MODE: Record<CliKind, string> = { claude: 'auto', codex: '' }
+
 export function Launcher({ recent, prefill, onStarted }: { recent: string[]; prefill?: LaunchPrefill; onStarted: () => void }) {
   const [cwd, setCwd] = useState(recent[0] ?? '')
   const [worktree, setWorktree] = useState(false)
+  const [cli, setCli] = useState<CliKind>('claude')
+  /** Codex is offered only when it is installed: asked each time the launcher opens. */
+  const [hasCodex, setHasCodex] = useState(false)
   const [model, setModel] = useState('')
-  const [mode, setMode] = useState('auto')
+  const [mode, setMode] = useState(DEFAULT_MODE.claude)
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
   const [error, setError] = useState('')
@@ -33,6 +42,17 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
   useEffect(() => {
     if (!cwd && recent[0]) setCwd(recent[0])
   }, [recent, cwd])
+
+  useEffect(() => {
+    void window.core.clis().then((c) => setHasCodex(c.codex)).catch(() => setHasCodex(false))
+  }, [])
+
+  const pickCli = (next: CliKind): void => {
+    if (next === cli) return
+    setCli(next)
+    setModel('')
+    setMode(DEFAULT_MODE[next])
+  }
 
   // A tile filled the form in: its folder and worktree, and Start focused for the user to press.
   useEffect(() => {
@@ -51,7 +71,7 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
     setBusy(true)
     setError('')
     try {
-      await window.core.newSession({ cwd, worktree, ...(worktree && branch ? { worktreeName: branch } : {}), model, permissionMode: mode, name, prompt })
+      await window.core.newSession({ ...(cli === 'codex' ? { cli } : {}), cwd, worktree, ...(worktree && branch ? { worktreeName: branch } : {}), model, permissionMode: mode, name, prompt })
       setPrompt('')
       setName('')
       onStarted()
@@ -64,8 +84,12 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
   const choose = (): void => void window.core.pickFolder(cwd).then((p) => p && setCwd(p))
   // The recent folders as cards, the chosen one first if it is not among them.
   const cards = recent.slice(0, 6)
-  const picked = MODELS.find((m) => m.id === model)
-  const perm = PERMISSION_MODES.find((m) => m.id === mode)
+  const codex = cli === 'codex' && hasCodex
+  const models = codex ? CODEX_MODELS : MODELS
+  const modes = codex ? CODEX_MODES : PERMISSION_MODES
+  const picked = models.find((m) => m.id === model)
+  const perm = modes.find((m) => m.id === mode)
+  const agent = CLIS.find((c) => c.id === (codex ? 'codex' : 'claude'))
 
   return (
     <section className="launcher launch">
@@ -125,10 +149,24 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
         )}
       </div>
 
+      {hasCodex && (
+        <div className="launch-section">
+          <h2>Agent</h2>
+          <div className="launch-pills" role="radiogroup" aria-label="Agent">
+            {CLIS.map((c) => (
+              <button key={c.id} role="radio" aria-checked={c.id === cli} className={c.id === cli ? 'on' : ''} onClick={() => pickCli(c.id)}>
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {agent && <p className="launch-hint">{agent.hint}</p>}
+        </div>
+      )}
+
       <div className="launch-section">
         <h2>Model</h2>
         <div className="launch-pills" role="radiogroup" aria-label="Model">
-          {MODELS.map((m) => (
+          {models.map((m) => (
             <button key={m.id} role="radio" aria-checked={m.id === model} className={m.id === model ? 'on' : ''} onClick={() => setModel(m.id)}>
               {m.label}
             </button>
@@ -140,7 +178,7 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
       <div className="launch-section">
         <h2>Permissions</h2>
         <div className="launch-pills" role="radiogroup" aria-label="Permissions">
-          {PERMISSION_MODES.map((m) => (
+          {modes.map((m) => (
             <button
               key={m.id}
               role="radio"
@@ -205,7 +243,7 @@ export function FocusPane({ session, usage, n }: { session: SessionView; usage: 
         <span className="session-folder" title={session.cwd}>
           {tilde(session.cwd)}
         </span>
-        <PauseButton s={session} />
+        {session.cli !== 'codex' && <PauseButton s={session} />}
         <ParkButton id={session.id} />
       </header>
       <SessionAsks s={session} where="center" />

@@ -23,6 +23,7 @@ import { oauthSmoke } from './smoke-oauth'
 import type { MusicHost } from './music'
 import { recorderSmoke } from './smoke-recorder'
 import { leashSmoke } from './smoke-leash'
+import { codexSmoke } from './smoke-codex'
 import { agentsSmoke, transcriptsSmoke } from './smoke-agents'
 import type { Recorder } from './recorder'
 
@@ -224,6 +225,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     }
     await sessions(check, ctx)
     await leashSmoke(check, ctx)
+    await codexSmoke(check, ctx)
     await files(check, ctx)
     await themes(check, ctx)
     await mascot(check, ctx)
@@ -1376,7 +1378,7 @@ export async function runRestarted(ctx: Ctx): Promise<number> {
       const back = await waitFor('the resumed session', async () => (await screen(id)).includes('FAKE CLAUDE READY'), 10_000).then(() => true, () => false)
       const started = JSON.parse(await readFile(join(ctx.userData, `fake-${id}.json`), 'utf8')) as { args: string[] }
       const rec = core.sessions.find(id)
-      check('it resumes with --resume and its own conversation id', back && started.args.join(' ').includes(`--resume ${rec?.claudeSessionId}`), started.args.join(' '))
+      check('it resumes with --resume and its own conversation id', back && started.args.join(' ').includes(`--resume ${rec?.cliSessionId}`), started.args.join(' '))
       await js(`window.core.ptyInput(${JSON.stringify(id)}, 'after the reboot\\r'); true`)
       await waitFor('the turn', async () => (await screen(id)).includes('DONE after the reboot'), 10_000).catch(() => undefined)
       const both = await waitFor('the whole conversation', () => ['before the restart', 'after the restart', 'after the reboot'].every((t) => userTexts().includes(t)), 5000).then(() => true, () => false)

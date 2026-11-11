@@ -7,10 +7,10 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CH } from '@shared/ipc'
-import type { NewSessionOpts, SessionsState } from '@shared/sessions'
+import { isSession, type NewSessionOpts, type SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import type { Door } from './door'
-import { shellEnv } from './env'
+import { findInPath, shellEnv } from './env'
 import { Fleet } from './fleet'
 import { HOOK_ROUTES, SessionSettings, type HookPayload } from './hooks'
 import { SessionManager } from './sessions'
@@ -102,7 +102,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   })
   const watchOpen = (s: SessionsState): void => {
     const open = s.sessions.filter((x) => x.open)
-    transcripts.sync(open.map((x) => ({ id: x.id, claudeSessionId: x.claudeSessionId })))
+    // Claude Code's transcripts only: a Codex session's conversation comes from its app-server (Codex plan, phase 2).
+    transcripts.sync(open.filter((x) => x.cli !== 'codex').map((x) => ({ id: x.id, cliSessionId: x.cliSessionId })))
     agents?.keepParents(new Set(open.map((x) => x.id)))
     helpers?.keepParents(new Set(s.sessions.map((x) => x.id)))
   }
@@ -118,6 +119,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     profile: o.profile,
     settingsPath: settings.path,
     pluginDirs: o.pluginDirs,
+    cliEnv: () => settings.sessionEnv(),
     register: (t, who, session) => o.door.register(t, who, session),
     revoke: (t) => o.door.revoke(t),
     leash: (id) => leash.view(id),
@@ -182,7 +184,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     sessions.onFleet(entries)
     // A permission prompt answered in the terminal: the poll leaves "waiting for permission prompt".
     const byId = new Map(entries.map((e) => [e.sessionId, e]))
-    for (const v of sessions.getState().sessions) if (v.leash.asks.length) leash.onFleet(v.id, byId.get(v.claudeSessionId))
+    for (const v of sessions.getState().sessions) if (v.leash.asks.length) leash.onFleet(v.id, byId.get(v.cliSessionId))
     helperList.onFleet(entries)
   })
   if (o.poll) fleet.start()
@@ -202,6 +204,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
 
   handle(CH.sessionsGet, () => sessions.getState())
   handle(CH.sessionNew, (opts: NewSessionOpts) => sessions.newSession(opts ?? { cwd: '' }))
+  // Asked each time the launcher opens, so installing Codex while the app runs is seen.
+  handle(CH.sessionClis, () => ({ claude: !!findInPath(env.PATH, 'claude'), codex: !!findInPath(env.PATH, 'codex') }))
   handle(CH.sessionResume, (id: string) => sessions.resume(String(id)))
   handle(CH.sessionPark, (id: string) => sessions.park(String(id)))
   handle(CH.sessionKill, async (id: string) => {
@@ -276,17 +280,17 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
       const p = (payload ?? {}) as HookPayload
       // A Bash call ended (PostToolUse): if it made commits, they are recorded as this session's.
       if (name === 'tool') {
-        if (p.session_id === rec.claudeSessionId) void commits.onTool({ id: rec.id, name: rec.name }, payload).catch((err) => console.warn('[workshop] commits:', err))
+        if (isSession(rec, p.session_id)) void commits.onTool({ id: rec.id, name: rec.name }, payload).catch((err) => console.warn('[workshop] commits:', err))
         return
       }
       // A tool call finished while a permission prompt was open: the terminal answered the one that asked about it.
       if (name === 'ran') {
-        if (p.session_id === rec.claudeSessionId) leash.settleCall(rec.id, payload as { tool_name?: unknown; tool_input?: unknown })
+        if (isSession(rec, p.session_id)) leash.settleCall(rec.id, payload as { tool_name?: unknown; tool_input?: unknown })
         return
       }
       const event = HOOK_ROUTES[name]
       // A session reports for itself only: the payload must name the session its token belongs to.
-      if (!event || p.session_id !== rec.claudeSessionId) return
+      if (!event || !isSession(rec, p.session_id)) return
       // The turn ended, or a new prompt was typed: no permission prompt is open any more.
       if (event === 'Stop' || event === 'UserPromptSubmit') leash.settle(rec.id)
       sessions.onHook(event, p)
@@ -298,7 +302,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
       const rec = sessions.byToken(token)
       const p = (payload ?? {}) as HookPayload
       // Only a session, and only about itself: anything else is answered with nothing, at once.
-      if (!rec || p.session_id !== rec.claudeSessionId) return null
+      if (!rec || !isSession(rec, p.session_id)) return null
       if (name === 'pretool') {
         // A subagent's call (it carries agent_id): its own pause or kill first, then its session's.
         if (p.agent_id) {

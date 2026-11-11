@@ -98,7 +98,7 @@ export async function leashSmoke(check: Check, o: { win: BrowserWindow; door: Do
     const res = await fetch(`http://127.0.0.1:${door.port}/ask/pretool`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ session_id: sessionId, tool_name: 'Bash', tool_input: { command: 'x' } }) })
     return [res.status, Date.now() - t]
   }
-  const outside = await ask({ Authorization: `Bearer ${door.token}` }, core.sessions.find(id)!.claudeSessionId)
+  const outside = await ask({ Authorization: `Bearer ${door.token}` }, core.sessions.find(id)!.cliSessionId)
   check('leash: a caller outside any session is never held', outside[0] === 204 && outside[1] < 1000, JSON.stringify(outside))
   const header = (await readFile(JSON.parse(await readFile(join(userData, `fake-${id}.json`), 'utf8')).auth, 'utf8')).trim()
   const spoof = await ask({ Authorization: header.replace(/^Authorization:\s*/, '') }, '00000000-0000-0000-0000-000000000000')

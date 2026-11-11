@@ -249,6 +249,18 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   `shared/column.ts` `placeFloat`), always inside the window. The tile layer rises to 12 while one
   is up, over the terminal; the box is 13. Main refuses the `float` view to a tile without the
   flag. Smoke's probe declares it (`floats` in `smoke.ts`; `WORKSHOP_SHOT_FLOAT=x.png`).
+- Codex sessions (phase 1 of `docs/progress/2026-11-11-codex.md`): `src/shared/cli.ts` (`cli:
+  'claude' | 'codex'` on a session, absent = Claude Code; `cliSessionId` was `claudeSessionId`,
+  renamed on load). A Codex session is one tmux session, two windows: the TUI (attached) waiting
+  for the socket, then `codex --remote unix://<profile>/codex/<id>.sock -C <cwd>`, a clean exit
+  ending both; and `codex app-server --listen` started in the session's folder with the session's
+  door env (tools run in the server). The launcher offers Codex only when it is on PATH
+  (`core.clis()`), with its own modes (`CODEX_MODES`). Not yet: status (shown unknown), the
+  conversation tile, usage, the leash (no ⏸). Worktrees: 0.167.1 refuses `--worktree` with
+  `--remote`, so core makes one (`src/main/worktree.ts`): `<project root>/.workshop/worktrees/<name>`
+  on `worktree-<name>` from the start folder's HEAD, `/.workshop/` in the repo's `info/exclude`
+  (Colin, 11 Nov 2026). Hook ids match through `isSession` (never on ''). Smoke:
+  `test/fixtures/fake-codex/codex`, `smoke-codex.ts`.
 - `transcripts` (bridge 1.7): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed
   blocks a session tile draws, needs `sessions` too; a loud line in the menu and the install prompt;
   `tile check` prints `review` for transcripts with net.
@@ -275,8 +287,10 @@ These were decided in the planning conversation and are not open for re-litigati
    an art asset we may not redistribute).
 2. **Open-source project, not a business.** MIT for core. No paid tier is planned. If money ever
    enters, the model is the host's (featured slots, a supporter tier), never per-tile sales.
-3. **macOS and Claude Code first.** Say so in the README. Other platforms and other agent CLIs
-   are welcome contributions, not launch scope.
+3. **macOS, Claude Code and Codex.** Say so in the README. Codex runs as a second kind of
+   session, each CLI on the user's own plan (Colin, 11 Nov 2026; plan in
+   `docs/progress/2026-11-11-codex.md`). We never build an agent of our own. Other platforms and
+   other agent CLIs are welcome contributions.
 4. **The CLI is never wrapped, forked or patched.** A session is the unchanged `claude` binary in
    a real terminal. Everything workshop adds goes through Claude Code's own extension points
    (section 9). Workshop never reads, copies or proxies the CLI's credentials.
@@ -875,9 +889,17 @@ already uses most of them:
    real session in the app (`docs/progress/2026-11-11-leash.md`).
 2. A diff review pane (the git tile's Changes tab covers most of it).
 
+### Codex (planned, `docs/progress/2026-11-11-codex.md`)
+
+Codex is open source but we run it unchanged, as we run Claude Code. Its equivalents differ: no
+id of our own (learnt from the app-server), no usable held PermissionRequest (it runs before the
+dialog), no per-run plugin dir, no dollar cost. So a Codex session is the TUI with `--remote` on
+an app-server of its own, both in the session's tmux, and core is a second client of that server
+for status, approvals, items and usage. No Codex hooks (they need an internal trust hash).
+
 ### Bring your own model
 
-- **Sessions (launch scope):** a per-session provider profile sets environment variables such as
+- **Sessions:** a per-session provider profile sets environment variables such as
   `ANTHROPIC_BASE_URL`, so the Claude Code interface stays and the model behind it changes.
 - **Tiles (later):** `workshop.model`, routed to the user's own key or to headless `claude -p`
   on their account. Not in v1.

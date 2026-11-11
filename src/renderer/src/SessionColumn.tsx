@@ -151,13 +151,18 @@ function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number
             wt
           </span>
         )}
+        {s.cli === 'codex' && (
+          <span className="badge" title="A Codex session">
+            codex
+          </span>
+        )}
         {s.model && (
           <span className="badge" title={`--model ${s.model}`}>
-            {modelLabel(s.model)}
+            {s.cli === 'codex' ? s.model : modelLabel(s.model)}
           </span>
         )}
         <SessionUsage id={s.id} usage={usage} />
-        <PauseButton s={s} />
+        {s.cli !== 'codex' && <PauseButton s={s} />}
         <ParkButton id={s.id} />
       </header>
       <div className="session-body">

@@ -12,7 +12,7 @@ const SID = '11111111-2222-4333-8444-555555555555'
 
 async function restarted(): Promise<SessionManager> {
   const home = mkdtempSync(join(tmpdir(), 'ws-turn-'))
-  const rec = { id: 'abc123', tmuxName: 'ws-abc123', claudeSessionId: SID, cwd: home, worktree: false, model: '', permissionMode: '', name: 'cura-b4', createdAt: 1, activeAt: 1, open: false, token: 'a'.repeat(48) }
+  const rec = { id: 'abc123', tmuxName: 'ws-abc123', cliSessionId: SID, cwd: home, worktree: false, model: '', permissionMode: '', name: 'cura-b4', createdAt: 1, activeAt: 1, open: false, token: 'a'.repeat(48) }
   writeFileSync(join(home, 'sessions.json'), JSON.stringify({ records: [rec] }))
   const tmux = { hasSession: async () => true } as unknown as Tmux
   const m = new SessionManager({ tmux, env: {}, home, profile: 'test', settingsPath: '', pluginDirs: () => [], register: () => {}, revoke: () => {}, events: { state: () => {}, data: () => {}, exit: () => {} } })

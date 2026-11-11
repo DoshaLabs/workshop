@@ -115,7 +115,7 @@ describe('TranscriptWatcher', () => {
   it('finds the file by session id in any project folder, tails it, and holds back a torn line', () => {
     const seen: Transcript[] = []
     const w = new TranscriptWatcher(projects, (t) => seen.push(structuredClone(t)))
-    w.sync([{ id: 'abc123', claudeSessionId: SID }])
+    w.sync([{ id: 'abc123', cliSessionId: SID }])
     expect(w.pathOf('abc123')).toBeNull()
 
     // The CLI's folder name is its own encoding of the cwd; the watcher never builds it.

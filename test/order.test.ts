@@ -61,7 +61,7 @@ describe('the column keeps the two orders', () => {
 })
 
 const view = (id: string, createdAt: number, open = true): SessionView =>
-  ({ id, createdAt, open, tmuxName: '', claudeSessionId: '', cwd: '/', worktree: false, model: '', name: id, title: null, status: 'idle', attention: false, attached: open, tmuxAlive: true }) as SessionView
+  ({ id, createdAt, open, tmuxName: '', cliSessionId: '', cwd: '/', worktree: false, model: '', name: id, title: null, status: 'idle', attention: false, attached: open, tmuxAlive: true }) as SessionView
 
 describe('⌘1–9 and the session column', () => {
   // Most recently active first, as main sends them: c was started last but b was used last.

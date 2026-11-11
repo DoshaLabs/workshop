@@ -63,7 +63,7 @@ describe('a very long transcript', () => {
     })
     const seen: Transcript[] = []
     const w = new TranscriptWatcher(projects, (t) => seen.push(structuredClone(t)))
-    const ms = time(() => w.sync([{ id: 'long01', claudeSessionId: SID }]))
+    const ms = time(() => w.sync([{ id: 'long01', cliSessionId: SID }]))
     w.stop()
     process.stderr.write(`[long transcript] ${(bytes / 1e6).toFixed(1)} MB, ${TURNS} turns: first read ${ms.toFixed(0)} ms (every line: ${old.toFixed(0)} ms)\n`)
     // One message to the window for the whole file, not one per chunk or per line.
@@ -82,7 +82,7 @@ describe('a very long transcript', () => {
   it('finds a title written only at the start', () => {
     const seen: Transcript[] = []
     const w = new TranscriptWatcher(projects, (t) => seen.push(structuredClone(t)))
-    const ms = time(() => w.sync([{ id: 'early1', claudeSessionId: EARLY }]))
+    const ms = time(() => w.sync([{ id: 'early1', cliSessionId: EARLY }]))
     w.stop()
     process.stderr.write(`[long transcript] title only at the start: first read ${ms.toFixed(0)} ms\n`)
     expect(seen).toHaveLength(1)
@@ -106,7 +106,7 @@ describe('a very long transcript', () => {
     writeFileSync(file, lines.join('\n') + '\n')
     const seen: Transcript[] = []
     const w = new TranscriptWatcher(dir, (t) => seen.push(structuredClone(t)))
-    w.sync([{ id: 'big01', claudeSessionId: SID }])
+    w.sync([{ id: 'big01', cliSessionId: SID }])
     const t = w.get('big01')!
     expect(t.blocks).toHaveLength(TRANSCRIPT_KEEP)
     expect(t.blocks.filter((b) => b.kind === 'tool' && b.done)).toHaveLength(6)
@@ -133,7 +133,7 @@ describe('a very long transcript', () => {
     for (let i = 0; i < 100; i++) lines.push(JSON.stringify({ type: 'user', origin: { kind: 'human' }, timestamp: at, message: { content: `p ${i}` } }))
     writeFileSync(join(dir, 'p', `${SID}.jsonl`), lines.join('\n') + '\n')
     const w = new TranscriptWatcher(dir, () => {})
-    w.sync([{ id: 'ttl01', claudeSessionId: SID }])
+    w.sync([{ id: 'ttl01', cliSessionId: SID }])
     expect(w.get('ttl01')!.title).toBe('Last')
     w.stop()
     rmSync(dir, { recursive: true, force: true })

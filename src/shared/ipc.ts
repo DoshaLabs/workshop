@@ -129,6 +129,8 @@ export const CH = {
   /** A tile asked for the launcher, filled in (workshop.sessions.launch): main → window. */
   sessionsLaunch: 'ws:core:sessions-launch',
   sessionNew: 'ws:core:session-new',
+  /** Which agent CLIs are on the sessions' PATH: { claude, codex } (the launcher offers Codex only if so). */
+  sessionClis: 'ws:core:session-clis',
   sessionResume: 'ws:core:session-resume',
   sessionPark: 'ws:core:session-park',
   sessionKill: 'ws:core:session-kill',

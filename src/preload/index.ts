@@ -41,6 +41,8 @@ const core = {
   /** A tile asked for the launcher, filled in (workshop.sessions.launch). */
   onLaunch: (fn: (p: LaunchPrefill) => void) => on(CH.sessionsLaunch, fn),
   newSession: (opts: NewSessionOpts): Promise<unknown> => ipcRenderer.invoke(CH.sessionNew, opts),
+  /** Which agent CLIs are installed (on the sessions' PATH). */
+  clis: (): Promise<{ claude: boolean; codex: boolean }> => ipcRenderer.invoke(CH.sessionClis),
   resume: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionResume, id),
   park: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionPark, id),
   kill: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionKill, id),

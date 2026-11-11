@@ -1,0 +1,81 @@
+#!/usr/bin/env node
+// A stand-in for OpenAI's `codex` CLI, used only by `npm run smoke` (src/main/smoke-codex.ts).
+// Shaped on codex-cli 0.167.1 as workshop runs it (docs/progress/2026-11-11-codex.md):
+//
+// - `codex app-server --listen unix://<path>`: listens on that socket (it speaks nothing yet: the
+//   JSON-RPC comes with phase 2) and writes what it was started with, its folder and the WORKSHOP_*
+//   names in its env, to $WORKSHOP_HOME/fake-codex-server-<$WORKSHOP_SESSION>.json.
+// - Anything else is the TUI: `[resume <id>] --remote unix://<path> -C <dir> [flags] [-- prompt]`.
+//   It connects to the socket (refusing to run without one, as the real TUI does), then prints
+//   `FAKE CODEX` with its argv as JSON and `CONNECTED <path>`, and echoes each line typed as
+//   `> line`, and writes its argv to <path>.tui.json. `exit` ends it cleanly (status 0), `crash` with status 3.
+
+const net = require('node:net')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const argv = process.argv.slice(2)
+
+if (argv[0] === '--version') {
+  console.log('codex-cli 0.0.0-fake')
+  process.exit(0)
+}
+
+if (argv[0] === 'app-server') {
+  const at = argv.indexOf('--listen')
+  const sock = at >= 0 ? String(argv[at + 1]).replace(/^unix:\/\//, '') : ''
+  if (!sock) {
+    console.error('fake codex: app-server needs --listen unix://<path>')
+    process.exit(2)
+  }
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('WORKSHOP_')))
+  if (process.env.WORKSHOP_HOME) {
+    fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-codex-server-${process.env.WORKSHOP_SESSION || 'none'}.json`), JSON.stringify({ argv, cwd: process.cwd(), env }))
+  }
+  try { fs.rmSync(sock, { force: true }) } catch {}
+  const server = net.createServer((c) => c.on('error', () => {}))
+  server.listen(sock, () => console.log(`fake codex app-server on ${sock}`))
+  const stop = () => { try { fs.rmSync(sock, { force: true }) } catch {}; process.exit(0) }
+  process.on('SIGTERM', stop)
+  process.on('SIGHUP', stop)
+  return
+}
+
+// The TUI.
+const at = argv.indexOf('--remote')
+const sock = at >= 0 ? String(argv[at + 1]).replace(/^unix:\/\//, '') : ''
+if (!sock) {
+  console.error('fake codex: workshop always runs the TUI with --remote')
+  process.exit(2)
+}
+if (argv.includes('--worktree')) {
+  // As 0.167.1 answers it.
+  console.error('Error: `--worktree` is only supported for local sessions')
+  process.exit(1)
+}
+const conn = net.connect(sock)
+conn.on('error', (err) => {
+  console.error(`fake codex: cannot reach the app-server at ${sock}: ${err.message}`)
+  process.exit(4)
+})
+conn.on('connect', () => {
+  // Beside the socket too: a long argv wraps on the screen.
+  fs.writeFileSync(`${sock}.tui.json`, JSON.stringify({ argv, cwd: process.cwd() }))
+  console.log(`FAKE CODEX ${JSON.stringify(argv)}`)
+  console.log(`CONNECTED ${sock}`)
+  process.stdin.setEncoding('utf8')
+  if (process.stdin.isTTY) process.stdin.setRawMode(false)
+  let buf = ''
+  process.stdin.on('data', (d) => {
+    buf += d.replace(/\r/g, '\n')
+    let i
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim()
+      buf = buf.slice(i + 1)
+      if (!line) continue
+      if (line === 'exit') process.exit(0)
+      if (line === 'crash') process.exit(3)
+      console.log(`> ${line}`)
+    }
+  })
+})

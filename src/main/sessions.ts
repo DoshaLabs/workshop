@@ -1,7 +1,9 @@
 // The session manager. A session is the unchanged `claude` CLI in its own tmux session on the
 // profile's private socket; exactly one client ever attaches to it, a node-pty here, drawn by
 // xterm.js in the window. Closing a session parks it: the pty goes, tmux and the conversation stay,
-// and it resumes in place (or with `claude --resume` after a reboot). State is authoritative here;
+// and it resumes in place (or with `claude --resume` after a reboot). A Codex session (shared/cli.ts)
+// is the same tmux session holding two windows: the Codex TUI, which we attach to, and an
+// app-server of its own that the TUI connects to with --remote. State is authoritative here;
 // the window is a view that sends commands. Carried over from deck's sessions.ts, without its slots,
 // cap and wolfpack.
 //
@@ -15,7 +17,9 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writ
 import { homedir, hostname } from 'node:os'
 import { join, resolve } from 'node:path'
 import { cleanModel, cleanPermissionMode } from '@shared/models'
-import { worktreeName, type NewSessionOpts, type SessionRecord, type SessionStatus, type SessionView, type SessionsState } from '@shared/sessions'
+import { cleanCodexMode, cliOf, codexServerArgs, codexTuiArgs } from '@shared/cli'
+import { makeWorktree } from './worktree'
+import { isSession, worktreeName, type NewSessionOpts, type SessionRecord, type SessionStatus, type SessionView, type SessionsState } from '@shared/sessions'
 import type { FleetEntry } from './fleet'
 import type { HookEvent, HookPayload } from './hooks'
 import { NO_LEASH, type LeashView } from '@shared/leash'
@@ -58,6 +62,11 @@ export interface SessionManagerOptions {
   settingsPath: string
   /** Every installed tile's plugin/ folder, handed to a NEW session with --plugin-dir. */
   pluginDirs: () => string[]
+  /**
+   * The env a Claude session gets from the --settings file (WORKSHOP_HOME, WORKSHOP_TILE…). A Codex
+   * session has no settings file: its app-server, which runs the tools, is started with it.
+   */
+  cliEnv?: () => Record<string, string>
   /** Door tokens: a session's calls are attributed to it by name. */
   register(token: string, who: () => string, session: string): void
   revoke(token: string): void
@@ -89,6 +98,8 @@ export class SessionManager {
   private quitting = false
   private readonly storePath: string
   private readonly authDir: string
+  /** Codex sessions' app-server sockets, `<id>.sock` (short: macOS caps a socket path near 104 bytes). */
+  private readonly codexDir: string
   private broadcastTimer: NodeJS.Timeout | null = null
 
   constructor(private readonly o: SessionManagerOptions) {
@@ -96,6 +107,8 @@ export class SessionManager {
     this.storePath = join(o.home, 'sessions.json')
     this.authDir = join(o.home, 'auth')
     mkdirSync(this.authDir, { recursive: true, mode: 0o700 })
+    this.codexDir = join(o.home, 'codex')
+    mkdirSync(this.codexDir, { recursive: true, mode: 0o700 })
   }
 
   // ---- lifecycle ---------------------------------------------------------
@@ -129,14 +142,16 @@ export class SessionManager {
   async newSession(opts: NewSessionOpts): Promise<SessionView> {
     const cwd = expandHome(opts.cwd || homedir())
     if (!existsSync(cwd) || !statSync(cwd).isDirectory()) throw new Error(`Not a folder: ${cwd}`)
+    const cli = cliOf(opts.cli)
     const model = cleanModel(opts.model)
-    const permissionMode = cleanPermissionMode(opts.permissionMode)
+    const permissionMode = cli === 'codex' ? cleanCodexMode(opts.permissionMode) : cleanPermissionMode(opts.permissionMode)
     const name = typeof opts.name === 'string' ? opts.name.trim().slice(0, 60) : ''
     const id = randomBytes(3).toString('hex')
     const rec: Stored = {
       id,
       tmuxName: `ws-${id}`,
-      claudeSessionId: randomUUID(),
+      ...(cli === 'codex' ? { cli } : {}),
+      cliSessionId: cli === 'codex' ? '' : randomUUID(),
       cwd,
       worktree: !!opts.worktree,
       model,
@@ -147,13 +162,25 @@ export class SessionManager {
       open: true,
       token: randomBytes(24).toString('hex')
     }
+    if (cli === 'codex') {
+      // Codex refuses --worktree under --remote: core makes it, and the session starts in it.
+      if (rec.worktree) {
+        const wt = await makeWorktree(cwd, opts.worktreeName, `codex-${id}`)
+        rec.cwd = wt.path
+        if (!name) rec.name = wt.name
+      }
+      this.writeAuth(rec)
+      this.o.register(rec.token, () => rec.name, rec.id)
+      await this.spawnCodex(rec, { prompt: opts.prompt ? String(opts.prompt) : undefined })
+      return this.started(rec, 'unknown')
+    }
     // `--worktree` takes an optional name, so it never stands where the next word could be read as
     // one (a first prompt with no other flag after it would become the worktree's name): bare, it
     // goes before --session-id; named, it is one word.
     const wtName = rec.worktree ? worktreeName(opts.worktreeName) : null
     if (rec.worktree && opts.worktreeName !== undefined && opts.worktreeName !== '' && !wtName) throw new Error(`Not a worktree name: ${String(opts.worktreeName).slice(0, 80)}`)
     const args = rec.worktree ? (wtName ? [`--worktree=${wtName}`] : ['--worktree']) : []
-    args.push('--session-id', rec.claudeSessionId)
+    args.push('--session-id', rec.cliSessionId)
     if (model) args.push('--model', model)
     if (name) args.push('--name', name)
     if (permissionMode) args.push('--permission-mode', permissionMode)
@@ -161,14 +188,22 @@ export class SessionManager {
     this.writeAuth(rec)
     this.o.register(rec.token, () => rec.name, rec.id)
     await this.o.tmux.newSession({ name: rec.tmuxName, cwd, command: this.claudeCommand(rec, args), cols: SPAWN_COLS, rows: SPAWN_ROWS })
+    return this.started(rec, 'starting')
+  }
+
+  /**
+   * A new session is in tmux: keep it, attach and focus it. A Codex session starts as 'unknown'
+   * (no fleet poll lists it; its status comes from its app-server, phase 2 of the Codex plan).
+   */
+  private started(rec: Stored, status: SessionStatus): SessionView {
     this.records.push(rec)
-    this.touchRecent(cwd)
-    this.rt.set(id, { status: 'starting', attention: false, tmuxAlive: true, title: '', userDetached: false })
-    this.attach(id)
-    this.focusId = id
+    this.touchRecent(rec.cwd)
+    this.rt.set(rec.id, { status, attention: false, tmuxAlive: true, title: '', userDetached: false })
+    this.attach(rec.id)
+    this.focusId = rec.id
     this.save()
     this.broadcast()
-    return this.view(id)!
+    return this.view(rec.id)!
   }
 
   async resume(id: string): Promise<void> {
@@ -179,11 +214,17 @@ export class SessionManager {
       return
     }
     r.tmuxAlive = await this.o.tmux.hasSession(rec.tmuxName)
-    if (!r.tmuxAlive) {
+    if (!r.tmuxAlive && rec.cli === 'codex') {
+      if (!existsSync(rec.cwd)) throw new Error(`Folder no longer exists: ${rec.cwd}`)
+      // Its thread once core has learnt it, else a new conversation in the same folder.
+      await this.spawnCodex(rec, { resume: rec.cliSessionId || null })
+      r.tmuxAlive = true
+      r.status = 'unknown'
+    } else if (!r.tmuxAlive) {
       if (!existsSync(rec.cwd)) throw new Error(`Folder no longer exists: ${rec.cwd}`)
       // The CLI re-enters a --worktree session's worktree on --resume by itself. The model and the
       // permission mode are ours to repeat: --resume alone falls back to the CLI's defaults.
-      const args = ['--resume', rec.claudeSessionId]
+      const args = ['--resume', rec.cliSessionId]
       if (rec.model) args.push('--model', rec.model)
       if (rec.permissionMode) args.push('--permission-mode', rec.permissionMode)
       await this.o.tmux.newSession({ name: rec.tmuxName, cwd: rec.cwd, command: this.claudeCommand(rec, args), cols: SPAWN_COLS, rows: SPAWN_ROWS })
@@ -284,7 +325,7 @@ export class SessionManager {
     for (const rec of this.records) {
       const r = this.rt.get(rec.id)
       if (!r) continue
-      const e = byId.get(rec.claudeSessionId)
+      const e = byId.get(rec.cliSessionId)
       if (e) {
         let status = normalizeStatus(e.status ?? e.state)
         if (status === 'busy' && r.turnOpen === false) status = 'idle'
@@ -335,7 +376,7 @@ export class SessionManager {
 
   /** A hook from a session. `sessionId` is the one its token belongs to; the payload must agree. */
   onHook(event: HookEvent, payload: HookPayload): void {
-    const rec = this.records.find((x) => x.claudeSessionId === payload.session_id)
+    const rec = this.records.find((x) => isSession(x, payload.session_id))
     const r = rec && this.rt.get(rec.id)
     if (!rec || !r) return
     rec.activeAt = Date.now()
@@ -410,6 +451,35 @@ export class SessionManager {
     return 'exec ' + parts.map(shq).join(' ')
   }
 
+  codexSocket(rec: SessionRecord): string {
+    return join(this.codexDir, `${rec.id}.sock`)
+  }
+
+  /**
+   * Start a Codex session's two windows. Window 0 (the one attached) is the TUI: it waits for the
+   * server's socket, then runs `codex --remote …`; a clean exit ends the whole tmux session (the
+   * server with it), a crash leaves its pane dead as a Claude session's is (remain-on-exit failed).
+   * Window 1 is the app-server, started in the session's folder (the session runs in the server's
+   * folder) with the session's door env: tools run in the server, so that is where the token goes.
+   */
+  private async spawnCodex(rec: Stored, o: { resume?: string | null; prompt?: string }): Promise<void> {
+    const sock = this.codexSocket(rec)
+    rmSync(sock, { force: true })
+    const tui = codexTuiArgs({ cwd: rec.cwd, sock, model: rec.model, mode: rec.permissionMode, resume: o.resume, prompt: o.prompt })
+    const wait = `i=0; while [ ! -S ${shq(sock)} ] && [ $i -lt 150 ]; do sleep 0.1; i=$((i+1)); done`
+    const run = ['codex', ...tui].map(shq).join(' ')
+    const tuiCmd = `${wait}; ${run}; s=$?; [ $s -eq 0 ] && tmux kill-session -t ${shq(rec.tmuxName)}; exit $s`
+    const env = Object.entries({ ...(this.o.cliEnv?.() ?? {}), WORKSHOP_AUTH: this.authFile(rec), WORKSHOP_SESSION: rec.id }).map(([k, v]) => `${k}=${v}`)
+    const serverCmd = 'exec ' + ['env', ...env, 'codex', ...codexServerArgs(sock)].map(shq).join(' ')
+    await this.o.tmux.newSession({ name: rec.tmuxName, cwd: rec.cwd, command: tuiCmd, cols: SPAWN_COLS, rows: SPAWN_ROWS })
+    try {
+      await this.o.tmux.newWindow({ session: rec.tmuxName, name: 'app-server', cwd: rec.cwd, command: serverCmd })
+    } catch (err) {
+      await this.o.tmux.killSession(rec.tmuxName)
+      throw err
+    }
+  }
+
   private attach(id: string): void {
     const rec = this.get(id)
     const r = this.rt.get(id)!
@@ -461,6 +531,7 @@ export class SessionManager {
     if (rec) {
       this.o.revoke(rec.token)
       rmSync(this.authFile(rec), { force: true })
+      if (rec.cli === 'codex') rmSync(this.codexSocket(rec), { force: true })
     }
     this.records = this.records.filter((x) => x.id !== id)
     this.rt.delete(id)
@@ -486,7 +557,14 @@ export class SessionManager {
     try {
       if (!existsSync(this.storePath)) return
       const raw = JSON.parse(readFileSync(this.storePath, 'utf8')) as { records?: Stored[]; focus?: string | null; recentCwds?: string[] }
-      this.records = (raw.records ?? []).filter((r) => r && /^[0-9a-f]{6}$/.test(r.id) && r.tmuxName === `ws-${r.id}` && r.claudeSessionId && /^[0-9a-f]{48}$/.test(r.token))
+      // Records from before Codex carry `claudeSessionId`: the same id under its old name.
+      for (const r of raw.records ?? []) {
+        const old = r as Stored & { claudeSessionId?: string }
+        if (old && typeof old === 'object' && !old.cliSessionId && old.claudeSessionId) old.cliSessionId = old.claudeSessionId
+        delete old?.claudeSessionId
+      }
+      // A Codex session's thread id is '' until core learns it; a Claude session always has its UUID.
+      this.records = (raw.records ?? []).filter((r) => r && /^[0-9a-f]{6}$/.test(r.id) && r.tmuxName === `ws-${r.id}` && (r.cli === 'codex' ? typeof r.cliSessionId === 'string' : !!r.cliSessionId) && /^[0-9a-f]{48}$/.test(r.token))
       this.focusId = raw.focus ?? null
       this.recentCwds = (raw.recentCwds ?? []).filter((d): d is string => typeof d === 'string' && d.length > 0).slice(0, RECENT_KEEP)
     } catch (err) {

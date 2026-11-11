@@ -231,6 +231,11 @@ export class SessionSettings {
     return `[ -e ${sq(this.leashDir)}/"$WORKSHOP_SESSION".asking ] || { cat >/dev/null; exit 0; }; ${this.curl(path)} >/dev/null 2>&1; exit 0`
   }
 
+  /** The env every session gets: Claude Code's through `env` below, a Codex session's app-server on its command line. */
+  sessionEnv(): Record<string, string> {
+    return { WORKSHOP_HOME: this.home, WORKSHOP_TILE: this.tileCli, WORKSHOP_DOC: join(dirname(this.tileCli), 'workshop-doc.mjs'), WORKSHOP_HELPER: join(dirname(this.tileCli), 'workshop-helper.mjs') }
+  }
+
   write(): void {
     const theirs = userSettings()
     const waits = this.writeLeashScripts()
@@ -238,7 +243,7 @@ export class SessionSettings {
     const settings = {
       theme: claudeTheme(this.dark, theirs.theme),
       statusLine: this.writeStatusScript(theirs.statusLine),
-      env: { WORKSHOP_HOME: this.home, WORKSHOP_TILE: this.tileCli, WORKSHOP_DOC: join(dirname(this.tileCli), 'workshop-doc.mjs'), WORKSHOP_HELPER: join(dirname(this.tileCli), 'workshop-helper.mjs') },
+      env: this.sessionEnv(),
       hooks: {
         Notification: hook('notification'),
         Stop: hook('stop'),

@@ -72,7 +72,7 @@ export async function worktreesSmoke(check: Check, { win, liveByTile, core, laun
   for (const id of ids) await waitFor('a first turn', async () => (await screen(id)).includes('DONE hello'), 15_000)
   // The busy one starts a turn and does not finish it: a prompt hook with no stop after it.
   const rec = core.sessions.find(busy)!
-  core.sessions.onHook('UserPromptSubmit', { session_id: rec.claudeSessionId, hook_event_name: 'UserPromptSubmit' } as never)
+  core.sessions.onHook('UserPromptSubmit', { session_id: rec.cliSessionId, hook_event_name: 'UserPromptSubmit' } as never)
   await waitFor('wt-busy to be busy', () => core.sessions.getState().sessions.find((s) => s.id === busy)?.status === 'busy', 5000)
 
   await inPage(`document.querySelector('[data-tab="worktrees"]').click(); true`)
