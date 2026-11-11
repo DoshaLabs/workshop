@@ -838,6 +838,37 @@ async function realClaude(check: (name: string, ok: boolean, detail?: string) =>
     JSON.stringify(t?.blocks.map((b) => b.kind)) + ' ' + (core.transcripts.pathOf(made.id) ?? 'no file')
   )
   await core.sessions.kill(made.id)
+
+  // A real subagent (the wolfpack): the hooks with the parent's id, its own transcript found by
+  // looking, its sidecar read, its end by its stop hook; its conversation tailed.
+  const sub = (await win.webContents.executeJavaScript(
+    `window.core.newSession({ cwd: ${JSON.stringify(cwd)}, model: 'haiku', name: 'real-agent', prompt: 'Use the Agent tool exactly once: subagent_type general-purpose, description "read package", prompt "Read package.json with the Read tool and reply with its name field only." Then reply with what it said.' })`
+  )) as { id: string }
+  const seenAgent: string[] = []
+  await waitFor(
+    'the real subagent to finish',
+    () => {
+      const a = core.agentsState().agents.find((x) => x.parent === sub.id)
+      if (a) seenAgent.push(`${a.found ? 'found' : 'unfound'}/${a.endedAt === null ? 'running' : 'ended'}`)
+      return !!a && a.found && a.endedAt !== null
+    },
+    180_000
+  ).catch(() => undefined)
+  const ra = core.agentsState().agents.find((x) => x.parent === sub.id)
+  check('real CLI: a subagent is tracked under its session, found, and finished', !!ra && ra.found && ra.endedAt !== null && ra.type === 'general-purpose' && ra.description === 'read package', `${JSON.stringify(ra)} ${[...new Set(seenAgent)].join(' → ')}`)
+  const rt = ra ? core.transcripts.get(`agent:${ra.id}`) : null
+  check('real CLI: its own conversation is tailed (its brief, its Read)', !!rt && rt.blocks[0]?.kind === 'user' && rt.blocks.some((b) => b.kind === 'tool' && b.name === 'Read'), JSON.stringify(rt?.blocks.map((b) => `${b.kind}:${b.kind === 'tool' ? b.name : ''}`)))
+
+  // A real helper: `claude --bg` started by core for that session, its hooks back by its own token.
+  const rec = core.sessions.find(sub.id)!
+  const helper = (await core.helpers.call(rec, { op: 'start', prompt: 'Reply with exactly: OK', name: 'real-helper', model: 'haiku' }).catch((e: Error) => ({ error: e.message }))) as { id?: string; error?: string }
+  await waitFor('the real helper to finish', () => !!core.agentsState().agents.find((a) => a.id === helper.id && a.found && a.endedAt !== null), 120_000).catch(() => undefined)
+  const rh = core.agentsState().agents.find((a) => a.id === helper.id)
+  check('real CLI: a helper (claude --bg) starts, reports by its own token, and finishes', !!rh && rh.found && rh.endedAt !== null && /\bOK\b/.test(rh.lastText ?? ''), JSON.stringify(rh ?? helper))
+  const rht = helper.id ? core.transcripts.get(`agent:${helper.id}`) : null
+  check('real CLI: the helper\'s conversation is found by its session id and tailed', !!rht && rht.found && rht.blocks.some((b) => b.kind === 'text' && /\bOK\b/.test(b.text)), JSON.stringify(rht?.blocks))
+  if (helper.id) await core.helpers.stop(helper.id)
+  await core.sessions.kill(sub.id)
 }
 
 /**
