@@ -118,10 +118,12 @@ describe("the knot stands as tall as Foxtrot", () => {
     expect(drawnHeight(BOX.head, MODES.rest.size).mean).toBeGreaterThanOrEqual(14.5)
     expect(drawnHeight(BOX.head, MODES.rest.size).mean).toBeLessThanOrEqual(15.5)
   })
-  it('in the top bar, at rest: between his 44 asleep and 60 standing, and never over 60', () => {
+  // Colin, 11 Nov 2026: the top bar's knot was too large; 10% smaller (an 88 px box became 79).
+  it('in the top bar, at rest: 10% under his 60 standing, and over his 44 asleep', () => {
+    expect(BOX.mark).toBe(Math.round(88 * 0.9))
     const rest = drawnHeight(BOX.mark, MODES.rest.size)
-    expect(rest.mean).toBeGreaterThanOrEqual(52)
-    expect(rest.max).toBeLessThanOrEqual(61)
+    expect(rest.mean).toBeGreaterThanOrEqual(46)
+    expect(rest.max).toBeLessThanOrEqual(55)
   })
   it('working and flaring, still inside its box', () => {
     for (const S of [BOX.head, BOX.mark]) expect(drawnHeight(S, 1, 1).max).toBeLessThanOrEqual(S)

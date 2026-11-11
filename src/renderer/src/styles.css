@@ -1221,6 +1221,9 @@ button {
   left: 84px;
   width: var(--bar);
   height: var(--bar);
+  /* The knot's box (BOX.mark) is a little under the bar's height: centred in it. */
+  display: grid;
+  place-items: center;
   z-index: 10;
   pointer-events: none;
   -webkit-app-region: drag;

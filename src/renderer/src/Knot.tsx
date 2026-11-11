@@ -50,6 +50,8 @@ interface Live {
   coat: KnotCoat
   /** In loops, wrapped at P loops (where the knot closes). */
   clock: number
+  /** How many times longer than its mode's a loop takes (the app's mark is calmer than a session's). */
+  pace: number
   size: number
   flareAt: number
   visible: boolean
@@ -113,7 +115,7 @@ function draw(k: Live, now: number): void {
   const dt = k.last ? Math.min(0.25, (now - k.last) / 1000) : 0
   k.last = now
   const still = reduced.matches
-  if (!still && look.loop > 0) k.clock = wrapClock(k.clock + dt / look.loop)
+  if (!still && look.loop > 0) k.clock = wrapClock(k.clock + dt / (look.loop * k.pace))
   // Ease toward the mode's size over a few hundred ms (no snap), in the same box so nothing in the head shifts.
   const target = look.size
   k.size = still ? target : k.size + (target - k.size) * (1 - Math.exp(-dt / 0.12))
@@ -155,7 +157,7 @@ reduced.addEventListener('change', () => {
  * One Knot in a square box of `size` CSS pixels. `attentionOf`: flare when that session calls for attention; `'*'`
  * flares on any call (the app's mark). Without a 2D canvas it falls back to the status dot.
  */
-export function KnotCanvas({ mode, size, attentionOf, status, coat = 'own', className = '', title }: { mode: KnotMode; size: number; attentionOf?: string; status?: SessionStatus; coat?: KnotCoat; className?: string; title?: string }) {
+export function KnotCanvas({ mode, size, attentionOf, status, coat = 'own', className = '', title, pace = 1 }: { mode: KnotMode; size: number; attentionOf?: string; status?: SessionStatus; coat?: KnotCoat; className?: string; title?: string; pace?: number }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const live = useRef<Live | null>(null)
   const [noCanvas, setNoCanvas] = useState(false)
@@ -167,7 +169,7 @@ export function KnotCanvas({ mode, size, attentionOf, status, coat = 'own', clas
       setNoCanvas(true)
       return
     }
-    const k: Live = { canvas, ctx, S: size, mode, coat, clock: Math.random() * 3, size: MODES[mode].size, flareAt: -Infinity, visible: true, dirty: true, last: 0 }
+    const k: Live = { canvas, ctx, S: size, mode, coat, clock: Math.random() * 3, pace: Math.max(1, pace), size: MODES[mode].size, flareAt: -Infinity, visible: true, dirty: true, last: 0 }
     live.current = k
     knots.add(k)
     io.observe(canvas)
@@ -218,11 +220,14 @@ export function SessionKnot({ id, status, attention, coat }: { id?: string; stat
   return <KnotCanvas mode={mode} size={BOX.head} attentionOf={id} status={status} coat={coat} className={`session-knot ${status}`} title={LABEL[mode]} />
 }
 
-/** The app's mark, top left beside the window's buttons, the top bar's full height: full size and fast while any session works. */
+/** How much slower the app's mark turns than a session's knot in the same mode (Colin, 11 Nov 2026: "slowed a little"). */
+export const MARK_PACE = 1.3
+
+/** The app's mark, top left beside the window's buttons, centred in the top bar: full size and quicker while any session works. */
 export function AppMark({ working }: { working: boolean }) {
   return (
     <div className="app-mark" aria-hidden="true">
-      <KnotCanvas mode={working ? 'work' : 'rest'} size={BOX.mark} attentionOf="*" title={working ? 'A session is working' : 'No session is working'} />
+      <KnotCanvas mode={working ? 'work' : 'rest'} size={BOX.mark} pace={MARK_PACE} attentionOf="*" title={working ? 'A session is working' : 'No session is working'} />
     </div>
   )
 }

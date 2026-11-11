@@ -51,7 +51,8 @@ export const MODES: Record<KnotMode, ModeLook> = {
  * head (no taller than the head had it), and the bar's whole height, 88, gives it 55 px turning
  * between 50 and 60. Working, it is a quarter taller again; a flare just fills the box.
  */
-export const BOX = { head: 24, mark: 88 } as const
+/** mark: 10% under the 88 px top bar it sits in (Colin, 11 Nov 2026: "too large"), centred there. */
+export const BOX = { head: 24, mark: 79 } as const
 
 export function knotMode(status: SessionStatus, attention: boolean): KnotMode {
   if (status === 'dead') return 'dead'
