@@ -177,6 +177,10 @@ btn.onclick = () => workshop.music.toggle().catch((e) => (title.textContent = e.
   `spotify:track|album|playlist|artist|episode|show:<22 letters and digits>`. Search and
   playlists are Spotify's web API, which needs the user signed in (see "Signing in").
 - Shuffle and repeat are read, not set.
+- `await workshop.music.show()` brings the app in use to the front (an "Open Spotify" button), bridge
+  1.6: set `"workshop": "^1.6"`. Only from a click or key in your tile, once per input and once a
+  second; like every control it never opens an app that is closed, and rejects with the same
+  sentence when neither is open.
 
 **Signing in (OAuth).** A tile cannot run a server or reach `127.0.0.1`, so a desktop sign-in's
 redirect has nowhere to land. Workshop catches it for you:

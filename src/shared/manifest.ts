@@ -6,14 +6,21 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). */
-export const BRIDGE_VERSION = '1.5.0'
+/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). */
+export const BRIDGE_VERSION = '1.6.0'
 
 /** The first bridge with `sessions: "launch"`: a tile asking for it must not claim to run on an older one. */
 export const LAUNCH_SINCE = '1.4.0'
 
 /** The first bridge with `oauth`. */
 export const OAUTH_SINCE = '1.5.0'
+
+/**
+ * The first bridge with `workshop.music.show()`. Not a permission (it rides on "music", from 1.3), so
+ * the manifest cannot be checked for it: a tile that calls it sets "workshop" to "^1.6", and an
+ * older core refuses that tile instead of handing it a bridge without the method.
+ */
+export const MUSIC_SHOW_SINCE = '1.6.0'
 
 /** A tile's own origin is tile://<id>/. */
 export const TILE_SCHEME = 'tile'

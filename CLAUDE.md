@@ -126,7 +126,8 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   JXA/AppleScript through osascript (a tile's values only as checked argv), never launches an app
   (`running()` first), polls only while a page watches (1 s playing, slower otherwise), and serves
   the artwork at `tile://<id>/~music/art/<hash>` (`tiles.ts`), so the tile needs no `net`.
-  Denied Automation is `error: 'denied'`. Smoke drives it with a stand-in runner
+  Denied Automation is `error: 'denied'`. `show()` (bridge 1.6) brings the app in use to the
+  front, only from a click or key in the tile, once a second, and never opens one. Smoke drives it with a stand-in runner
   (`smoke-music.ts`, `test/fixtures/music`). A packaged build needs `NSAppleEventsUsageDescription`
   (and the Apple Events entitlement under the hardened runtime).
 - Sign-in (bridge 1.5, `permissions.oauth`: hosts, as `net`; `docs/progress/2026-11-11-oauth.md`):

@@ -189,6 +189,8 @@ if (hello) {
           toggle: (): Promise<void> => control('toggle'),
           next: (): Promise<void> => control('next'),
           previous: (): Promise<void> => control('previous'),
+          /** Bridge 1.6: the app in use to the front, only if it is open, and only from a click or key in the tile. */
+          show: (): Promise<void> => control('show'),
           seek: (ms: number): Promise<void> => control('seek', ms, badSeek(ms)),
           setVolume: (v: number): Promise<void> => control('volume', v, badVolume(v)),
           /** Spotify only: a URI as Spotify's share menu gives it (spotify:track:…, album, playlist, artist, episode, show). */

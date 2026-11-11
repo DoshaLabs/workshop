@@ -8,7 +8,9 @@
 //
 // It never launches an app. Every script asks `running()` first, which Launch Services answers
 // without sending the app an Apple event, and only then talks to it. (A plain `tell application
-// "Spotify"` that sends anything would start Spotify.)
+// "Spotify"` that sends anything would start Spotify.) `show` (bridge 1.6) brings the app in use to
+// the front with `activate()`, behind the same guard, so it too never starts one; the bridge allows
+// it only straight after a click or key in the tile, once a second (music-bridge.ts).
 //
 // It polls only while some live tile page with "music" is watching: about once a second while
 // playing, more slowly when paused, stopped or refused, and not at all when nobody watches. One
@@ -105,6 +107,7 @@ export const SCRIPTS: Record<RunKind, { lang: 'JavaScript' | 'AppleScript'; sour
     else if (op === 'seek') { var ms = Number(arg); if (!isFinite(ms) || ms < 0) throw new Error('seek'); app.playerPosition = ms / 1000 }
     else if (op === 'volume') { var v = Number(arg); if (!isFinite(v) || v < 0 || v > 100) throw new Error('volume'); app.soundVolume = v }
     else if (op === 'uri' && which === 'spotify' && /^spotify:[a-z]+:[0-9A-Za-z]{22}$/.test(arg)) app.playTrack(arg)
+    else if (op === 'show') app.activate()
     else return JSON.stringify({ ok: false, error: 'op' })
   } catch (e) { return JSON.stringify({ ok: false, error: e.errorNumber || -1, message: String(e.message || e) }) }
   return JSON.stringify({ ok: true })
@@ -323,6 +326,25 @@ export function controlArgs(player: MusicPlayer | null, op: unknown, arg?: unkno
   if (!player) throw new Error('music: neither Spotify nor Music is open (workshop never opens them for you)')
   if (o === 'uri' && player !== 'spotify') throw new Error('music.playUri: Spotify only, and Spotify is not the app in use')
   return o === 'seek' || o === 'volume' || o === 'uri' ? [player, o, String(arg)] : [player, o]
+}
+
+/** How long after a click or key in the page `show` may follow it (as the overlay and a sign-in). */
+export const SHOW_GESTURE_MS = 5000
+/** At most one `show` a second per tile, as openExternal. */
+export const SHOW_EVERY_MS = 1000
+
+/**
+ * Whether a page may bring the player to the front now (bridge 1.6): bringing an app forward takes
+ * focus from the user, so only straight after real input in that page (`gestureAt`, set by
+ * index.ts from Chromium's input events, never a script's click), one call per input, and once a
+ * second per tile. Throws the sentence the tile sees; on success uses the input up.
+ */
+export function allowShow(g: { tile: { manifest: { id: string } }; gestureAt: number }, lastShow: Map<string, number>, now: number): void {
+  if (now - g.gestureAt > SHOW_GESTURE_MS) throw new Error('music.show: only in answer to a click or key in the tile')
+  const id = g.tile.manifest.id
+  if (now - (lastShow.get(id) ?? -Infinity) < SHOW_EVERY_MS) throw new Error('music.show: one a second')
+  g.gestureAt = 0
+  lastShow.set(id, now)
 }
 
 /** What the control script printed, as an error to throw or null. */

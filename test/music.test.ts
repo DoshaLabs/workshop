@@ -15,6 +15,7 @@ import {
   artKeyOf,
   artUrlAllowed,
   choosePlayer,
+  allowShow,
   controlArgs,
   controlError,
   forTile,
@@ -179,6 +180,30 @@ describe('what a tile may send', () => {
     expect(() => controlArgs('spotify', 'volume', 101)).toThrow(/0 to 100/)
     expect(() => controlArgs('music', 'uri', 'spotify:track:2Y4rRlanUi7BHYLBDTYELz')).toThrow(/Spotify only/)
     expect(() => controlArgs(null, 'play')).toThrow(/never opens them/)
+  })
+
+  it('show takes no value, and never names an app that is not open', () => {
+    expect(controlArgs('spotify', 'show')).toEqual(['spotify', 'show'])
+    expect(controlArgs('music', 'show', 'Calculator')).toEqual(['music', 'show'])
+    expect(() => controlArgs(null, 'show')).toThrow('music: neither Spotify nor Music is open (workshop never opens them for you)')
+    expect(SCRIPTS.control.source).toMatch(/if \(!app\.running\(\)\) return[\s\S]*op === 'show'\) app\.activate\(\)/)
+  })
+
+  it('show needs a click or key in the tile, one call per input, once a second', () => {
+    const last = new Map<string, number>()
+    const g = { tile: { manifest: { id: 'spotify' } }, gestureAt: 0 }
+    expect(() => allowShow(g, last, 100_000)).toThrow(/click or key/)
+    g.gestureAt = 100_000
+    expect(() => allowShow(g, last, 106_000)).toThrow(/click or key/)
+    allowShow(g, last, 101_000)
+    expect(g.gestureAt).toBe(0)
+    expect(() => allowShow(g, last, 101_100)).toThrow(/click or key/)
+    g.gestureAt = 101_200
+    expect(() => allowShow(g, last, 101_300)).toThrow(/one a second/)
+    expect(g.gestureAt).toBe(101_200)
+    allowShow(g, last, 102_100)
+    const other = { tile: { manifest: { id: 'other' } }, gestureAt: 102_100 }
+    allowShow(other, last, 102_200)
   })
 
   it('reads what the control script printed', () => {

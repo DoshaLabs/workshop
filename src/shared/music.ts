@@ -36,9 +36,9 @@ export interface MusicState {
   message?: string
 }
 
-/** What a control call asks for. `uri` is Spotify only. */
-export type MusicOp = 'play' | 'pause' | 'toggle' | 'next' | 'previous' | 'seek' | 'volume' | 'uri'
-export const MUSIC_OPS: readonly MusicOp[] = ['play', 'pause', 'toggle', 'next', 'previous', 'seek', 'volume', 'uri']
+/** What a control call asks for. `uri` is Spotify only. `show` brings the app in use to the front (bridge 1.6). */
+export type MusicOp = 'play' | 'pause' | 'toggle' | 'next' | 'previous' | 'seek' | 'volume' | 'uri' | 'show'
+export const MUSIC_OPS: readonly MusicOp[] = ['play', 'pause', 'toggle', 'next', 'previous', 'seek', 'volume', 'uri', 'show']
 
 /** Where core serves the artwork on a tile's origin. */
 export const MUSIC_ART_PREFIX = '/~music/art/'

@@ -1,17 +1,20 @@
 // The bridge's side of `workshop.music` in main: who is watching, what each tile is sent, and the
 // three calls. The host (main/music.ts) does the reading and the driving; this file only decides
 // which page may ask and which page hears. Every call is checked like the rest of the bridge: a
-// tile page core attached, its top frame, its own origin, and "music" in its manifest.
+// tile page core attached, its top frame, its own origin, and "music" in its manifest. `show`
+// (bridge 1.6) also needs a click or key in that page, one call per input, once a second.
 
 import { ipcMain, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { CH } from '@shared/ipc'
 import type { Manifest } from '@shared/manifest'
-import { MusicHost, forTile, type ArtFetcher, type Runner } from './music'
+import { MusicHost, allowShow, forTile, type ArtFetcher, type Runner } from './music'
 import { setMusicArt } from './tiles'
 
 interface Asker {
   tile: { manifest: Manifest }
   wc: WebContents
+  /** When the page last had a real click or key (index.ts sets it); `show` uses it up. */
+  gestureAt: number
 }
 
 export interface MusicBridge {
@@ -22,6 +25,7 @@ export interface MusicBridge {
 
 export function startMusic(o: { guest: (e: IpcMainEvent | IpcMainInvokeEvent) => Asker | null; runner: Runner; fetchArt: ArtFetcher }): MusicBridge {
   const watching = new Map<number, Asker>()
+  const lastShow = new Map<string, number>()
   const hooked = new WeakSet<WebContents>()
   const host = new MusicHost({
     runner: o.runner,
@@ -45,7 +49,9 @@ export function startMusic(o: { guest: (e: IpcMainEvent | IpcMainInvokeEvent) =>
 
   ipcMain.handle(CH.musicGet, async (e) => forTile(await host.get(), need(e).tile.manifest.id))
   ipcMain.handle(CH.musicControl, async (e, op: unknown, arg: unknown) => {
-    need(e)
+    const g = need(e)
+    // Bringing an app to the front takes focus from the user: never on the page's own say-so.
+    if (op === 'show') allowShow(g, lastShow, Date.now())
     await host.control(op, arg)
   })
   ipcMain.on(CH.musicWatch, (e, on: unknown) => {

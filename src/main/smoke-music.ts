@@ -134,6 +134,27 @@ export async function musicSmoke(check: Check, { liveByTile, addDevTile, music }
   ])
   check('music: main refuses them too, before the runner hears of it', inMain.every((x) => x !== 'ran') && controls().length === m, `${JSON.stringify(inMain)} ${controls().slice(m).join(', ')}`)
 
+  // show (bridge 1.6): the player to the front, only from real input in the page, once per input.
+  const realClick = async (): Promise<void> => {
+    const [w, h] = (await inPage('[innerWidth, innerHeight]')) as number[]
+    const at = { x: Math.max(1, Math.round(w / 2)), y: Math.max(1, Math.round(h / 2)) }
+    page.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
+    page.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
+    await sleep(100)
+  }
+  const k = controls().length
+  const bare = await call('workshop.music.show()')
+  const scripted = await page.executeJavaScript(`(async () => { document.body.click(); try { await workshop.music.show(); return 'ran' } catch (e) { return e.message } })()`, true)
+  check('music: show() is refused without a click or key in the page, and a script\'s click does not count', !bare.ok && /click or key/.test(bare.error) && /click or key/.test(scripted) && controls().length === k, `${JSON.stringify(bare)} ${scripted}`)
+  await realClick()
+  const shown = await call('workshop.music.show()')
+  const again = await call('workshop.music.show()')
+  check('music: a real click lets show() bring the app in use forward, once', shown.ok && controls().slice(k).join(', ') === 'spotify show' && !again.ok && /click or key/.test(again.error), `${JSON.stringify(shown)} ${JSON.stringify(again)} ${controls().slice(k).join(', ')}`)
+  await realClick()
+  const tooSoon = await call('workshop.music.show()')
+  check('music: show() at most once a second', !tooSoon.ok && /one a second/.test(tooSoon.error) && controls().slice(k).join(', ') === 'spotify show', JSON.stringify(tooSoon))
+  await sleep(1000)
+
   // Refused by macOS: a state the tile can show, and controls that say why. Nothing falls over.
   fake.mode = 'denied'
   await sleep(900)
@@ -146,6 +167,10 @@ export async function musicSmoke(check: Check, { liveByTile, addDevTile, music }
   const none = (await call('workshop.music.get()')).result
   const noneNext = await call('workshop.music.next()')
   check('music: neither app open is player null, and a control does not open one', none?.player === null && !noneNext.ok && /never opens/.test(noneNext.error) && !controls().some((c) => c.endsWith('next')), `${JSON.stringify(none)} ${JSON.stringify(noneNext)}`)
+  const shows = controls().filter((c) => c.endsWith('show')).length
+  await realClick()
+  const noneShow = await call('workshop.music.show()')
+  check('music: show() with neither app open opens nothing and says so', !noneShow.ok && noneShow.error === 'music: neither Spotify nor Music is open (workshop never opens them for you)' && controls().filter((c) => c.endsWith('show')).length === shows, JSON.stringify(noneShow))
   fake.mode = 'playing'
 
   // The last watcher stops: no more polls.
