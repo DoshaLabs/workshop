@@ -17,6 +17,7 @@
 //   inside a dark app is near-white text on light grey); the user's -daltonized / -ansi is kept.
 // - WORKSHOP_TILE, the door's CLI, so a tile's skill can run `node "$WORKSHOP_TILE" <id> <op>`.
 // - WORKSHOP_DOC, the preview pane's CLI beside it: `node "$WORKSHOP_DOC" open <path> [--line N]`.
+// - WORKSHOP_HELPER, the helper sessions' CLI (main/helpers.ts): `node "$WORKSHOP_HELPER" start "<prompt>"`.
 //
 // Carried over from deck's hooks.ts, without its leash, wolfpack and tile routes.
 
@@ -143,7 +144,7 @@ export class SessionSettings {
     const settings = {
       theme: claudeTheme(this.dark, theirs.theme),
       statusLine: this.writeStatusScript(theirs.statusLine),
-      env: { WORKSHOP_HOME: this.home, WORKSHOP_TILE: this.tileCli, WORKSHOP_DOC: join(dirname(this.tileCli), 'workshop-doc.mjs') },
+      env: { WORKSHOP_HOME: this.home, WORKSHOP_TILE: this.tileCli, WORKSHOP_DOC: join(dirname(this.tileCli), 'workshop-doc.mjs'), WORKSHOP_HELPER: join(dirname(this.tileCli), 'workshop-helper.mjs') },
       hooks: {
         Notification: hook('notification'),
         Stop: hook('stop'),

@@ -19,16 +19,35 @@
 // old: the web-fetch agent's way), `hold` (it never ends), `fork` (a stop for an agent that wrote no
 // transcript: the CLI's internal forks), `workflow` (under workflows/wf_<run>/, its stop naming no
 // file). The agent's id goes to $WORKSHOP_HOME/fake-agent-<how>.txt.
+// `--bg` (a helper session, main/helpers.ts) is the CLI's background session as 2.1.322 starts it:
+// it ignores --session-id, prints `backgrounded · <8 hex> · <name>` and goes on in a process of
+// its own, which runs its prompt as one turn (hooks with its own session id, a transcript by that
+// id) and stops; a prompt with "hold" in it never finishes until `claude stop <8 hex>`. `stop` and
+// `rm` leave $CLAUDE_CONFIG_DIR/fake-<stop|rm>-<id> behind.
 const { execSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
 
 const args = process.argv.slice(2)
+if (args[0] === 'stop' || args[0] === 'rm') {
+  if (process.env.CLAUDE_CONFIG_DIR) fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, `fake-${args[0]}-${args[1]}`), '')
+  console.log(`${args[0] === 'stop' ? 'stopped' : 'removed'} ${args[1]}`)
+  process.exit(0)
+}
 const after = (flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined)
-const sid = after('--session-id') || after('--resume')
+const bgSid = after('--fake-bg-sid')
+const sid = bgSid || after('--session-id') || after('--resume')
 const settings = JSON.parse(fs.readFileSync(after('--settings'), 'utf8'))
 Object.assign(process.env, settings.env || {})
-fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-${process.env.WORKSHOP_SESSION}.json`), JSON.stringify({ args, auth: process.env.WORKSHOP_AUTH, session: process.env.WORKSHOP_SESSION }))
+if (args.includes('--bg')) {
+  const id = require('node:crypto').randomUUID()
+  if (after('--session-id')) console.error('warning: --bg manages the session id; ignoring --session-id')
+  fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-helper-${id.slice(0, 8)}.json`), JSON.stringify({ args, auth: process.env.WORKSHOP_AUTH, session: process.env.WORKSHOP_SESSION }))
+  require('node:child_process').spawn(process.execPath, [__filename, ...args.filter((a) => a !== '--bg'), '--fake-bg-sid', id], { detached: true, stdio: 'ignore', env: process.env, cwd: process.cwd() }).unref()
+  console.log(`Starting background service…\nbackgrounded · ${id.slice(0, 8)} · ${after('--name') || 'session'}`)
+  process.exit(0)
+}
+if (!bgSid) fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-${process.env.WORKSHOP_SESSION}.json`), JSON.stringify({ args, auth: process.env.WORKSHOP_AUTH, session: process.env.WORKSHOP_SESSION }))
 
 const run = (cmd, input) => {
   try {
@@ -121,6 +140,22 @@ const turn = (line) => {
     titled = true
     write({ type: 'ai-title', aiTitle: 'Smoke conversation' })
   }
+}
+
+// A helper (a --bg session): its prompt as one turn, then it stops, unless it was told to hold.
+if (bgSid) {
+  const prompt = args[args.indexOf('--fake-bg-sid') - 1]
+  turn(prompt)
+  hook('UserPromptSubmit', { prompt })
+  sleep(1500)
+  const stopped = () => process.env.CLAUDE_CONFIG_DIR && fs.existsSync(path.join(process.env.CLAUDE_CONFIG_DIR, `fake-stop-${bgSid.slice(0, 8)}`))
+  if (/hold/.test(prompt)) {
+    for (let i = 0; i < 600 && !stopped(); i++) sleep(100)
+    process.exit(0)
+  }
+  write({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `Helper finished: ${prompt}` }] } })
+  hook('Stop', { last_assistant_message: `Helper finished: ${prompt}` })
+  process.exit(0)
 }
 
 console.log('FAKE CLAUDE READY')

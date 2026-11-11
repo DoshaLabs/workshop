@@ -21,6 +21,7 @@ import { startPreview } from './preview'
 import { keepImage } from './drops'
 import { CommitRecorder, CommitStore, type CommitRecord } from './commits'
 import { AgentTracker } from './agents'
+import { Helpers } from './helpers'
 import type { AgentsState } from '@shared/agents'
 import type { Transcript } from '@shared/transcript'
 
@@ -32,6 +33,8 @@ export interface CoreSessions {
   transcripts: TranscriptWatcher
   /** The wolfpack's subagents (main/agents.ts). */
   agents: AgentTracker
+  /** The wolfpack's helper sessions (main/helpers.ts). */
+  helpers: Helpers
   /** Every open session's subagents and helpers, as the window shows them. */
   agentsState(): AgentsState
   /** Which session made which commit, as far as core saw (main/commits.ts). */
@@ -85,6 +88,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   // Where the CLI the sessions run writes its transcripts: its config folder, as the sessions see it.
   const projects = join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects')
   let agents: AgentTracker | null = null
+  let helpers: Helpers | null = null
   const transcripts = new TranscriptWatcher(projects, (t) => {
     send(CH.transcriptChanged, t)
     agents?.onTranscript(t)
@@ -94,6 +98,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     const open = s.sessions.filter((x) => x.open)
     transcripts.sync(open.map((x) => ({ id: x.id, claudeSessionId: x.claudeSessionId })))
     agents?.keepParents(new Set(open.map((x) => x.id)))
+    helpers?.keepParents(new Set(s.sessions.map((x) => x.id)))
   }
 
   const sessions = new SessionManager({
@@ -119,18 +124,43 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     send(CH.usageChanged, u)
     o.onUsage(u)
   })
-  const agentsState = (): AgentsState => ({ agents: tracker.list(), leash: tracker.hasLeash() })
+  const agentsState = (): AgentsState => ({ agents: [...tracker.list(), ...helperList.list()], leash: tracker.hasLeash() })
+  // The wolfpack's tails: the subagents' files once seen, and the helpers' by session id.
+  let subagentTails: { id: string; path: string | null }[] = []
+  const syncTails = (): void => transcripts.syncAgents([...subagentTails, ...helperList.tails()])
   const tracker = new AgentTracker(
     { open: (id) => !!sessions.find(id)?.open, paste: (id, text) => sessions.paste(id, text) },
     projects,
-    (list) => transcripts.syncAgents(list),
+    (list) => {
+      subagentTails = list
+      syncTails()
+    },
     () => send(CH.agentsState, agentsState())
   )
   agents = tracker
+  const helperList = new Helpers(
+    {
+      env,
+      home: o.home,
+      settingsPath: settings.path,
+      pluginDirs: o.pluginDirs,
+      register: (t, who, session) => o.door.register(t, who, session),
+      revoke: (t) => o.door.revoke(t),
+      find: (id) => sessions.find(id)
+    },
+    () => {
+      syncTails()
+      send(CH.agentsState, agentsState())
+    }
+  )
+  helpers = helperList
   await sessions.init()
   const commits = new CommitRecorder(new CommitStore(join(o.home, 'commits.json')), (all) => o.onCommits?.(all))
 
-  const fleet = new Fleet(env, (entries) => sessions.onFleet(entries))
+  const fleet = new Fleet(env, (entries) => {
+    sessions.onFleet(entries)
+    helperList.onFleet(entries)
+  })
   if (o.poll) fleet.start()
 
   // ---- core's window only
@@ -155,10 +185,14 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   handle(CH.usageGet, () => usage.get())
   handle(CH.transcriptGet, (id: string) => transcripts.get(String(id)))
   handle(CH.agentsGet, () => agentsState())
-  handle(CH.agentPause, (id: string) => tracker.pause(String(id)))
-  handle(CH.agentResume, (id: string) => tracker.resume(String(id)))
-  handle(CH.agentKill, (id: string) => tracker.kill(String(id)))
-  handle(CH.agentDismiss, (id: string) => tracker.dismiss(String(id)))
+  const helperPause = (): never => {
+    throw new Error('a helper is a background session of its own: stop it, or open it with claude attach')
+  }
+  handle(CH.agentPause, (id: string) => (helperList.has(String(id)) ? helperPause() : tracker.pause(String(id))))
+  handle(CH.agentResume, (id: string) => (helperList.has(String(id)) ? helperPause() : tracker.resume(String(id))))
+  // A helper is stopped with the CLI's own `claude stop` (kill, or clearing a finished one); a subagent as tracker.kill says.
+  handle(CH.agentKill, (id: string) => (helperList.has(String(id)) ? helperList.stop(String(id)) : tracker.kill(String(id))))
+  handle(CH.agentDismiss, (id: string) => (helperList.has(String(id)) ? helperList.stop(String(id)) : tracker.dismiss(String(id))))
   handle(CH.openExternal, (url: string) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
@@ -184,11 +218,17 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     settings,
     transcripts,
     agents: tracker,
+    helpers: helperList,
     agentsState,
     commits,
     hook(name, token, payload) {
       const rec = sessions.byToken(token)
-      if (!rec) return // a call from outside any session: hooks are only for sessions
+      if (!rec) {
+        // A helper session's hooks come with its own token (main/helpers.ts); anything else is from outside any session.
+        const event = HOOK_ROUTES[name]
+        if (event && helperList.byToken(token)) helperList.onHook(token, event, (payload ?? {}) as HookPayload)
+        return
+      }
       if (name === 'status') return usage.onStatus(rec.id, payload)
       const p = (payload ?? {}) as HookPayload
       // A Bash call ended (PostToolUse): if it made commits, they are recorded as this session's.
@@ -205,7 +245,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     },
     async call(name, token, payload) {
       const rec = sessions.byToken(token)
-      if (!rec) throw new Error('only a session inside workshop can do that')
+      if (!rec) throw new Error(helperList.byToken(token) ? 'a helper cannot do that; its session can' : 'only a session inside workshop can do that')
+      if (name === 'helper') return helperList.call(rec, payload)
       return preview.call(name, payload, { id: rec.id, cwd: rec.cwd })
     },
     stop() {

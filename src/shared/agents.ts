@@ -35,6 +35,10 @@ export interface AgentView {
   held: boolean
   /** Its transcript has been found on disk (never guessed). */
   found: boolean
+  /** A helper waiting at a permission prompt or a question: only `claude attach` can answer it. */
+  needsYou?: boolean
+  /** A helper's id for `claude attach <id>` and `claude stop <id>` (the CLI's own background session). */
+  attach?: string
 }
 
 export interface AgentsState {
@@ -55,9 +59,9 @@ export function agentName(a: Pick<AgentView, 'description' | 'task' | 'type'>): 
 }
 
 /** The status the mark shows: working, paused (needs you), finished (resting). */
-export function agentStatus(a: Pick<AgentView, 'endedAt' | 'paused' | 'found'>): SessionStatus {
+export function agentStatus(a: Pick<AgentView, 'endedAt' | 'paused' | 'found' | 'needsYou'>): SessionStatus {
   if (a.endedAt !== null) return 'idle'
-  if (a.paused) return 'blocked'
+  if (a.paused || a.needsYou) return 'blocked'
   return a.found ? 'busy' : 'starting'
 }
 

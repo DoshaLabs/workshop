@@ -91,8 +91,10 @@ function AgentLine({ a, leash, now }: { a: AgentView; leash: boolean; now: numbe
     <div className="pack-line" data-agent={a.id}>
       <span className="pack-kind">{agentKind(a)}</span>
       {a.background && <span className="badge" title="Started in the background: the session went on without waiting">bg</span>}
-      <span className="pack-state">{finished ? `✓ ${clock(a.endedAt! - a.startedAt)}` : a.held ? 'paused, holding' : a.paused ? 'paused' : clock(now - a.startedAt)}</span>
-      {!finished && leash && (
+      <span className="pack-state" title={a.needsYou ? `It waits at a prompt: answer it with claude attach ${a.attach ?? ''} in a terminal` : undefined}>
+        {finished ? `✓ ${clock(a.endedAt! - a.startedAt)}` : a.needsYou ? 'needs you' : a.held ? 'paused, holding' : a.paused ? 'paused' : clock(now - a.startedAt)}
+      </span>
+      {!finished && leash && a.kind === 'subagent' && (
         <button className="ghost pack-pause" title={a.paused ? 'Let it go on' : 'Hold its next tool call until you let it go on'} onClick={() => act(a.paused ? window.core.agents.resume(a.id) : window.core.agents.pause(a.id))}>
           {a.paused ? '▶' : '⏸'}
         </button>
@@ -100,7 +102,7 @@ function AgentLine({ a, leash, now }: { a: AgentView; leash: boolean; now: numbe
       {!finished && (
         <button
           className={`ghost pack-kill ${armed ? 'armed' : ''}`}
-          title={armed ? 'Click again to stop it' : leash ? 'Stop it: its next tool call is refused, and the session is told' : 'Stop it: the tile goes, and the session is told to stop it'}
+          title={armed ? 'Click again to stop it' : a.kind === 'helper' ? 'Stop it (its conversation is kept)' : leash ? 'Stop it: its next tool call is refused, and the session is told' : 'Stop it: the tile goes, and the session is told to stop it'}
           onClick={() => {
             if (!armed) return setArmed(true)
             setArmed(false)
@@ -110,7 +112,7 @@ function AgentLine({ a, leash, now }: { a: AgentView; leash: boolean; now: numbe
           {armed ? 'stop' : '✕'}
         </button>
       )}
-      <button className="ghost pack-dismiss" title={finished ? 'Clear it' : 'Forget it (if its end never came through)'} onClick={() => act(window.core.agents.dismiss(a.id))}>
+      <button className="ghost pack-dismiss" title={finished ? (a.kind === 'helper' ? 'Clear it (its background session is stopped)' : 'Clear it') : 'Forget it (if its end never came through)'} onClick={() => act(window.core.agents.dismiss(a.id))}>
         ×
       </button>
     </div>

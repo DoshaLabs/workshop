@@ -128,6 +128,40 @@ export async function agentsSmoke(check: Check, o: O, id: string): Promise<void>
   const refused = await core.agents.preTool(rec, { session_id: rec.claudeSessionId, agent_id: hid, tool_name: 'Read' }, () => undefined)
   check('wolfpack: a killed agent\'s later calls are refused at the seam', refused?.hookSpecificOutput.permissionDecision === 'deny')
 
+  // A helper session: the session starts one through its CLI, as the workshop:helper skill says.
+  await turn('bash node "$WORKSHOP_HELPER" start --name smoke-helper "Say hi"')
+  let hv: AgentView | undefined
+  await waitFor(() => !!(hv = core.agentsState().agents.find((a) => a.kind === 'helper' && a.description === 'smoke-helper')), 5000)
+  check('helpers: a session starts one, and it is in its pack', !!hv && hv.parent === id && hv.type === 'helper', JSON.stringify(core.agentsState().agents.filter((a) => a.kind === 'helper')))
+  const short = hv?.attach ?? 'none'
+  const started = JSON.parse(await readFile(join(userData, `fake-helper-${short}.json`), 'utf8').catch(() => '{"args":[]}')) as { args: string[]; auth?: string; session?: string }
+  const own = JSON.parse(await readFile(join(userData, `fake-${id}.json`), 'utf8')) as { auth: string }
+  const ha = started.args.join(' ')
+  check(
+    "helpers: it is the CLI's own background session, with our settings, the parent's model and permission mode",
+    started.args.includes('--bg') && started.args.includes('--settings') && ha.includes('--name smoke-helper') && ha.includes('--model sonnet') && ha.includes('--permission-mode plan') && started.args.at(-1) === 'Say hi',
+    ha
+  )
+  check("helpers: it has a token of its own, not its parent's", !!started.auth && started.auth !== own.auth && started.session === id, JSON.stringify(started))
+  const finished = await waitFor(() => !!core.agentsState().agents.find((a) => a.id === hv?.id && a.endedAt !== null && a.found), 8000)
+  const hd = core.agentsState().agents.find((a) => a.id === hv?.id)
+  check('helpers: its hooks reach core by its token; its Stop finishes it with what it said', finished && hd?.lastText === 'Helper finished: Say hi', JSON.stringify(hd))
+  const ht = core.transcripts.get(`agent:${hv?.id}`)
+  check('helpers: its conversation is tailed by its session id', !!ht && ht.found && ht.blocks.some((b) => b.kind === 'user' && b.text === 'Say hi'), JSON.stringify(ht?.blocks))
+  check("helpers: its hooks never touch its parent's state", core.sessions.view(id)?.status === 'idle')
+  await turn(`bash node "$WORKSHOP_HELPER" result ${hv?.id}`)
+  check('helpers: the session collects the result', (await screen()).replace(/\s+/g, ' ').includes('"result": "Helper finished: Say hi"'), (await screen()).slice(-400))
+  // One that holds: stopping it is the CLI's own `claude stop <id>`.
+  await turn('bash node "$WORKSHOP_HELPER" start --name smoke-hold "hold on"')
+  let hold: AgentView | undefined
+  await waitFor(() => !!(hold = core.agentsState().agents.find((a) => a.description === 'smoke-hold' && a.found)), 5000)
+  await js(`window.core.agents.kill(${JSON.stringify(hold?.id ?? '')})`)
+  const marker = join(userData, 'claude-config', `fake-stop-${hold?.attach}`)
+  const stoppedIt = await waitFor(() => readFile(marker).then(() => true, () => false), 5000)
+  check('helpers: kill is claude stop <id>, and the tile goes', stoppedIt && !core.agentsState().agents.some((a) => a.id === hold?.id), marker)
+  const outside = await core.call('helper', '0'.repeat(48), { op: 'list' }).then(() => 'listed', (e: Error) => e.message)
+  check('helpers: only a session inside workshop can start or list them', /only a session/.test(outside), outside)
+
   // The finished ones' × clears them; the column is left as it was.
   for (const a of core.agentsState().agents.filter((x) => x.parent === id)) await js(`window.core.agents.dismiss(${JSON.stringify(a.id)})`)
   await waitFor(async () => (await js(`!document.querySelector('.pack-tile')`)) === true, 3000)
