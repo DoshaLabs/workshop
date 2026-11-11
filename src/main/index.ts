@@ -38,6 +38,7 @@ import type { Usage } from '@shared/usage'
 import { parseBuildInfo } from '@shared/update'
 import { Updater, bundleOf } from './updates'
 import { placeWindow } from './window-bounds'
+import { reapTmuxWhenGone } from './smoke-reaper'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
 const RESTARTED = process.argv.includes('--smoke-restarted')
@@ -62,6 +63,8 @@ const PROFILE = RESTARTED ? process.env.WORKSHOP_SMOKE_PROFILE! : SMOKE ? `works
 if (SMOKE) {
   app.setPath('userData', RESTARTED ? process.env.WORKSHOP_SMOKE_HOME! : mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
+  // However this run ends, its tmux server goes with it (the second cores share the first's socket).
+  if (!RESTARTED) reapTmuxWhenGone(PROFILE, shellEnv())
 } else if (NAMED) app.setPath('userData', join(app.getPath('appData'), NAMED))
 else if (DEV) app.setPath('userData', `${app.getPath('userData')}-dev`)
 /**
