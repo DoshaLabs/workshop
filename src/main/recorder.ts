@@ -139,7 +139,10 @@ export class Recorder {
       }
     })
     win.setAlwaysOnTop(true, 'floating')
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    // skipTransformProcessType: without it Electron calls app.dock.hide() so the frame can float
+    // over other apps' full-screen Spaces, which makes all of workshop a background app (no Dock
+    // icon, no menu bar, out of ⌘Tab, its window buried) until the frame closes.
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })
     win.setContentProtection(true)
     win.setIgnoreMouseEvents(true, { forward: true })
     // ⌘⇧O with the frame focused (after a click on its bar) stops the take or closes it, as anywhere else.
