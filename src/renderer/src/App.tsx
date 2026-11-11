@@ -4,6 +4,7 @@
 // The column holds tile INSTANCES. A tile's first instance is keyed by its id; a tile with
 // `multiple: true` may have more, keyed `<id>.<n>` (n up to 4), each its own page and partition.
 
+import { goldOf, hex, parseColor } from '@shared/knot'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { ThemeState, TileHead, TileInfo, TileProblem, TileView } from '@shared/ipc'
 import { syncCosmos } from './cosmos'
@@ -35,6 +36,9 @@ const MAX_INSTANCES = 4
 function applyTheme(t: ThemeState): void {
   const root = document.documentElement
   for (const [k, v] of Object.entries(t.vars)) root.style.setProperty(k, v)
+  // The worker coat's gold, from this theme's accent (the wolfpack's tiles; their knots use the same).
+  const accent = parseColor(t.vars['--ws-accent'] ?? '')
+  if (accent) root.style.setProperty('--ws-worker', hex(goldOf(accent)))
   root.dataset.theme = t.theme
   root.dataset.wall = String(t.wall)
   root.dataset.dark = String(t.dark)

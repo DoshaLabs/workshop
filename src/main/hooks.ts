@@ -24,8 +24,9 @@
 //   its own dialog, so the tile can answer it. Both retry a core that is not there (restarting).
 //   PostToolUse / PostToolUseFailure post /hook/ran only while a prompt is open (`<id>.asking`),
 //   so core sees a prompt the terminal answered.
+// - WORKSHOP_HELPER, the helper sessions' CLI (main/helpers.ts): `node "$WORKSHOP_HELPER" start "<prompt>"`.
 //
-// Carried over from deck's hooks.ts, without its wolfpack and tile routes.
+// Carried over from deck's hooks.ts, without its tile routes.
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -45,6 +46,16 @@ export interface HookPayload {
   agent_type?: string
   agent_transcript_path?: string
   last_assistant_message?: string
+  // The wolfpack (main/agents.ts). PreToolUse and PostToolUse carry the tool; a subagent's own
+  // tool calls carry its agent_id and agent_type (seen on Claude Code 2.1.322).
+  tool_name?: string
+  tool_input?: Record<string, unknown>
+  tool_use_id?: string
+}
+
+/** What a PreToolUse hook may answer (the leash's): nothing lets the call through. */
+export interface PreToolDecision {
+  hookSpecificOutput: { hookEventName: 'PreToolUse'; permissionDecision: 'allow' | 'deny' | 'ask'; permissionDecisionReason?: string }
 }
 
 /** /hook/<name> → the event it carries. `status` is the status line, not a hook. */
@@ -142,7 +153,8 @@ export class SessionSettings {
    * The leash (PreToolUse) and permission prompts (PermissionRequest): scripts that wait on core,
    * written beside the status line. Each hook's stdout is core's answer: nothing, or a decision.
    *
-   * - Not paused (no `<id>.paused`): leash.sh reads its input and exits. No request, no wait.
+   * - Not paused (no `<id>.paused`, and no `<id>.agents`: no subagent of it paused or just killed):
+   *   leash.sh reads its input and exits. No request, no wait.
    * - The request runs in the background and the script waits on it, so the TERM the CLI sends
    *   (Esc, a "No" in the dialog) ends curl too and core sees the hook hang up.
    * - curl fails to connect (000), or core is starting (503): it is quitting or restarting. leash.sh tries again every
@@ -180,9 +192,11 @@ export class SessionSettings {
         '#!/bin/sh',
         '# Written by workshop at every launch (src/main/hooks.ts): the leash, PreToolUse. Not paused: nothing.',
         `f=${sq(this.leashDir)}/"$WORKSHOP_SESSION".paused`,
-        '[ -n "$WORKSHOP_SESSION" ] && [ -e "$f" ] || { cat >/dev/null; exit 0; }',
+        // A paused or killed subagent (main/agents.ts): its calls must reach core while the session itself is not paused.
+        `g=${sq(this.leashDir)}/"$WORKSHOP_SESSION".agents`,
+        '[ -n "$WORKSHOP_SESSION" ] && { [ -e "$f" ] || [ -e "$g" ]; } || { cat >/dev/null; exit 0; }',
         ...head('the leash, held while paused.').slice(2),
-        'while [ -e "$f" ]; do',
+        'while [ -e "$f" ] || [ -e "$g" ]; do',
         '  left=$(( end - $(date +%s) ))',
         '  [ "$left" -gt 0 ] || break',
         ...request('pretool'),
@@ -224,7 +238,7 @@ export class SessionSettings {
     const settings = {
       theme: claudeTheme(this.dark, theirs.theme),
       statusLine: this.writeStatusScript(theirs.statusLine),
-      env: { WORKSHOP_HOME: this.home, WORKSHOP_TILE: this.tileCli, WORKSHOP_DOC: join(dirname(this.tileCli), 'workshop-doc.mjs') },
+      env: { WORKSHOP_HOME: this.home, WORKSHOP_TILE: this.tileCli, WORKSHOP_DOC: join(dirname(this.tileCli), 'workshop-doc.mjs'), WORKSHOP_HELPER: join(dirname(this.tileCli), 'workshop-helper.mjs') },
       hooks: {
         Notification: hook('notification'),
         Stop: hook('stop'),

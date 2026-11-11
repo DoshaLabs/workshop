@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { LaunchPrefill, NewSessionOpts, SessionsState } from '../shared/sessions'
 import type { Usage } from '../shared/usage'
 import type { Transcript } from '../shared/transcript'
+import type { AgentsState } from '../shared/agents'
 import type { Shortcut } from '../shared/shortcuts'
 import type { ColumnState } from '../shared/column'
 import type { ActiveMascot } from '../shared/mascot'
@@ -61,6 +62,15 @@ const core = {
   // session tiles
   transcript: (id: string): Promise<Transcript | null> => ipcRenderer.invoke(CH.transcriptGet, id),
   onTranscript: (fn: (t: Transcript) => void) => on(CH.transcriptChanged, fn),
+  /** The wolfpack: every open session's subagents and helper sessions. */
+  agents: {
+    get: (): Promise<AgentsState> => ipcRenderer.invoke(CH.agentsGet),
+    onChange: (fn: (s: AgentsState) => void) => on(CH.agentsState, fn),
+    pause: (id: string): Promise<void> => ipcRenderer.invoke(CH.agentPause, id),
+    resume: (id: string): Promise<void> => ipcRenderer.invoke(CH.agentResume, id),
+    kill: (id: string): Promise<void> => ipcRenderer.invoke(CH.agentKill, id),
+    dismiss: (id: string): Promise<void> => ipcRenderer.invoke(CH.agentDismiss, id)
+  },
   /** ⌘1–9, ⌘[ ⌘], ⌘N, caught by main wherever the focus is. */
   onShortcut: (fn: (s: Shortcut) => void) => on(CH.shortcut, fn),
   /** The tile column's state, kept in core's settings; null until it has first been saved. */

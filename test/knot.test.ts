@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BOX, MIN_CONTRAST, MODES, P, TAU, contrast, drawKnot, ensureContrast, knotMode, knotPalette, knotPoints, parseColor, wrapClock, type KnotCtx, type KnotMode, type KnotTheme } from '@shared/knot'
+import { BOX, MIN_CONTRAST, MODES, P, TAU, contrast, drawKnot, ensureContrast, goldOf, knotMode, knotPalette, knotPoints, parseColor, wrapClock, type KnotCtx, type KnotMode, type KnotTheme } from '@shared/knot'
 import { THEMES } from '@shared/themes'
 
 /** A canvas context that only records what it was asked to draw with. */
@@ -143,13 +143,28 @@ describe('colour', () => {
   })
 })
 
-describe('contrast, every theme, every mode, both sizes', () => {
+describe('the worker coat', () => {
+  it('is gold, whatever the accent', () => {
+    for (const accent of [[80, 140, 255], [200, 60, 200], [30, 30, 30], [240, 240, 240]] as [number, number, number][]) {
+      const [r, g, b] = goldOf(accent)
+      expect(r).toBeGreaterThan(b)
+      expect(g).toBeGreaterThan(b)
+      expect(r).toBeGreaterThanOrEqual(g)
+    }
+  })
+  it('draws other colours than the session’s own', () => {
+    const { theme } = variants[0]
+    expect(knotPalette(theme, 'work', 'worker').strand[0][0]).not.toBe(knotPalette(theme, 'work').strand[0][0])
+  })
+})
+
+describe('contrast, every theme, every mode, both coats, both sizes', () => {
   for (const { name, theme } of variants) {
     it(name, () => {
       const panel = parseColor(theme.panel)!
       const bg = parseColor(theme.bg)!
-      for (const mode of MODE_LIST) {
-        const palette = knotPalette(theme, mode)
+      for (const [mode, coat] of MODE_LIST.flatMap((m) => [[m, 'own'], [m, 'worker']] as const)) {
+        const palette = knotPalette(theme, mode, coat)
         for (const size of [MODES.rest.size, 1]) {
           for (const flare of [0, 1]) {
             for (const [S, ph] of [[BOX.head, 0.4], [BOX.head, 2.5], [BOX.mark, 7]]) {
@@ -159,7 +174,7 @@ describe('contrast, every theme, every mode, both sizes', () => {
               for (const s of r.styles) {
                 const c = parseColor(s)!
                 const worst = Math.min(contrast(c, panel), contrast(c, bg))
-                if (worst < MIN_CONTRAST) throw new Error(`${name} ${mode} ${s}: ${worst.toFixed(2)}:1`)
+                if (worst < MIN_CONTRAST) throw new Error(`${name} ${mode} ${coat} ${s}: ${worst.toFixed(2)}:1`)
               }
               // The strand stays a line at the small size: it thins with the radius, never below a pixel.
               expect(Math.min(...r.widths)).toBeGreaterThanOrEqual(1)

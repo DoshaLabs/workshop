@@ -105,12 +105,12 @@ sprite packs as a second category, the tile template as its own repo with `npm c
 | Piece | Size |
 |---|---|
 | Preview pane: read, tick boxes, edit a file a session points at; file paths in a conversation become clickable | M |
-| Subagent and helper-session tiles with pause and kill (wolfpack); the worker coat finally drawn | L |
+| ~~Subagent and helper-session tiles with pause and kill (wolfpack); the worker coat finally drawn~~ built 11 Nov 2026 (`docs/progress/2026-11-11-wolfpack.md`); pause rides the leash | L |
 | ~~The leash: PreToolUse held while paused~~ built (11 Nov 2026), `/ask/pretool` | M |
 | ~~Permission prompts answered from a session's tile~~ built (11 Nov 2026) on PermissionRequest, verified on 2.1.322; a real session in the app not yet | M |
 | Drag to reorder tiles, both columns | S |
 | ~~Image paste into a tile's prompt bar~~ built, then removed with the prompt bar (10 Nov 2026) | S |
-| `workshop.sessions.transcript` and the `transcripts` permission, with its loud prompt | M |
+| ~~`workshop.sessions.transcript` and the `transcripts` permission, with its loud prompt~~ built 11 Nov 2026 (bridge 1.5) | M |
 
 ## Track F: loose ends and things only half done (S each)
 

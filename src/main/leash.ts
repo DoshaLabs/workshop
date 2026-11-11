@@ -67,7 +67,7 @@ export class Leash {
     mkdirSync(dir, { recursive: true })
   }
 
-  private file(id: string, kind: 'paused' | 'asking'): string {
+  private file(id: string, kind: 'paused' | 'asking' | 'agents'): string {
     if (!/^[0-9a-f]{6,32}$/.test(id)) throw new Error('bad session id')
     return join(this.dir, `${id}.${kind}`)
   }
@@ -199,10 +199,23 @@ export class Leash {
    */
   prune(known: Set<string>): void {
     for (const f of readdirSync(this.dir)) {
-      const m = /^([0-9a-f]{6,32})\.(paused|asking)$/.exec(f)
+      const m = /^([0-9a-f]{6,32})\.(paused|asking|agents)$/.exec(f)
       if (!m) continue
-      if (m[2] === 'asking' || !known.has(m[1])) rmSync(join(this.dir, f), { force: true })
+      if (m[2] !== 'paused' || !known.has(m[1])) rmSync(join(this.dir, f), { force: true })
     }
+  }
+
+  /**
+   * The sessions with a subagent paused or just killed (the wolfpack, main/agents.ts): their
+   * `<id>.agents` makes leash.sh call core for every tool call, so a subagent's call can be held
+   * or refused while its session is not paused. Every other session still makes no request.
+   */
+  markAgents(sessions: Set<string>): void {
+    for (const f of readdirSync(this.dir)) {
+      const m = /^([0-9a-f]{6,32})\.agents$/.exec(f)
+      if (m && !sessions.has(m[1])) rmSync(join(this.dir, f), { force: true })
+    }
+    for (const id of sessions) if (!existsSync(this.file(id, 'agents'))) writeFileSync(this.file(id, 'agents'), '')
   }
 
   private writeAsking(id: string): void {

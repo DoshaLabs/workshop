@@ -4,8 +4,8 @@ A desktop app for people who use Claude Code: several Claude Code sessions in on
 column of small apps ("tiles") beside them that anyone can write, share and install. Open source,
 in the DoshaLabs GitHub org. macOS and Claude Code first.
 
-**Status (10 Nov 2026): the tile host (roadmap step 1), sessions, the status mark (section 8), the three-tab
-`+` menu with install, the preview pane, the trusted tier, the leash and permission prompts are built; the rest of this
+**Status (11 Nov 2026): the tile host (roadmap step 1), sessions, the status mark (section 8), the three-tab
+`+` menu with install, the preview pane, the trusted tier, the leash and permission prompts, the wolfpack and `transcripts` are built; the rest of this
 file is still the plan.** Every section says what was decided and why, so that whoever starts building, person or
 Claude session, does not have to re-derive it. When code lands, rewrite the matching section to
 describe what exists and delete the plan wording.
@@ -209,7 +209,23 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   still answer (core sees it through the hook hanging up, the poll's `waitingFor`, PostToolUse,
   Stop). Both scripts retry a core that is restarting; a pause is a file and outlives core.
   Core's window only: tiles see none of it.
-- Not yet: `transcripts` for tiles, subagent tiles and the wolfpack.
+- The wolfpack (`docs/progress/2026-11-11-wolfpack.md`): a session's subagents (`src/main/agents.ts`)
+  and helper sessions (`src/main/helpers.ts`) as one pack tile under it (`PackTile.tsx`): a chip per
+  agent, the chosen one's conversation (ChatView), its mark in the worker coat (the Knot gold:
+  `knot.ts` `goldOf`, `--ws-worker`). Subagents from the SubagentStart / Stop hooks; transcripts
+  found by looking under `<session id>/subagents/` (never guessed; the stop hook's path wins);
+  finished by the stop hook or by the sidecar's `"finished": true` once quiet 10 s; no tile for a
+  fork with no transcript; × as the last resort. Kill (■, two clicks): the tile goes, the parent is
+  told in one typed line, and its held and later calls are refused. Pause holds one subagent's
+  calls through the leash: a session with a subagent paused or killed in the last 10 minutes has
+  `<profile>/leash/<id>.agents`, so `leash.sh` calls core for its calls, and `/ask/pretool` asks
+  `AgentTracker.preTool` before the session's own pause. Every other session still makes no request.
+  Helpers: `node "$WORKSHOP_HELPER" start "<prompt>"` (skill `workshop:helper`) runs `claude --bg`
+  in the parent's folder with our settings, the parent's permission mode and a token of its own;
+  kill is `claude stop <id>`. Smoke: the stand-in runs `agent <how>` and `--bg`.
+- `transcripts` (bridge 1.5): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed
+  blocks a session tile draws, needs `sessions` too; a loud line in the menu and the install prompt;
+  `tile check` prints `review` for transcripts with net.
 
 Terms used throughout:
 
@@ -298,7 +314,7 @@ are actually building tiles.
 | Layout | Left column: sessions. Center: what you are on now. Right column: tiles |
 | Launcher | The empty center pane: start a session (folder, worktree, model, permission mode) |
 | Preview pane | Read, tick task boxes in, and edit a file a session points at |
-| Wolfpack | A session's subagents and helper sessions as live tiles, with pause and kill |
+| Wolfpack | A session's subagents and helper sessions as one pack tile under it; kill built, pause waits on the leash |
 | All themes | Deep Space is the default |
 | Wikipedia + weather + clock tile | Asks for your city on first run (deck defaults to Portland, Maine) |
 | Git tile | One tile, four tabs (section 4); Changes built |
@@ -492,7 +508,7 @@ Behind a permission:
 ```ts
 workshop.storage.get/set/watch     // "storage": one JSON store per tile, written atomically by main
 workshop.sessions.list/watch       // "sessions": "read"  → name, start folder (project), repo root (root), status, focused
-workshop.sessions.transcript(id)   // "transcripts"       → the conversation (see the safeguard)
+workshop.sessions.transcript(id) / watchTranscript(id, fn)  // "transcripts" (+ "sessions", bridge ^1.5) → the conversation, parsed (see the safeguard)
 workshop.sessions.launch({ folder, worktree })  // "sessions": "launch" → the new-session form filled in; the user presses Start
 workshop.sessions.paste(id, text)  // "sessions": "write" → type into a session
 workshop.usage.get/watch           // "usage"             → costs and rate-limit windows, computed by core
@@ -511,9 +527,13 @@ from v1 and returns with the reader, with a per-tile daily cap the user sets.
 
 ### Transcripts and the one manual check
 
-Sandboxed tiles may ask for `transcripts`, with a loud install prompt. A tile that asks for BOTH
-`transcripts` and `net` gets a manual review before it is listed, because that pairing is the
-only way a conversation can leave the machine. Everything else in the index stays automated.
+Sandboxed tiles may ask for `transcripts` (built, bridge 1.5): the blocks a session tile draws
+(prompts, prose, a line per tool call, the last 80), never the raw file, for a session's id only,
+never a subagent's. It needs `sessions` too. The menu row and the install prompt give it a loud
+line of its own (`TRANSCRIPTS_WARNING`). A tile that asks for BOTH `transcripts` and `net` gets a
+manual review before it is listed, because that pairing is the only way a conversation can leave
+the machine: `needsReview` in `src/shared/permissions.ts`, printed by `tile check` as `review` and
+in `--json`. Everything else in the index stays automated.
 
 The Spend tile does not need transcripts: core computes costs and exposes them as `usage`.
 
@@ -747,8 +767,8 @@ once), `sleep` (resting; a dead session sleeps, dimmed). One is required; the re
 nearest (`FALLBACK`). Unknown fields and states are refused. **There is no "alert, tail up" pose:
 Colin's rule, it reads badly. Do not add one.** `box` crops each frame's empty margins; the art
 is fitted into 22 × 18 at whole-number scales, `image-rendering: pixelated`. `worker` is the
-subagent coat: its own sheet, or colours to swap, else `tintCoat`'s gold (built and tested, not
-drawn yet: there are no subagent tiles). Calls for attention: a tile's `notify({ attention: true })` goes to the
+subagent coat: its own sheet, or colours to swap, else `tintCoat`'s gold; with no pack, the Knot
+wears it as a gold strand (`knotPalette(theme, mode, 'worker')`). Drawn on every pack tile. Calls for attention: a tile's `notify({ attention: true })` goes to the
 session that last called that tile through the door (10 minutes), else the focused one; a session
 also calls the moment it starts needing you or finishes a turn.
 

@@ -153,6 +153,17 @@ export const CH = {
   // session tiles: the conversation, tailed by main (main/transcript.ts)
   transcriptGet: 'ws:core:transcript-get',
   transcriptChanged: 'ws:core:transcript', // main → window
+  // the wolfpack: a session's subagents and helper sessions (main/agents.ts, main/helpers.ts)
+  agentsGet: 'ws:core:agents-get',
+  agentsState: 'ws:core:agents', // main → window
+  agentPause: 'ws:core:agent-pause',
+  agentResume: 'ws:core:agent-resume',
+  agentKill: 'ws:core:agent-kill',
+  agentDismiss: 'ws:core:agent-dismiss',
+  // transcripts for tiles ("transcripts", bridge 1.5)
+  tileTranscriptGet: 'ws:tile:transcript-get',
+  tileTranscriptWatch: 'ws:tile:transcript-watch', // send: (session id, true to start, false to stop)
+  tileTranscriptChanged: 'ws:tile:transcript-changed', // main → tile
   // ⌘1–9, ⌘[ ⌘], ⌘N, caught by main wherever the focus is (shared/shortcuts.ts)
   shortcut: 'ws:core:shortcut', // main → window
   // the tile column's state (off, extra instances, heights), kept in core's settings

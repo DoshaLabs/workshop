@@ -35,6 +35,16 @@ describe('tile check', () => {
     expect(formatCheck(r)).toMatch(/^ok {2}Demo \(demo 0\.1\.0\)/)
   })
 
+  it('says plainly when a tile needs a person\'s review before the index lists it: transcripts and net', async () => {
+    const both = await checkTileFolder(folder({}, { workshop: '^1.5', permissions: { sessions: 'read', transcripts: true, net: ['api.example.com'] } }))
+    expect(both.ok).toBe(true)
+    expect(both.review).toMatch(/"transcripts" and "net"/)
+    expect(formatCheck(both)).toMatch(/\n {2}review {3}it asks for both "transcripts" and "net" \(api\.example\.com\)/)
+    const one = await checkTileFolder(folder({}, { workshop: '^1.5', permissions: { sessions: 'read', transcripts: true } }))
+    expect(one.review).toBeNull()
+    expect(formatCheck(one)).not.toMatch(/review/)
+  })
+
   it('wants a folder with a tile.json', async () => {
     expect((await checkTileFolder('/nonexistent/x')).errors[0]).toMatch(/not a folder/)
     expect((await checkTileFolder(folder({ 'tile.json': null }))).errors).toEqual(['tile.json: missing'])
