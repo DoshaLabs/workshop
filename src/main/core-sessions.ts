@@ -19,7 +19,7 @@ import { TranscriptWatcher } from './transcript'
 import { UsageTracker } from './usage'
 import { startPreview } from './preview'
 import { keepImage } from './drops'
-import { CommitRecorder, CommitStore, type CommitRecord } from './commits'
+import { CommitRecorder, CommitStore, codexShellCall, type CommitRecord } from './commits'
 import { Leash } from './leash'
 import { CodexLink } from './codex-link'
 import { AgentTracker } from './agents'
@@ -140,6 +140,12 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
         askGone: (key) => {
           codexAsks.get(`${id}:${key}`)?.()
           codexAsks.delete(`${id}:${key}`)
+        },
+        // A command finished: if it made commits, they are this session's (as a Claude session's PostToolUse on Bash).
+        itemDone: (item, at, startedAt) => {
+          const call = codexShellCall(item, at, startedAt)
+          const rec = call && sessionsRef?.find(id)
+          if (rec && commitsRef) void commitsRef.onShell({ id, name: rec.name }, call).catch((err) => console.warn('[workshop] commits:', err))
         }
       })
       codexLinks.set(id, link)
@@ -147,6 +153,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     }
   }
   let usageRef: UsageTracker | null = null
+  let commitsRef: CommitRecorder | null = null
 
   // The leash and permission prompts. Its view is part of each session's state; a change is drawn at once.
   let sessionsRef: SessionManager | null = null
@@ -220,6 +227,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   // Pauses of sessions core still has stand (a session that outlived a restart stays paused); the rest go.
   leash.prune(new Set(sessions.getState().sessions.map((x) => x.id)))
   const commits = new CommitRecorder(new CommitStore(join(o.home, 'commits.json')), (all) => o.onCommits?.(all))
+  commitsRef = commits
 
   const fleet = new Fleet(env, (entries) => {
     sessions.onFleet(entries)

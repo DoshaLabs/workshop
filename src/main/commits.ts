@@ -1,5 +1,7 @@
-// Which session made a commit, where that can be known exactly. Every session runs a PostToolUse
-// hook on its Bash calls (main/hooks.ts) that posts the call to core; when the call made a commit
+// Which session made a commit, where that can be known exactly. Every Claude Code session runs a
+// PostToolUse hook on its Bash calls (main/hooks.ts) that posts the call to core, and core sees a
+// Codex session's commands as `commandExecution` items on its app-server (main/codex-link.ts);
+// both become one neutral ShellCall (`claudeShellCall`, `codexShellCall`). When the call made a commit
 // (the CLI says so in `tool_response.gitOperation`, or the command is one of git's that commit),
 // core reads the new entries of HEAD's reflog in the folder the session is in and records each
 // commit's sha against that session. The Git tile's History tab reads the records (through its
@@ -19,6 +21,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { rename, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
+import { codexShell } from '@shared/codex'
 
 /** One commit core saw a session make. */
 export interface CommitRecord {
@@ -227,7 +230,20 @@ export class CommitStore {
   }
 }
 
-// ---- the hook
+// ---- a shell call, from either CLI
+
+/** A shell command a session ran, as the recorder needs it. Never stored. */
+export interface ShellCall {
+  command: string
+  /** The folder it ran in (absolute). */
+  cwd: string
+  /** How long it ran, when known; else the window is DEFAULT_WINDOW_MS. */
+  durationMs?: number | null
+  /** The commit the CLI itself says it made (Claude Code's `gitOperation`), a short sha. */
+  saidSha?: string
+  /** When it ended (ms), if not just now: a Codex command read back at its turn's end. */
+  endedAt?: number
+}
 
 /** What core reads of a PostToolUse payload; everything else in it (the output) is ignored. */
 interface ToolPayload {
@@ -238,23 +254,54 @@ interface ToolPayload {
   tool_response?: { gitOperation?: { commit?: { sha?: unknown } } }
 }
 
-/**
- * The commits a Bash call made, from its payload: the reflog entries in each folder it worked in
- * that are commits made during the call (from the second it started, `duration_ms` before `now`,
- * to the second after it ended), plus the one the CLI itself names. [] when the call was not a
- * commit. No slack before the start: a commit someone else made a moment before the call is not
- * the session's (only one made in the very second the call started can be mistaken).
- */
-export async function commitsOfCall(payload: unknown, now = Date.now(), reflog = readReflog): Promise<string[]> {
+/** A Claude Code Bash call, from its PostToolUse payload; null for any other tool. */
+export function claudeShellCall(payload: unknown): ShellCall | null {
   const p = (payload ?? {}) as ToolPayload
-  if (p.tool_name !== 'Bash' || typeof p.cwd !== 'string' || !isAbsolute(p.cwd)) return []
-  const cmd = typeof p.tool_input?.command === 'string' ? p.tool_input.command : ''
+  if (p.tool_name !== 'Bash' || typeof p.cwd !== 'string') return null
   const said = p.tool_response?.gitOperation?.commit?.sha
+  return {
+    command: typeof p.tool_input?.command === 'string' ? p.tool_input.command : '',
+    cwd: p.cwd,
+    durationMs: typeof p.duration_ms === 'number' ? p.duration_ms : null,
+    ...(typeof said === 'string' ? { saidSha: said } : {})
+  }
+}
+
+/**
+ * A Codex command, from its `commandExecution` item once complete (or failed: a command can commit
+ * and then fail): the command unwrapped from the shell Codex runs it in (`/bin/zsh -lc '…'`). Null
+ * for any other item, one still running, or one declined (it never ran).
+ */
+export function codexShellCall(item: unknown, endedAt?: number | null, startedAt?: number | null): ShellCall | null {
+  const it = (item ?? {}) as { type?: unknown; command?: unknown; cwd?: unknown; status?: unknown; durationMs?: unknown }
+  if (it.type !== 'commandExecution' || typeof it.command !== 'string' || typeof it.cwd !== 'string') return null
+  if (it.status !== 'completed' && it.status !== 'failed') return null
+  // 0.167.1 reports `durationMs: 0` for some commands that ran (source unifiedExecStartup): the time
+  // core saw the item start bounds it too, whichever is longer.
+  const said = typeof it.durationMs === 'number' && it.durationMs >= 0 ? it.durationMs : null
+  const end = typeof endedAt === 'number' && endedAt > 0 ? endedAt : Date.now()
+  const seen = typeof startedAt === 'number' && startedAt > 0 && startedAt <= end ? end - startedAt : null
+  const durationMs = said === null && seen === null ? null : Math.max(said ?? 0, seen ?? 0)
+  return { command: codexShell(it.command), cwd: it.cwd, durationMs, ...(typeof endedAt === 'number' && endedAt > 0 ? { endedAt } : {}) }
+}
+
+/**
+ * The commits a shell call made: the reflog entries in each folder it worked in that are commits
+ * made during the call (from the second it started, `durationMs` before its end, `endedAt` or
+ * `now`, to the second after it ended), plus the one the CLI itself names. [] when the call was not a commit. No slack before
+ * the start: a commit someone else made a moment before the call is not the session's (only one
+ * made in the very second the call started can be mistaken).
+ */
+export async function commitsOfShell(call: ShellCall | null, now = Date.now(), reflog = readReflog): Promise<string[]> {
+  if (!call || !isAbsolute(call.cwd)) return []
+  const cmd = call.command
+  const said = call.saidSha
   if (!isCommitCommand(cmd) && typeof said !== 'string') return []
-  const ms = typeof p.duration_ms === 'number' && p.duration_ms >= 0 ? p.duration_ms : DEFAULT_WINDOW_MS
+  if (typeof call.endedAt === 'number' && call.endedAt < now) now = call.endedAt
+  const ms = typeof call.durationMs === 'number' && call.durationMs >= 0 ? call.durationMs : DEFAULT_WINDOW_MS
   const from = Math.floor((now - ms) / 1000) * 1000
   const shas: string[] = []
-  for (const dir of commandDirs(cmd, p.cwd)) {
+  for (const dir of commandDirs(cmd, call.cwd)) {
     try {
       if (!statSync(dir).isDirectory()) continue
     } catch {
@@ -264,7 +311,7 @@ export async function commitsOfCall(payload: unknown, now = Date.now(), reflog =
       if (e.at < from || e.at > now + SLACK_MS) continue
       if (madeCommit(e.message) && !shas.includes(e.sha)) shas.push(e.sha)
     }
-    if (typeof said === 'string' && dir === p.cwd) {
+    if (typeof said === 'string' && dir === call.cwd) {
       const full = await fullSha(dir, said)
       if (full && !shas.includes(full)) shas.push(full)
     }
@@ -272,7 +319,12 @@ export async function commitsOfCall(payload: unknown, now = Date.now(), reflog =
   return shas
 }
 
-/** Records the commits a session's Bash call made; `onChange` hears the whole list when any were new. */
+/** The commits a Claude Code Bash call made, from its PostToolUse payload. */
+export function commitsOfCall(payload: unknown, now = Date.now(), reflog = readReflog): Promise<string[]> {
+  return commitsOfShell(claudeShellCall(payload), now, reflog)
+}
+
+/** Records the commits a session's shell call made; `onChange` hears the whole list when any were new. */
 export class CommitRecorder {
   constructor(
     readonly store: CommitStore,
@@ -280,9 +332,15 @@ export class CommitRecorder {
     private readonly read: typeof readReflog = readReflog
   ) {}
 
-  async onTool(session: { id: string; name: string }, payload: unknown): Promise<CommitRecord[]> {
+  /** A Claude Code session's PostToolUse on Bash. */
+  onTool(session: { id: string; name: string }, payload: unknown): Promise<CommitRecord[]> {
+    return this.onShell(session, claudeShellCall(payload))
+  }
+
+  /** A shell call from either CLI (a Codex session's: `codexShellCall`). */
+  async onShell(session: { id: string; name: string }, call: ShellCall | null): Promise<CommitRecord[]> {
     const now = Date.now()
-    const shas = await commitsOfCall(payload, now, this.read)
+    const shas = await commitsOfShell(call, now, this.read)
     if (!shas.length) return []
     const added = await this.store.add(shas.map((sha) => ({ sha, session: session.id, name: session.name, at: now })))
     if (added.length) this.onChange(this.store.all())

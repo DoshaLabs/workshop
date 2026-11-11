@@ -42,6 +42,7 @@ async function session(): Promise<{ sock: string; cwd: string; type: (line: stri
 function link(sock: string, cwd: string) {
   const asks = new Map<string, CodexAsk>()
   const gone: string[] = []
+  const done: { item: { id?: string; type?: string; command?: string }; at: number | null | undefined }[] = []
   let thread = ''
   let status = ''
   const on: CodexLinkEvents = {
@@ -55,12 +56,13 @@ function link(sock: string, cwd: string) {
     askGone: (k) => {
       asks.delete(k)
       gone.push(k)
-    }
+    },
+    itemDone: (item, at) => done.push({ item: item as { id?: string }, at })
   }
   const l = new CodexLink('abc123', sock, cwd, '', on)
   links.push(l)
   l.start()
-  return { l, asks, gone, thread: () => thread, status: () => status }
+  return { l, asks, gone, done, thread: () => thread, status: () => status }
 }
 
 const answers = (sock: string): { id: number; result?: { decision?: string } }[] => (existsSync(`${sock}.answers.json`) ? JSON.parse(readFileSync(`${sock}.answers.json`, 'utf8')) : [])
@@ -132,5 +134,22 @@ describe('CodexLink: Stop', () => {
     expect(await late.l.interrupt()).toBe(true)
     await until('idle', () => late.status() === 'idle')
     expect(interrupts(s.sock)[0].turnId).toMatch(/^[0-9a-f-]{36}$/)
+  })
+})
+
+describe('CodexLink: finished commands (for commits)', () => {
+  it('hands each finished command over once, live or read back at its turn\'s end if the server never sent it', async () => {
+    const s = await session()
+    const c = link(s.sock, s.cwd)
+    await until('joined', () => !!c.thread())
+    s.type('commit')
+    await until('the live command', () => c.done.some((d) => d.item.type === 'commandExecution'))
+    await sleep(300) // the turn's read-back has run: nothing handed over twice
+    expect(c.done.filter((d) => d.item.type === 'commandExecution')).toHaveLength(1)
+    s.type('quietcommit')
+    await until('the quiet one, read back', () => c.done.filter((d) => d.item.type === 'commandExecution').length === 2)
+    const quiet = c.done.filter((d) => d.item.type === 'commandExecution')[1]
+    expect(typeof quiet.at).toBe('number')
+    expect(c.l.transcript.blocks.filter((b) => b.kind === 'tool')).toHaveLength(2) // its tool line too
   })
 })

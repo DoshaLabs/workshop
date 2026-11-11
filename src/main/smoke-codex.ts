@@ -7,7 +7,7 @@
 // id); a clean exit ends both windows and parks it; kill removes the socket. Phase 3: an approval
 // shows on the session as Allow / Deny, is answered only on a click, and goes when the terminal
 // answers first; a permissions request and a question are never answered by core. No pause: Stop
-// (two clicks) interrupts the running turn.
+// (two clicks) interrupts the running turn. A commit a Codex command made is the session's.
 
 import type { BrowserWindow } from 'electron'
 import { execFileSync } from 'node:child_process'
@@ -174,6 +174,21 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   await waitFor('idle after the stop', () => core.sessions.view(id)?.status === 'idle', 5000).catch(() => undefined)
   const lastTool = [...(core.transcripts.get(id)?.blocks ?? [])].reverse().find((b) => b.kind === 'tool')
   check('codex: stopped, the session is idle, its command marked failed, and Stop goes', core.sessions.view(id)?.status === 'idle' && lastTool?.kind === 'tool' && lastTool.label === 'sleep 600' && lastTool.error && (await stopBtn()) === 0, JSON.stringify(lastTool))
+
+  // Commits (item 3): a command that commits is recorded as this session's, as a Claude session's Bash call.
+  const gc = (...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim()
+  gc('init', '-q', '-b', 'main')
+  core.sessions.input(id, 'commit\r')
+  await waitFor('the commit', () => { try { return gc('rev-parse', 'HEAD').length === 40 } catch { return false } }, 5000).catch(() => undefined)
+  const headSha = (() => { try { return gc('rev-parse', 'HEAD') } catch { return '' } })()
+  await waitFor('the record', () => core.commits.store.has(headSha), 5000).catch(() => undefined)
+  const recd = core.commits.store.all().find((x) => x.sha === headSha)
+  check('codex: a commit a Codex command made is recorded as its session\'s', !!headSha && recd?.session === id && recd.name === 'codex-one', JSON.stringify(recd))
+  core.sessions.input(id, 'quietcommit\r')
+  await waitFor('the quiet commit', () => { try { return gc('log', '-1', '--format=%s') === 'quiet' } catch { return false } }, 5000).catch(() => undefined)
+  const quietSha = (() => { try { return gc('rev-parse', 'HEAD') } catch { return '' } })()
+  await waitFor('its record', () => core.commits.store.has(quietSha), 5000).catch(() => undefined)
+  check('codex: a commit whose command the server never sent live is found when its turn is read back', quietSha !== headSha && core.commits.store.all().find((x) => x.sha === quietSha)?.session === id)
 
   // Its tile in the column: the codex badge, and no pause (the leash is Claude Code's hooks).
   await js(`document.querySelector('.session-plus')?.click(); true`)

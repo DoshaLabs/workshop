@@ -17,7 +17,7 @@ import { projectHistory, readLog, showCommit } from '../tiles/git/lib/history.mj
 import { worktreeTop } from '../tiles/git/lib/git.mjs'
 // @ts-expect-error plain JavaScript, as the tile ships it
 import { DAY_MS, ago, byLabel, byTitle, groupCount, orList, refsShown, todayBySession } from '../tiles/git/dist/model.js'
-import { CommitRecorder, CommitStore, STORE_MAX, commandDirs, commitsOfCall, isCommitCommand, madeCommit, parseReflog, readReflog } from '../src/main/commits'
+import { CommitRecorder, CommitStore, STORE_MAX, claudeShellCall, codexShellCall, commandDirs, commitsOfCall, commitsOfShell, isCommitCommand, madeCommit, parseReflog, readReflog } from '../src/main/commits'
 import { SessionSettings } from '../src/main/hooks'
 
 const temps: string[] = []
@@ -408,6 +408,55 @@ describe('commits: the store', () => {
     expect(heard).toEqual([1])
     expect(r.store.all()[0]).toMatchObject({ sha: made, session: 'abc123', name: 'one' })
     expect(JSON.stringify(r.store.all())).not.toContain('git commit')
+  })
+})
+
+describe('commits: what a Codex command made', () => {
+  // A commandExecution item as codex-cli 0.167.1's app-server gives it on item/completed.
+  const item = (cwd: string, command: string, extra: Record<string, unknown> = {}) => ({ type: 'commandExecution', id: 'exec-1', command: `/bin/zsh -lc ${JSON.stringify(command).replace(/^"|"$/g, "'")}`, cwd, processId: '1', source: 'agent', status: 'completed', commandActions: [], aggregatedOutput: '', exitCode: 0, durationMs: 400, ...extra })
+
+  it('reads a finished command, unwrapped from its shell; nothing for one running, declined or not a command', () => {
+    expect(codexShellCall(item('/r', 'git commit -m x'))).toEqual({ command: 'git commit -m x', cwd: '/r', durationMs: 400 })
+    expect(codexShellCall(item('/r', 'git commit -m x'), 5000)).toEqual({ command: 'git commit -m x', cwd: '/r', durationMs: 400, endedAt: 5000 })
+    expect(codexShellCall(item('/r', 'git commit -m x', { status: 'failed', exitCode: 1, durationMs: null }))).toEqual({ command: 'git commit -m x', cwd: '/r', durationMs: null })
+    expect(codexShellCall(item('/r', 'git commit -m x', { status: 'inProgress' }))).toBeNull()
+    expect(codexShellCall(item('/r', 'git commit -m x', { status: 'declined' }))).toBeNull()
+    expect(codexShellCall({ type: 'fileChange', id: 'f', changes: [], status: 'completed' })).toBeNull()
+    expect(codexShellCall(null)).toBeNull()
+  })
+
+  it('a Claude call and a Codex command are the same call to the recorder', () => {
+    expect(claudeShellCall({ tool_name: 'Bash', cwd: '/r', tool_input: { command: 'git commit -m x' }, duration_ms: 400, tool_response: { gitOperation: { commit: { sha: 'abc1234' } } } })).toEqual({ command: 'git commit -m x', cwd: '/r', durationMs: 400, saidSha: 'abc1234' })
+    expect(claudeShellCall({ tool_name: 'Read', cwd: '/r' })).toBeNull()
+  })
+
+  it('a command that says it took 0 ms is given the time core saw it run', () => {
+    const end = 1_000_000
+    expect(codexShellCall(item('/r', 'git commit -m x', { durationMs: 0 }), end, end - 1500)?.durationMs).toBe(1500)
+    expect(codexShellCall(item('/r', 'git commit -m x', { durationMs: 4000 }), end, end - 1500)?.durationMs).toBe(4000)
+    expect(codexShellCall(item('/r', 'git commit -m x', { durationMs: null }), end)?.durationMs).toBeNull()
+  })
+
+  it('a command read back late is judged at when it ended, not now', async () => {
+    const d = repo()
+    const ended = Date.now() - 120_000
+    const c = { sha: 'c'.repeat(40), at: Math.floor((ended - 100) / 1000) * 1000, message: 'commit: x' }
+    const reflog = async (): Promise<ReturnType<typeof parseReflog>> => [c]
+    const call = codexShellCall(item(d, 'git commit -m x', { durationMs: 200 }), ended)
+    expect(call?.endedAt).toBe(ended)
+    expect(await commitsOfShell(call, Date.now(), reflog)).toEqual([c.sha])
+    expect(await commitsOfShell(codexShellCall(item(d, 'git commit -m x', { durationMs: 200 })), Date.now(), reflog)).toEqual([]) // judged now: too old
+  })
+
+  it('finds the commit a Codex command made, and records it for the session', async () => {
+    const d = repo()
+    commit(d, 'a.txt', 'a\n')
+    const made = commit(d, 'b.txt', 'b\n')
+    expect(await commitsOfShell(codexShellCall(item(d, 'git add b.txt && git commit -m b')))).toContain(made)
+    expect(await commitsOfShell(codexShellCall(item(d, 'git status')))).toEqual([])
+    const r = new CommitRecorder(new CommitStore(join(temp('ws-commits-'), 'c.json')), () => undefined)
+    expect((await r.onShell({ id: 'abc123', name: 'codex-one' }, codexShellCall(item(d, 'git commit -m b')))).map((x) => x.sha)).toContain(made)
+    expect(r.store.all().find((x) => x.sha === made)).toMatchObject({ session: 'abc123', name: 'codex-one' })
   })
 })
 

@@ -41,6 +41,11 @@ export interface CodexLinkEvents {
   ask(key: string, ask: CodexAsk): void
   /** That approval is gone, answered or not: stop showing it. */
   askGone(key: string): void
+  /**
+   * A thread item completed (commits are read from commands): live, or, missed live, read back at
+   * its turn's end with when it completed. Each item once; never one read from history at join.
+   */
+  itemDone?(item: unknown, completedAtMs?: number | null, startedAtMs?: number | null): void
 }
 
 interface OpenRequest {
@@ -53,6 +58,8 @@ interface OpenRequest {
 
 /** File-change items kept for the approval that follows them (their diffs are on the item). */
 const KEEP_ITEMS = 32
+/** Items already handed to `itemDone`, remembered so the turn's read-back does not repeat them. */
+const KEEP_DONE = 500
 
 export class CodexLink {
   private ws: WebSocket | null = null
@@ -67,6 +74,9 @@ export class CodexLink {
   private readonly requests = new Map<string, OpenRequest>()
   /** The running turn, from `turn/started` (null between turns, or before core saw one start). */
   private turnId: string | null = null
+  private readonly done = new Set<string>()
+  /** When core saw each running command start (item/started), for its window: some report durationMs 0. */
+  private readonly started = new Map<string, number>()
   private readonly fileItems = new Map<string, unknown>()
 
   constructor(
@@ -191,6 +201,42 @@ export class CodexLink {
     await this.history()
   }
 
+  private sawStart(item: unknown): void {
+    const it = item as { type?: unknown; id?: unknown } | null
+    if (it?.type !== 'commandExecution' || typeof it.id !== 'string' || this.started.has(it.id)) return
+    this.started.set(it.id, Date.now())
+    if (this.started.size > KEEP_ITEMS) this.started.delete(this.started.keys().next().value as string)
+  }
+
+  private itemDone(item: unknown, at: number | null, startedAt?: number | null): void {
+    const id = (item as { id?: unknown } | null)?.id
+    if (typeof id !== 'string' || this.done.has(id)) return
+    this.done.add(id)
+    if (this.done.size > KEEP_DONE) this.done.delete(this.done.values().next().value as string)
+    const seen = this.started.get(id)
+    this.started.delete(id)
+    this.on.itemDone?.(item, at, startedAt ?? seen ?? null)
+  }
+
+  /**
+   * A turn ended: its items read back, for any the server stored but did not send live (seen on
+   * 0.167.1: a thread's very first turn, a shell command, reached no subscriber). Commands go to
+   * `itemDone` with when they ended; tool lines missed are added to the transcript.
+   */
+  private async readBack(turnId: string): Promise<void> {
+    const r = await this.call<{ data?: { item?: unknown; completedAtMs?: number | null; startedAtMs?: number | null }[] }>('thread/items/list', { threadId: this.threadId, turnId, limit: 200 }).catch(() => null)
+    let shown = false
+    for (const e of r?.data ?? []) {
+      if (e.completedAtMs == null) continue
+      const it = e.item as { type?: unknown } | null
+      const id = (e.item as { id?: unknown } | null)?.id
+      if ((it?.type !== 'commandExecution' && it?.type !== 'fileChange') || typeof id !== 'string' || this.done.has(id)) continue
+      if (applyCodexItem(this.t, e.item, true, e.completedAtMs)) shown = true
+      this.itemDone(e.item, e.completedAtMs, e.startedAtMs)
+    }
+    if (shown) this.on.transcript(this.t)
+  }
+
   private keepFileItem(item: unknown): void {
     const it = item as { type?: unknown; id?: unknown } | null
     if (it?.type !== 'fileChange' || typeof it.id !== 'string') return
@@ -299,17 +345,22 @@ export class CodexLink {
         if (typeof turn?.id === 'string') this.turnId = turn.id
         break
       }
-      case 'turn/completed':
+      case 'turn/completed': {
         this.turnId = null
         this.dropAll()
+        const turn = p.turn as { id?: unknown } | undefined
+        if (typeof turn?.id === 'string') void this.readBack(turn.id)
         this.on.turnDone()
         break
+      }
       case 'thread/name/updated':
         if (typeof p.threadName === 'string' && p.threadName) this.on.title(p.threadName)
         break
       case 'item/started':
       case 'item/completed':
         this.keepFileItem(p.item)
+        if (m.method === 'item/started') this.sawStart(p.item)
+        else this.itemDone(p.item, typeof p.completedAtMs === 'number' ? p.completedAtMs : null)
         if (applyCodexItem(this.t, p.item, m.method === 'item/completed')) {
           this.t.found = true
           this.on.transcript(this.t)

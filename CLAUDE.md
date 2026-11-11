@@ -105,7 +105,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   port from `<profile>/port`, so a session that outlived a restart still finds core. Profiles:
   `workshop` (userData `workshop`), `workshop-dev` under `npm run dev` (its own socket and folder).
 - Commits (`src/main/commits.ts`): a PostToolUse hook on Bash posts to core when the call
-  mentions git; when it made commits (the CLI's `gitOperation`, or git commit / merge /
+  mentions git (a Codex session's: its `commandExecution` items, the Codex bullet); when it made commits (the CLI's `gitOperation`, or git commit / merge /
   cherry-pick / rebase / revert / am / pull), core reads HEAD's reflog over the call's window and
   records sha → session id and name in `<profile>/commits.json` (atomic, 90 days, 5,000; never
   the command). Backends get the records (`commits` message) and may `emit` events to their pages
@@ -270,7 +270,9 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   card as Claude's), answered only on a click (`accept` / `decline`), dropped when the terminal
   answers (`serverRequest/resolved`); a permissions request is shown for the terminal only;
   no other request is ever answered. No pause (Codex cannot hold a call from outside): ■ Stop
-  on its heads while a turn runs, two clicks, `turn/interrupt` (Colin, 11 Nov 2026). Not yet: commits, the wolfpack, the door as MCP, both plans' windows in the top bar. Hook ids
+  on its heads while a turn runs, two clicks, `turn/interrupt` (Colin, 11 Nov 2026). Commits: a
+  `commandExecution` item that committed is recorded as the session's (`codexShellCall`; each
+  turn read back at its end for items the server never sent live). Not yet: the wolfpack, the door as MCP, both plans' windows in the top bar. Hook ids
   match through `isSession` (never on ''). Smoke: `test/fixtures/fake-codex/codex` (speaks the
   app-server protocol), `smoke-codex.ts`.
 - `transcripts` (bridge 1.7): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed

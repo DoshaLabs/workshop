@@ -19,7 +19,10 @@
 //   (`serverRequest/resolved` to everyone, the item done or declined, status idle), as typing
 //   `yes` in the TUI resolves them all. `slow` starts a turn that runs (a command in progress)
 //   until a client sends turn/interrupt (writes <path>.interrupts.json; the command fails, the
-//   turn completes `interrupted`, its open requests resolve, status idle).
+//   turn completes `interrupted`, its open requests resolve, status idle). `commit` really runs
+//   `git commit --allow-empty -m codex` in the server's folder and reports it as a command item;
+//   `quietcommit` does the same but stores the item without sending it (as 0.167.1 did for a
+//   thread's first turn), so only reading the turn back finds it.
 //   `exit` ends the TUI cleanly (status 0), `crash` with status 3.
 
 const fs = require('node:fs')
@@ -184,7 +187,8 @@ function server() {
         }
         case 'thread/items/list': {
           const th = threads.get(p.threadId)
-          const data = th ? [...th.items].reverse().slice(0, p.limit || 50) : []
+          const all = th ? th.items.filter((e) => !p.turnId || e.turnId === p.turnId) : []
+          const data = (p.sortDirection === 'desc' ? [...all].reverse() : all).slice(0, p.limit || 50)
           return reply({ data, nextCursor: null, backwardsCursor: null })
         }
         // The fake TUI's own calls (the real TUI starts its thread with thread/start and turns with turn/start).
@@ -210,6 +214,24 @@ function server() {
             status(th, { type: 'active', activeFlags: ['waitingOnApproval', 'waitingOnUserInput'] })
             request(th, 'item/permissions/requestApproval', { itemId: 'p', environmentId: null, cwd: process.cwd(), reason: 'needs the network', permissions: { network: { enabled: true } } })
             request(th, 'item/tool/requestUserInput', { itemId: 'q', questions: [{ id: 'q1', header: 'Pick', question: 'Which?', options: null }] })
+          } else if (p.text === 'commit' || p.text === 'quietcommit') {
+            const quiet = p.text === 'quietcommit'
+            const t = startTurn(th)
+            status(th, { type: 'active', activeFlags: [] })
+            const c = { ...exec(randomUUID(), 'inProgress', null), command: "/bin/zsh -lc 'git commit --allow-empty -m codex'" }
+            if (!quiet) item(th, t.id, c, false)
+            const started = Date.now()
+            let code = 0
+            try {
+              require('node:child_process').execFileSync('git', ['-c', 'user.name=fake', '-c', 'user.email=fake@example.invalid', 'commit', '-q', '--allow-empty', '-m', quiet ? 'quiet' : 'codex'], { stdio: 'ignore' })
+            } catch {
+              code = 1
+            }
+            const doneC = { ...c, status: code ? 'failed' : 'completed', exitCode: code, durationMs: Date.now() - started }
+            if (quiet) th.items.push({ turnId: t.id, item: doneC, startedAtMs: started, completedAtMs: Date.now() })
+            else item(th, t.id, doneC, true)
+            endTurn(th, t, 'completed')
+            status(th, { type: 'idle' })
           } else if (p.text === 'slow') {
             const t = startTurn(th)
             status(th, { type: 'active', activeFlags: [] })
