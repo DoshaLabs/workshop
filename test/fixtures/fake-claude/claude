@@ -269,6 +269,13 @@ async function handle(line) {
       }
     }
     if (line.startsWith('agent ')) agent(line.slice(6).trim())
+    if (line.startsWith('subtool ')) {
+      // A tool call by the subagent `agent <how>` started: its PreToolUse carries its agent_id (as 2.1.322's do).
+      const how = line.slice(8).trim()
+      const aid = fs.readFileSync(path.join(process.env.WORKSHOP_HOME, `fake-agent-${how}.txt`), 'utf8').trim()
+      const d = decision(hook('PreToolUse', { transcript_path: transcript, cwd: process.cwd(), permission_mode: 'default', agent_id: aid, agent_type: 'general-purpose', tool_name: 'Read', tool_input: { file_path: 'README.md' }, tool_use_id: `toolu_sub_${++tools}` }, 'Read'))
+      console.log(d && d.permissionDecision === 'deny' ? `SUBTOOL denied ${(d.permissionDecisionReason || '').split('\n')[0]}` : 'SUBTOOL ran')
+    }
     run(settings.statusLine.command, { session_id: sid, rate_limits: { five_hour: { used_percentage: 42, resets_at: Math.floor(Date.now() / 1000) + 3600 } }, cost: { total_cost_usd: 1.23 }, context_window: { used_percentage: 17 } })
     if (line === 'spoof') {
       for (const group of settings.hooks.Stop || []) for (const h of group.hooks) run(h.command, { session_id: '00000000-0000-0000-0000-000000000000', hook_event_name: 'Stop' })

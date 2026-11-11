@@ -153,8 +153,6 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     }
   )
   agents = tracker
-  // The leash's PreToolUse hook is in the settings file and reaches tracker.preTool: subagents can be paused.
-  tracker.setLeash(true)
   const helperList = new Helpers(
     {
       env,
@@ -171,6 +169,9 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     }
   )
   helpers = helperList
+  // The leash's PreToolUse hook is in the settings file and reaches tracker.preTool: subagents can be
+  // paused. After the helpers exist: setLeash reports the whole pack, helpers included.
+  tracker.setLeash(true)
   await sessions.init()
   // Pauses of sessions core still has stand (a session that outlived a restart stays paused); the rest go.
   leash.prune(new Set(sessions.getState().sessions.map((x) => x.id)))

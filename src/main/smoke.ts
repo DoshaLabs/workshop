@@ -795,6 +795,8 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
     await sleep(800)
     await writeFile(process.env.WORKSHOP_SHOT_SESSION, (await win.webContents.capturePage()).toPNG())
   }
+  // What the terminal last showed: resume must show it again (older lines may have scrolled off).
+  const lastLine = (await screen(id)).trim().split('\n').filter((l) => l.trim()).at(-1)?.trim() ?? ''
   await js(`window.core.park(${JSON.stringify(id)})`)
   await waitFor('the session to park', async () => state().sessions.find((s) => s.id === id)?.open === false)
   check('sessions: park keeps tmux', await core.tmux.hasSession(`ws-${id}`))
@@ -803,7 +805,7 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   check('session tiles: a parked session is no longer tailed', core.transcripts.get(id) === null)
   await js(`window.core.resume(${JSON.stringify(id)})`)
   await sleep(300)
-  check('sessions: resume reattaches', state().sessions.find((s) => s.id === id)?.attached === true && (await screen(id)).includes('DONE pasted by a tile'))
+  check('sessions: resume reattaches, its screen as it was', state().sessions.find((s) => s.id === id)?.attached === true && !!lastLine && (await screen(id)).includes(lastLine), lastLine)
   await js(`window.core.kill(${JSON.stringify(id)})`)
   await sleep(300)
   const gone = await stat(started.auth).then(() => false, () => true)

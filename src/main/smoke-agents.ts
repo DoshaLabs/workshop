@@ -8,7 +8,7 @@
 // Then a tile reads a session's conversation with the permission, and is refused without it.
 
 import type { BrowserWindow, WebContents } from 'electron'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentView } from '@shared/agents'
 import type { CoreSessions } from './core-sessions'
@@ -92,27 +92,25 @@ export async function agentsSmoke(check: Check, o: O, id: string): Promise<void>
   const w = agent(wid)
   check('wolfpack: a Workflow agent is found under workflows/wf_<run>/, with its phase', !!w && w.found && w.type === 'workflow-subagent' && w.phase === 'Build' && w.endedAt !== null, JSON.stringify(w))
 
-  // One that never ends: pause waits for the leash; kill takes it and tells the session.
+  // One that never ends: pause holds its calls through the leash; kill takes it and tells the session.
   await turn('agent hold')
   const hid = await idOf('hold')
   await waitFor(() => !!agent(hid)?.found)
-  const noLeash = (await js(`window.core.agents.pause(${JSON.stringify(hid)}).then(() => 'paused', (e) => e.message)`)) as string
-  check('wolfpack: pause says it needs the leash when there is none', /leash/.test(noLeash), noLeash)
-  check('wolfpack: no pause button without the leash', (await js(`!document.querySelector('.pack-tile .pack-pause')`)) === true)
-  // The seam the leash calls: with it wired, a paused agent's next tool call waits until resume.
-  const rec = core.sessions.find(id)!
-  core.agents.setLeash(true)
+  const marked = (): Promise<boolean> => stat(join(userData, 'leash', `${id}.agents`)).then(() => true, () => false)
   await waitFor(async () => (await js(`!!document.querySelector('.pack-tile .pack-pause')`)) === true, 3000)
-  check('wolfpack: with the leash, each running agent has a pause button', (await js(`!!document.querySelector('.pack-tile .pack-pause')`)) === true)
+  check('wolfpack: each running agent has a pause button (the leash is wired)', (await js(`!!document.querySelector('.pack-tile .pack-pause')`)) === true)
+  check('wolfpack: no agent paused, no mark: the session\'s calls never reach core', !(await marked()))
   await js(`window.core.agents.pause(${JSON.stringify(hid)})`)
-  let answer: unknown = 'waiting'
-  const held = core.agents.preTool(rec, { session_id: rec.claudeSessionId, agent_id: hid, tool_name: 'Read' }, () => undefined).then((d) => (answer = d))
-  await sleep(200)
-  check('wolfpack: a paused agent\'s tool call is held at the seam', answer === 'waiting' && agent(hid)?.held === true, JSON.stringify(agent(hid)))
+  await waitFor(() => marked(), 3000)
+  check('wolfpack: pausing an agent marks its session for leash.sh', await marked())
+  // The agent's next tool call, through the real PreToolUse hook (leash.sh) and /ask/pretool.
+  await type('subtool hold')
+  await waitFor(() => agent(hid)?.held === true, 5000)
+  await sleep(500)
+  check('wolfpack: a paused agent\'s tool call is held, through the hook', agent(hid)?.held === true && !(await screen()).includes('SUBTOOL'), JSON.stringify(agent(hid)))
   await js(`window.core.agents.resume(${JSON.stringify(hid)})`)
-  await held
-  check('wolfpack: resume lets it through', answer === null && agent(hid)?.held === false)
-  core.agents.setLeash(false)
+  await waitFor(async () => (await screen()).includes('DONE subtool hold'), 5000)
+  check('wolfpack: resume lets it through, and the mark goes', (await screen()).replace(/\s+/g, ' ').includes('SUBTOOL ran') && agent(hid)?.held === false && !(await marked()), (await screen()).slice(-300))
   // Kill: two clicks in place on the chosen agent's line.
   await js(`document.querySelector('.pack-tile .pack-chip[data-agent="${hid}"]').click(); true`)
   await sleep(100)
@@ -125,8 +123,13 @@ export async function agentsSmoke(check: Check, o: O, id: string): Promise<void>
   check('wolfpack: the second click takes the tile at once', !agent(hid))
   const told = await waitFor(async () => (await screen()).includes('DONE [workshop] The user stopped your subagent'), 5000)
   check('wolfpack: the session is told, in one typed line', told, (await screen()).slice(-400))
-  const refused = await core.agents.preTool(rec, { session_id: rec.claudeSessionId, agent_id: hid, tool_name: 'Read' }, () => undefined)
-  check('wolfpack: a killed agent\'s later calls are refused at the seam', refused?.hookSpecificOutput.permissionDecision === 'deny')
+  // The terminal is narrow: a long line wraps, so the screen is read as one run of text. (The first
+  // `subtool hold` left its DONE on screen, so this waits for the refusal itself.)
+  const flatScreen = async (): Promise<string> => (await screen()).replace(/\s+/g, ' ')
+  await type('subtool hold')
+  await waitFor(async () => (await flatScreen()).includes('SUBTOOL denied'), 10_000)
+  const flat = await flatScreen()
+  check('wolfpack: a killed agent\'s later calls are refused, through the hook', /SUBTOOL denied Refused: the user stopped this agent/.test(flat) && (await marked()), flat.slice(-300))
 
   // A helper session: the session starts one through its CLI, as the workshop:helper skill says.
   await turn('bash node "$WORKSHOP_HELPER" start --name smoke-helper "Say hi"')
