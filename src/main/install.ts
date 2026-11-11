@@ -72,8 +72,13 @@ function git(args: string[], cwd: string, local: boolean): Promise<string> {
     SSH_ASKPASS: '/usr/bin/false',
     GIT_LFS_SKIP_SMUDGE: '1',
     GIT_CONFIG_NOSYSTEM: '1',
+    // Nor the user's own: a `url.<ssh>.insteadOf https://github.com/` there would turn a public
+    // https fetch into ssh, which has no agent here and fails (or asks about a host key).
+    GIT_CONFIG_GLOBAL: '/dev/null',
     LANG: 'C'
   }
+  // A proxy set for the shell is the only way out on some networks.
+  for (const k of ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'NO_PROXY', 'no_proxy', 'ALL_PROXY', 'all_proxy']) if (process.env[k]) env[k] = process.env[k]
   return new Promise((res, rej) => {
     execFile('git', [...safe, ...args], { cwd, env, timeout: GIT_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) rej(new Error(String(stderr || err.message).trim().split('\n').slice(-2).join(' ')))
@@ -151,7 +156,10 @@ export class Installer {
       const checked = await checkTileFolder(dir)
       if (!checked.ok || !checked.manifest) {
         const backend = checked.errors.find((e) => e.startsWith('backend:'))
-        throw new Error(backend ? `refused: ${TRUSTED_ONLY}. This tile declares one, so it cannot be installed (yet).` : `refused: ${checked.errors.join('; ')}`)
+        if (backend) throw new Error(`refused: ${TRUSTED_ONLY}. This tile declares one, so it cannot be installed (yet).`)
+        const newer = checked.errors.find((e) => e.startsWith('workshop: this core implements bridge'))
+        if (newer) throw new Error(`this tile needs a newer workshop (${newer.replace(/^workshop: /, '')}); update workshop, then install it`)
+        throw new Error(`refused: ${checked.errors.join('; ')}`)
       }
       const m = checked.manifest
       const taken = this.o.takenBy(m.id)

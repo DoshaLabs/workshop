@@ -74,7 +74,11 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   hooks, submodules, LFS and symlinks off, `.git` deleted, checked as an outside tile (no backend,
   no built-in id, nothing the index did not list), into userData `tiles/<id>` after the prompt in
   the menu card. An update asks again only if it asks for more. The index format is
-  `src/shared/tile-index.ts`; its address is `settings.index` (or `WORKSHOP_INDEX`).
+  `src/shared/tile-index.ts`; its address is `WORKSHOP_INDEX`, else `settings.index`, else
+  `DEFAULT_INDEX`, DoshaLabs/workshop-index's `tiles.json` on main (never in a smoke run). Main
+  reads it (`src/main/index-read.ts`: 10 s, 2 MB counted as it streams, kept a minute). Git runs
+  without the user's own config. `WORKSHOP_REAL_INDEX=1 npx electron . --smoke` walks the real
+  index on GitHub: install, run, update and remove Pomodoro (`docs/progress/2026-11-11-index.md`).
 - `workshop tile check <folder> [--json]` (`src/main/tile-check.ts`, built into
   `out/check/tile-check.mjs` by `vite.check.config.ts`): core's own manifest, plugin and folder
   checks from the shell. Exit 0 if the tile would load.
@@ -581,6 +585,22 @@ How it works:
   their tiles in the marketplace. It is never required: anyone can write a tile, share it on
   GitHub and submit it to the index without one. Not designed yet (what a profile holds, and
   whether sign-in is GitHub's).
+
+**Built (11 Nov 2026).** https://github.com/DoshaLabs/workshop-index holds `tiles.json`, a README
+on how to submit, and a check (`.github/workflows/check.yml`) that runs on every pull request, on
+main and weekly. It checks out workshop's main and bundles core's own code with esbuild
+(`ci/core.ts`: `checkEntry`, `fetchCommit`, `checkTileFolder`, `permissionWords`), so the index
+is checked by the code that reads and installs it, with nothing copied. Per entry: the entry's
+rules, the pinned commit fetched as install fetches it, `tile check` as an outside tile, id,
+version and permissions exactly tile.json's, every file the page names committed (nothing is
+built on install). The summary lists each tile's permissions in words and, for an update, what
+it now also asks for. `transcripts` with `net` fails until a maintainer adds the `reviewed`
+label. A tile whose `workshop` range starts above core main's bridge is "waiting", not failed, if
+its only errors are ones a newer core answers. Listed: Pomodoro
+(https://github.com/DoshaLabs/workshop-pomodoro) and Spotify
+(https://github.com/DoshaLabs/workshop-spotify, waiting for bridge 1.5; pull request 1 until
+merged). Not built: the site,
+the counter, CODEOWNERS.
 
 There is no hosted backend at launch beyond the counter and a static site. A WoW-style hosted
 marketplace is step 6 of the roadmap and happens only if strangers are building tiles.
