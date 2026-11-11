@@ -115,7 +115,10 @@ async function post(port: number, path: string, body: unknown, headers: Record<s
 export async function runSmoke(ctx: Ctx): Promise<number> {
   const { win, door, liveByTile, userData, opened, addDevTile } = ctx
   const results: [string, boolean, string?][] = []
-  const check = (name: string, ok: boolean, detail?: string): void => void results.push([name, ok, detail])
+  const check = (name: string, ok: boolean, detail?: string): void => {
+    results.push([name, ok, detail])
+    checkedAt.push(Date.now())
+  }
   try {
     await waitFor('the probe tile to load', async () => {
       const g = liveByTile.get('probe')
@@ -241,6 +244,10 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
   return finish(results, ctx)
 }
 
+/** When each check was made, beside `results`: WORKSHOP_SMOKE_TIMES=1 prints where the run's time goes. */
+const checkedAt: number[] = []
+const runStart = Date.now()
+
 async function finish(results: [string, boolean, string?][], { win }: Ctx): Promise<number> {
   // WORKSHOP_SHOT=<file.png>: a picture of the window as the smoke left it, to eyeball the layout.
   if (process.env.WORKSHOP_SHOT) {
@@ -251,6 +258,21 @@ async function finish(results: [string, boolean, string?][], { win }: Ctx): Prom
   for (const [name, ok, detail] of results) {
     if (!ok) failed++
     console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`)
+  }
+  if (process.env.WORKSHOP_SMOKE_TIMES === '1') {
+    // The time before each check: what the run spent getting to it (its waits and the work before it).
+    const spans = checkedAt.map((at, i) => ({ ms: at - (i ? checkedAt[i - 1] : runStart), name: results[i][0] }))
+    console.log(`\nwhere the time went (${((Date.now() - runStart) / 1000).toFixed(1)} s in all), the slowest 25:`)
+    for (const x of [...spans].sort((a, b) => b.ms - a.ms).slice(0, 25)) console.log(`${(x.ms / 1000).toFixed(2).padStart(7)} s  ${x.name}`)
+    // By area: the name's prefix ("sessions:", "wolfpack:" …).
+    const areas = new Map<string, { ms: number; n: number }>()
+    for (const x of spans) {
+      const k = /^([^:]+):/.exec(x.name)?.[1] ?? x.name
+      const a = areas.get(k) ?? { ms: 0, n: 0 }
+      areas.set(k, { ms: a.ms + x.ms, n: a.n + 1 })
+    }
+    console.log('\nby area:')
+    for (const [k, a] of [...areas].sort((x, y) => y[1].ms - x[1].ms).slice(0, 25)) console.log(`${(a.ms / 1000).toFixed(1).padStart(7)} s  ${String(a.n).padStart(3)} checks  ${k}`)
   }
   console.log(`\n${results.length - failed} passed, ${failed} failed`)
   return failed ? 1 : 0
@@ -1251,7 +1273,10 @@ async function restart(check: (name: string, ok: boolean, detail?: string) => vo
 export async function runRestarted(ctx: Ctx): Promise<number> {
   const { win, core } = ctx
   const results: [string, boolean, string?][] = []
-  const check = (name: string, ok: boolean, detail?: string): void => void results.push([name, ok, detail])
+  const check = (name: string, ok: boolean, detail?: string): void => {
+    results.push([name, ok, detail])
+    checkedAt.push(Date.now())
+  }
   const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
   const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
   const id = process.env.WORKSHOP_SMOKE_SURVIVOR ?? ''
