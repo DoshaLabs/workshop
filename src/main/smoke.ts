@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CH } from '@shared/ipc'
 import type { Door } from './door'
-import { installs } from './smoke-install'
+import { installs, realIndex } from './smoke-install'
 import { gitSmoke } from './smoke-git'
 import { worktreesSmoke } from './smoke-worktrees'
 import { historySmoke } from './smoke-history'
@@ -194,7 +194,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await sleep(200)
     const wikiStore = JSON.parse(await readFile(join(userData, 'tile-data', 'wikipedia', 'store.json'), 'utf8')) as { places?: { name: string }[] }
     check('wikipedia page: the place is kept in workshop.storage', wikiStore.places?.[0]?.name === 'Lisbon', JSON.stringify(wikiStore))
-    await waitFor('the picture of the day', async () => (await wjs(`!!document.querySelector('.wiki-text .wiki-title')`)) === true)
+    await waitFor('the picture of the day', async () => (await wjs(`!!document.querySelector('.wiki-text .wiki-caption')`)) === true)
     const show = await post(door.port, '/tile/wikipedia', { op: 'show', args: ['Red fox'] }, auth)
     check('wikipedia door: show opens the article in the tile', (await wjs(`document.querySelector('.wiki-article .wiki-title')?.textContent ?? ''`)).includes('Red fox'))
     const found = await post(door.port, '/tile/wikipedia', { op: 'search', args: ['red', 'fox'] }, auth)
@@ -209,6 +209,10 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await devTiles(check, liveByTile, door.port, addDevTile)
     if (process.env.WORKSHOP_REAL_CLAUDE) {
       await realClaude(check, ctx)
+      return finish(results, ctx)
+    }
+    if (process.env.WORKSHOP_REAL_INDEX) {
+      await realIndex(check, ctx)
       return finish(results, ctx)
     }
     await sessions(check, ctx)
@@ -321,7 +325,7 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
     wiki.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
     wiki.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
   }
-  await waitFor('the picture to be up', async () => (await wjs(`document.body.classList.contains('wiki-picture') && !!document.querySelector('.wiki-text .wiki-title')`)) === true)
+  await waitFor('the picture to be up', async () => (await wjs(`document.body.classList.contains('wiki-picture') && !!document.querySelector('.wiki-text .wiki-caption')`)) === true)
 
   const bare = (await wjs(`workshop.openOverlay().then(() => 'opened', (e) => e.message)`)) as string
   check('overlay: refused without a click in the page', /click or key/.test(bare), bare)
