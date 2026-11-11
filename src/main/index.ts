@@ -125,12 +125,14 @@ interface Guest {
   usedAt: number
   /** When the user last clicked or typed in this page (0 once an overlay has used it up). */
   gestureAt: number
+  /** Which document the webContents holds: a reload keeps the webContents (and its id) but is a new page. */
+  doc: number
 }
 /** Live tile pages by webContents id, and by instance key. A tile's first instance's key is its id. */
 const guests = new Map<number, Guest>()
 const liveByTile = new Map<string, Guest>()
 /** One page of an instance, for the door: a reload gives the instance a new page, and a call belongs to the page it went to. */
-const pageOf = (g: Guest): string => `${g.key}@${g.wc.id}`
+const pageOf = (g: Guest): string => `${g.key}@${g.wc.id}#${g.doc}`
 const instancesOf = (id: string): Guest[] => [...liveByTile.values()].filter((g) => g.tile.manifest.id === id)
 /** Keyed by instance. */
 const views = new Map<string, TileView>()
@@ -373,7 +375,7 @@ function guardWebviews(w: BrowserWindow): void {
     // Core's window asked for this page. If the instance already had one (the window reloading,
     // a dev tile loaded again), the new page takes over and the old one is on its way out.
     const { tile, key } = found
-    const g: Guest = { tile, wc, key, ops: new Set(), usedAt: Date.now(), gestureAt: 0 }
+    const g: Guest = { tile, wc, key, ops: new Set(), usedAt: Date.now(), gestureAt: 0, doc: 0 }
     const id = tile.manifest.id
     guests.set(wc.id, g)
     liveByTile.set(key, g)
@@ -402,6 +404,16 @@ function guardWebviews(w: BrowserWindow): void {
     })
     wc.on('will-redirect', (ev, url) => {
       if (!own(url)) ev.preventDefault()
+    })
+    // A reload (a dev tile saved, smoke, a crash) keeps this webContents but ends its document.
+    // When the new one commits (not when a navigation starts: one the sandbox cancels must leave
+    // the page answering), its ops are its own to register (until then the door says "not
+    // answering yet"), and a call the old one took and never answered fails at once rather than
+    // waiting out the tile's timeout.
+    wc.on('did-navigate', () => {
+      g.ops.clear()
+      door.dropPage(pageOf(g))
+      g.doc++
     })
     wc.once('destroyed', () => {
       guests.delete(wc.id)

@@ -839,7 +839,15 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   // The page reloads (a dev tile after an edit, the window after a crash): what it kept comes back,
   // and a call the NEW page takes is not failed by the old page going away (open issue B).
   const oldPage = liveByTile.get('reminders')!.wc
+  // Waits for the NEW document: the old one can still answer a call made just after reload().
+  const reloaded = new Promise<void>((r) => oldPage.once('did-navigate', () => r()))
   oldPage.reload()
+  // A call made as the page goes away is answered (by the old page), refused or failed at once,
+  // never left to the tile's timeout.
+  const t0 = Date.now()
+  const during = await outside('list', '--all')
+  check('reminders: a call during a reload never waits out the timeout', Date.now() - t0 < 5000 && !/did not answer within/.test(during.json.error ?? ''), `${Date.now() - t0} ms ${JSON.stringify(during.json).slice(0, 120)}`)
+  await reloaded
   await waitFor('the reminders page to come back', async () => (await outside('list', '--all')).status === 200)
   const back = await outside('list', '--all')
   check('reminders: a reloaded page has what it kept', back.json.result?.reminders?.[0]?.text === 'Rotate the test key', JSON.stringify(back.json).slice(0, 200))
