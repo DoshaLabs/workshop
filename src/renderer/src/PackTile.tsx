@@ -7,7 +7,7 @@
 // still working is chosen until you pick one.
 //
 // Per agent, on its line: pause / resume (only when the leash is wired, since nothing else can
-// hold a tool call), kill (two clicks in place: the first arms it red for three seconds), and ×
+// hold a tool call), kill (■, two clicks in place: the first arms it red for three seconds), and ×
 // for a finished one, or the last resort for one whose stop never came.
 
 import { useEffect, useState } from 'react'
@@ -109,7 +109,7 @@ function AgentLine({ a, leash, now }: { a: AgentView; leash: boolean; now: numbe
             act(window.core.agents.kill(a.id))
           }}
         >
-          {armed ? 'stop' : '✕'}
+          {armed ? 'stop' : '■'}
         </button>
       )}
       <button className="ghost pack-dismiss" title={finished ? (a.kind === 'helper' ? 'Clear it (its background session is stopped)' : 'Clear it') : 'Forget it (if its end never came through)'} onClick={() => act(window.core.agents.dismiss(a.id))}>

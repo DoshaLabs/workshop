@@ -8,7 +8,7 @@
 // Then a tile reads a session's conversation with the permission, and is refused without it.
 
 import type { BrowserWindow, WebContents } from 'electron'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AgentView } from '@shared/agents'
 import type { CoreSessions } from './core-sessions'
@@ -162,6 +162,15 @@ export async function agentsSmoke(check: Check, o: O, id: string): Promise<void>
   const outside = await core.call('helper', '0'.repeat(48), { op: 'list' }).then(() => 'listed', (e: Error) => e.message)
   check('helpers: only a session inside workshop can start or list them', /only a session/.test(outside), outside)
 
+  // WORKSHOP_SHOT_PACK=<file.png>: a picture of the window with a pack of three, to eyeball the tile.
+  if (process.env.WORKSHOP_SHOT_PACK) {
+    await type('agent hold')
+    await sleep(2500)
+    await writeFile(process.env.WORKSHOP_SHOT_PACK, (await win.webContents.capturePage()).toPNG())
+    const extra = await idOf('hold')
+    if (agent(extra)) await js(`window.core.agents.dismiss(${JSON.stringify(extra)})`)
+  }
+
   // The finished ones' × clears them; the column is left as it was.
   for (const a of core.agentsState().agents.filter((x) => x.parent === id)) await js(`window.core.agents.dismiss(${JSON.stringify(a.id)})`)
   await waitFor(async () => (await js(`!document.querySelector('.pack-tile')`)) === true, 3000)
@@ -175,7 +184,7 @@ export async function transcriptsSmoke(check: Check, o: O, id: string): Promise<
   const wiki = liveByTile.get('wikipedia')!.wc
   const screen = async (): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
   const t = (await probe.executeJavaScript(`workshop.sessions.transcript(${JSON.stringify(id)})`)) as { id: string; blocks: { kind: string; text?: string }[]; found: boolean } | null
-  check('transcripts: a tile with the permission reads a session\'s conversation, parsed', !!t && t.id === id && t.found && t.blocks.some((b) => b.kind === 'user' && b.text === 'hello') && t.blocks.some((b) => b.kind === 'tool'), JSON.stringify(t).slice(0, 300))
+  check('transcripts: a tile with the permission reads a session\'s conversation, parsed', !!t && t.id === id && t.found && JSON.stringify(t.blocks) === JSON.stringify(core.transcripts.get(id)?.blocks) && t.blocks.some((b) => b.kind === 'user') && t.blocks.some((b) => b.kind === 'tool'), JSON.stringify(t).slice(0, 300))
   check('transcripts: the shape a session tile draws, not the raw lines', !!t && !JSON.stringify(t).includes('isSidechain') && !JSON.stringify(t).includes('SIDECHAIN NOT SHOWN') && !JSON.stringify(t).includes('META NOT SHOWN'))
   await probe.executeJavaScript(`window.seenT = []; window.stopT = workshop.sessions.watchTranscript(${JSON.stringify(id)}, (t) => window.seenT.push(t)); true`)
   await win.webContents.executeJavaScript(`window.core.ptyInput(${JSON.stringify(id)}, 'watched turn\\r'); true`)
