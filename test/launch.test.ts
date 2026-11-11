@@ -1,3 +1,4 @@
+import semver from 'semver'
 // `sessions: "launch"` (bridge 1.4): the manifest takes it only for a tile built for 1.4 or later,
 // the words say what it does, and what a tile may fill the launcher with is checked for shape.
 // Also the Worktrees tab's page rules (tiles/git/dist/model.js), as the tile ships them.
@@ -15,8 +16,8 @@ const errs = (m: unknown): string[] => {
 }
 
 describe('sessions: "launch"', () => {
-  it('is bridge 1.4', () => {
-    expect(BRIDGE_VERSION).toBe('1.4.0')
+  it('came with bridge 1.4 (this core is later)', () => {
+    expect(semver.gte(BRIDGE_VERSION, '1.4.0')).toBe(true)
   })
 
   it('is taken only by a tile that says it needs bridge 1.4 or later', () => {

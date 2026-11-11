@@ -12,7 +12,7 @@ import type { TileInfo } from '@shared/ipc'
 import type { Permissions } from '@shared/manifest'
 import type { IndexEntry } from '@shared/tile-index'
 import type { IndexState, InstallRecord, PendingInstall } from '@shared/tile-menu'
-import { FULL_ACCESS, permissionWords } from '@shared/permissions'
+import { FULL_ACCESS, TRANSCRIPTS_WARNING, TRANSCRIPTS_WORDS, permissionWords } from '@shared/permissions'
 
 type Tab = 'builtin' | 'yours' | 'market'
 const TABS: [Tab, string][] = [
@@ -120,8 +120,8 @@ export function TilePicker({
 
 /** One tile, the same on every tab. `children` are its buttons. */
 function TileRow({ icon, name, hint, permissions, badge, on, children }: { icon?: string; name: string; hint?: string; permissions: Permissions; badge?: string; on?: boolean; children?: ReactNode }) {
-  // Full access gets a line of its own, so it is never one more item in a list.
-  const words = permissionWords(permissions).filter((w) => w !== FULL_ACCESS)
+  // Full access, and reading the conversations, get a line of their own, so neither is one more item in a list.
+  const words = permissionWords(permissions).filter((w) => w !== FULL_ACCESS && w !== TRANSCRIPTS_WORDS)
   return (
     <div className="pick-row" data-on={on ? 'true' : 'false'}>
       {icon ? <img className="icon" src={icon} alt="" /> : <span className="icon letter">{name[0]}</span>}
@@ -133,7 +133,8 @@ function TileRow({ icon, name, hint, permissions, badge, on, children }: { icon?
         </div>
         {hint && <span className="pick-hint">{hint}</span>}
         {permissions.backend && <span className="pick-full">Full access to this Mac: it runs its own program beside its page. Only tiles that ship with workshop may.</span>}
-        <span className="pick-perms">{words.length ? `Can ${words.join(' · ')}` : permissions.backend ? 'Asks for nothing else' : 'Asks for nothing beyond its own page'}</span>
+        {permissions.transcripts && <span className="pick-full pick-transcripts">{TRANSCRIPTS_WARNING}</span>}
+        <span className="pick-perms">{words.length ? `Can ${words.join(' · ')}` : permissions.backend || permissions.transcripts ? 'Asks for nothing else' : 'Asks for nothing beyond its own page'}</span>
       </div>
       <div className="pick-acts">{children}</div>
     </div>
@@ -419,6 +420,7 @@ function Prompt({ p, busy, onYes, onNo, problem }: { p: PendingInstall; busy: bo
         <code>{p.repo}</code> at <code>{short(p.commit)}</code>
       </p>
       {p.hint && <p className="pick-hint">{p.hint}</p>}
+      {p.permissions.transcripts && (!change || change.added.includes(TRANSCRIPTS_WORDS)) && <p className="pick-full pick-transcripts">{TRANSCRIPTS_WARNING}</p>}
       {change ? (
         <>
           <p>It now also asks to:</p>

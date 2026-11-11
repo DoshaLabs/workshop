@@ -33,6 +33,7 @@ import { Recorder } from './recorder'
 import { REC, REC_DEFAULTS } from '@shared/recorder'
 import { launchRequest, type LaunchPrefill, type SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
+import type { Transcript } from '@shared/transcript'
 import { parseBuildInfo } from '@shared/update'
 import { Updater, bundleOf } from './updates'
 import { placeWindow } from './window-bounds'
@@ -266,7 +267,7 @@ function guestOf(e: IpcMainEvent | IpcMainInvokeEvent): Guest | null {
 }
 const tileOf = (e: IpcMainEvent | IpcMainInvokeEvent): Tile | null => guestOf(e)?.tile ?? null
 
-function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage' | 'overlay'): Guest {
+function need(e: IpcMainInvokeEvent | IpcMainEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage' | 'overlay' | 'transcripts'): Guest {
   const g = guestOf(e)
   if (!g) throw new Error('not a tile')
   if (perm && !g.tile.manifest.permissions[perm]) throw new Error(`this tile did not ask for "${perm}" in tile.json`)
@@ -478,6 +479,20 @@ function pushSessions(s: SessionsState): void {
     for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
   })()
 }
+/**
+ * "transcripts" (bridge 1.5): which sessions' conversations each tile page watches, by webContents
+ * id. A page hears only the sessions it asked for, and only while it has the permission.
+ */
+const transcriptWatch = new Map<number, { g: Guest; ids: Set<string> }>()
+/** A session's conversation as core parses it (what a session tile shows), for a tile; only a session's, never a subagent's. */
+function tileTranscript(id: unknown): Transcript | null {
+  const sid = String(id)
+  if (!/^[0-9a-f]{6}$/.test(sid) || !core?.sessions.find(sid)) throw new Error('sessions.transcript: no such session')
+  return core.transcripts.get(sid)
+}
+function pushTranscript(t: Transcript): void {
+  for (const { g, ids } of transcriptWatch.values()) if (ids.has(t.id) && g.tile.manifest.permissions.transcripts && !g.wc.isDestroyed()) g.wc.send(CH.tileTranscriptChanged, t.id, t)
+}
 function pushUsage(u: Usage): void {
   for (const g of liveByTile.values()) if (g.tile.manifest.permissions.usage) g.wc.send(CH.tileUsageChanged, u)
 }
@@ -520,6 +535,27 @@ function bridge(): void {
     const prefill: LaunchPrefill = { cwd: resolve(req.folder), worktree: req.worktree, ...(req.branch ? { branch: req.branch } : {}), nonce: Date.now() }
     if (SMOKE) smokeLaunches.push(prefill)
     win?.webContents.send(CH.sessionsLaunch, prefill)
+  })
+  ipcMain.handle(CH.tileTranscriptGet, (e, id: unknown) => {
+    need(e, 'transcripts')
+    return tileTranscript(id)
+  })
+  ipcMain.on(CH.tileTranscriptWatch, (e, id: unknown, on: unknown) => {
+    let g: Guest
+    try {
+      g = need(e, 'transcripts')
+      tileTranscript(id)
+    } catch {
+      return
+    }
+    let w = transcriptWatch.get(g.wc.id)
+    if (!w) {
+      const wcId = g.wc.id
+      transcriptWatch.set(wcId, (w = { g, ids: new Set() }))
+      g.wc.once('destroyed', () => transcriptWatch.delete(wcId))
+    }
+    if (on === true) w.ids.add(String(id))
+    else w.ids.delete(String(id))
   })
   ipcMain.handle(CH.tileUsageGet, (e) => {
     need(e, 'usage')
@@ -904,6 +940,7 @@ app.whenReady().then(async () => {
     claudeConfigDir: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getPath('userData'), 'claude-config') : undefined,
     onState: pushSessions,
     onUsage: pushUsage,
+    onTranscript: pushTranscript,
     // Which session made a commit (main/commits.ts): to the backends, whose History tab tags with it.
     onCommits: (all) => backends.setCommits(all)
   })

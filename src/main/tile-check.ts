@@ -12,6 +12,7 @@ import { lstat, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { TRUSTED_ONLY, checkManifest, devServerOrigin, type Manifest } from '../shared/manifest'
 import { checkPlugin } from './plugin'
+import { needsReview } from '../shared/permissions'
 
 export interface FolderCheck {
   ok: boolean
@@ -22,6 +23,11 @@ export interface FolderCheck {
   errors: string[]
   /** What core will load, but probably not the way the author meant. */
   warnings: string[]
+  /**
+   * Why the index must route this tile to a person before listing it (transcripts with net), or
+   * null. Not an error: the tile loads; it just is not listed on automated checks alone.
+   */
+  review: string | null
 }
 
 export interface CheckOpts {
@@ -57,7 +63,7 @@ export { TRUSTED_ONLY }
 export async function checkTileFolder(folder: string, opts: CheckOpts = {}): Promise<FolderCheck> {
   const errors: string[] = []
   const warnings: string[] = []
-  const out = (manifest: Manifest | null): FolderCheck => ({ ok: errors.length === 0, folder, manifest: errors.length ? null : manifest, errors, warnings })
+  const out = (manifest: Manifest | null): FolderCheck => ({ ok: errors.length === 0, folder, manifest: errors.length ? null : manifest, errors, warnings, review: manifest ? needsReview(manifest.permissions) : null })
 
   let root: string
   try {
@@ -173,5 +179,6 @@ export function formatCheck(c: FolderCheck): string {
   lines.push(c.ok ? `ok  ${c.manifest!.name} (${c.manifest!.id} ${c.manifest!.version}) in ${c.folder}` : `refused  ${c.folder}`)
   for (const e of c.errors) lines.push(`  error    ${e}`)
   for (const w of c.warnings) lines.push(`  warning  ${w}`)
+  if (c.review) lines.push(`  review   ${c.review}`)
   return lines.join('\n')
 }
