@@ -8,7 +8,7 @@
 // touches the Mac's audio output, so BlackHole and the sound helper are not exercised here.
 
 import type { BrowserWindow, WebContents } from 'electron'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { ASPECT, innerOf, outSize } from '@shared/recorder'
 import type { Recorder } from './recorder'
@@ -152,12 +152,53 @@ export async function recorderSmoke(
       check('recorder: a Column take is the column at its own size (ffprobe)', got === `h264,${want.w},${want.h}`, `${got} want ${want.w}x${want.h}`)
     } else check('recorder: a Column take is saved', ok, recorder.getState().phase)
   } else check('recorder: a Column take starts', false, recorder.getState().phase)
+  // The brand clip: made, not filmed. Its canvas is the preview in the frame and what a take records.
+  await pjs(`document.querySelectorAll('.rec-fit button')[2].click(); true`)
+  const shown = await waitFor(async () => (await pjs(`(() => { const c = document.querySelector('.rec-inner .rec-brand canvas'); return !!c && c.width === 1080 && c.height === 1920 })()`)) === true)
+  check('recorder: Brand shows the brand clip in the frame, 1080 × 1920', shown)
+  check('recorder: Brand keeps the 9:16 frame (off the column)', await waitFor(() => {
+    const i = innerOf(recorder.bounds()!)
+    return Math.abs(i.width - Math.round(i.height * ASPECT)) <= 1
+  }), JSON.stringify(recorder.bounds()))
+  // Drawn, not blank: the sky's dark, the Knot's and the word's light, and it moves.
+  const look = (await pjs(`(() => {
+    const c = document.querySelector('.rec-brand canvas'), g = c.getContext('2d')
+    const lum = (x, y, w, h) => { const d = g.getImageData(x, y, w, h).data; let s = 0; for (let i = 0; i < d.length; i += 4) s += d[i] + d[i + 1] + d[i + 2]; return s / (d.length / 4) / 3 }
+    return { corner: lum(0, 0, 120, 120), middle: lum(240, 560, 600, 800), url: c.toDataURL('image/png') }
+  })()`)) as { corner: number; middle: number; url: string }
+  check('recorder: the brand clip is drawn: a dark sky, the mark and the word lit in the middle', look.corner < 60 && look.middle > look.corner + 8, JSON.stringify({ corner: look.corner, middle: look.middle }))
+  if (process.env.WORKSHOP_SHOT_BRAND) {
+    // Three frames a second apart (…-1.png, -2, -3): the stars should be seen moving between them.
+    for (let i = 1; i <= 3; i++) {
+      const url = i === 1 ? look.url : ((await pjs(`document.querySelector('.rec-brand canvas').toDataURL('image/png')`)) as string)
+      await writeFile(process.env.WORKSHOP_SHOT_BRAND.replace(/\.png$/, `-${i}.png`), Buffer.from(url.split(',')[1], 'base64'))
+      await sleep(1000)
+    }
+  }
+  await pjs(`document.querySelector('.rec-go').click(); true`)
+  if (await waitFor(() => recorder.getState().phase === 'recording', 8000)) {
+    await sleep(1500)
+    cmdShiftO(win.webContents)
+    const ok = await waitFor(() => recorder.getState().phase === 'saved', 60_000)
+    const ffprobe = findInPath(shellEnv().PATH, 'ffprobe')
+    if (ok && ffprobe && recorder.lastSaved.endsWith('.mp4')) {
+      let got = ''
+      try {
+        got = execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,width,height', '-of', 'csv=p=0', recorder.lastSaved], { encoding: 'utf8', timeout: 20_000 }).trim()
+      } catch (e) {
+        got = (e as Error).message
+      }
+      check('recorder: a Brand take is the clip at 1080×1920 (ffprobe)', got === 'h264,1080,1920', got)
+    } else check('recorder: a Brand take is saved', ok, recorder.getState().phase)
+  } else check('recorder: a Brand take starts', false, recorder.getState().phase)
+
   await pjs(`document.querySelectorAll('.rec-fit button')[0].click(); true`)
   const back = await waitFor(() => {
     const i = innerOf(recorder.bounds()!)
     return Math.abs(i.width - Math.round(i.height * ASPECT)) <= 1
   })
   check('recorder: 9:16 brings the reel frame back', back, JSON.stringify(recorder.bounds()))
+  check('recorder: off Brand, the clip stops and leaves the frame', (await pjs(`!document.querySelector('.rec-brand')`)) === true)
 
   // ⌘⇧O again, with nothing filming, closes the frame.
   cmdShiftO(win.webContents)

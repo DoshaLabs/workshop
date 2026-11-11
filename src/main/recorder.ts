@@ -348,8 +348,10 @@ export class Recorder {
       if (this.state.phase !== 'idle' && this.state.phase !== 'saved' && this.state.phase !== 'error') next.fit = was
       await this.deps.savePrefs(next)
       if (next.fit === was) return
-      // Back to a reel: the 9:16 frame where it first opens. To the center: over the column.
-      if (next.fit === 'reel') {
+      // Off the column (a reel, the brand clip): the 9:16 frame where it first opens. To the center:
+      // over the column. Between a reel and the brand clip the frame stays where it is.
+      if (next.fit !== 'center' && was !== 'center') return
+      if (next.fit !== 'center') {
         const core = this.deps.core()
         const area = (core && !core.isDestroyed() ? screen.getDisplayMatching(core.getBounds()) : screen.getDisplayMatching(this.win!.getBounds())).workArea
         this.win!.setBounds(firstFrame(area))
@@ -365,11 +367,11 @@ export class Recorder {
     // The border or the bar dragged: the window's new top-left corner.
     ipcMain.on(REC.move, (e, x: unknown, y: unknown) => {
       // The center fit is where the column is, not where it is dragged.
-      if (mine(e) && this.fit() === 'reel' && Number.isFinite(x) && Number.isFinite(y)) this.win!.setPosition(int(x as number), int(y as number))
+      if (mine(e) && this.fit() !== 'center' && Number.isFinite(x) && Number.isFinite(y)) this.win!.setPosition(int(x as number), int(y as number))
     })
     // The corner handle: the filmed rectangle's new height, the top-left corner staying put.
     ipcMain.on(REC.resize, (e, height: unknown) => {
-      if (!mine(e) || this.fit() !== 'reel') return
+      if (!mine(e) || this.fit() === 'center') return
       const b = this.win!.getBounds()
       this.win!.setBounds(resized(b, Number(height), screen.getDisplayMatching(b).workArea))
     })

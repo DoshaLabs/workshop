@@ -63,19 +63,6 @@ interface Nebula {
   tex: HTMLCanvasElement
 }
 
-let wall: HTMLDivElement | null = null
-let nebCanvas: HTMLCanvasElement | null = null
-let starCanvas: HTMLCanvasElement | null = null
-let backdrop: HTMLCanvasElement | null = null
-let glow: HTMLCanvasElement | null = null
-let stars: Star[] = []
-let nebulae: Nebula[] = []
-let raf = 0
-let last = 0
-let t = 0
-let w = 0
-let h = 0
-let dpr = 1
 let seed = (Date.now() % 100000) + 1
 
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -188,61 +175,6 @@ function glowSprite(): HTMLCanvasElement {
   return c
 }
 
-/** The far sky: deep space, faint dust and a few thousand stars too far to move. A margin all round for the pan. */
-function makeBackdrop(): HTMLCanvasElement {
-  const c = document.createElement('canvas')
-  const m = 0.12
-  c.width = Math.ceil(w * (1 + 2 * m) * dpr)
-  c.height = Math.ceil(h * (1 + 2 * m) * dpr)
-  const ctx = c.getContext('2d')
-  if (!ctx) return c
-  const g = ctx.createRadialGradient(c.width * 0.5, c.height * 0.45, 0, c.width * 0.5, c.height * 0.5, Math.max(c.width, c.height) * 0.75)
-  g.addColorStop(0, '#0b0d22')
-  g.addColorStop(0.6, '#060714')
-  g.addColorStop(1, '#020309')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, c.width, c.height)
-  // A faint band of dust across the sky, the Milky Way's idea, from a small noise field smoothed up.
-  const dn = 96
-  const dust = document.createElement('canvas')
-  dust.width = dn
-  dust.height = Math.round((dn * c.height) / c.width)
-  const dctx = dust.getContext('2d')
-  if (dctx) {
-    const img = dctx.createImageData(dust.width, dust.height)
-    const s = Math.floor(rand() * 1e6)
-    const tilt = rand() * 0.8 - 0.4
-    for (let j = 0; j < dust.height; j++) {
-      for (let i = 0; i < dust.width; i++) {
-        const u = i / dust.width
-        const v = j / dust.height
-        const band = Math.exp(-Math.pow((v - 0.5 - (u - 0.5) * tilt) * 3.2, 2))
-        const d = fbm(u * 5, v * 5, s, 4) * band
-        const o = (j * dust.width + i) * 4
-        img.data[o] = 120
-        img.data[o + 1] = 110
-        img.data[o + 2] = 170
-        img.data[o + 3] = Math.max(0, d - 0.25) * 110
-      }
-    }
-    dctx.putImageData(img, 0, 0)
-    ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(dust, 0, 0, c.width, c.height)
-  }
-  const count = Math.round((c.width * c.height) / (2600 * dpr * dpr))
-  for (let i = 0; i < count; i++) {
-    const x = rand() * c.width
-    const y = rand() * c.height
-    const a = 0.15 + Math.pow(rand(), 3) * 0.75
-    ctx.fillStyle = STAR_COLORS[Math.floor(rand() * STAR_COLORS.length)]
-    ctx.globalAlpha = a
-    const r = (rand() < 0.04 ? 1.2 : 0.6) * dpr
-    ctx.fillRect(x, y, r, r)
-  }
-  ctx.globalAlpha = 1
-  return c
-}
-
 function newStar(far: boolean): Star {
   return {
     x: (rand() * 2 - 1) * 1.3,
@@ -262,108 +194,239 @@ function newNebula(z: number): Nebula {
   return { x: Math.cos(a) * r, y: Math.sin(a) * r * 0.7, z, size: 0.9 + rand() * 0.8, spin: (rand() - 0.5) * 0.6, tex: nebulaTexture() }
 }
 
-// ---- the flight ----
+// ---- a sky: the flight, drawn into two canvases of its own ----
 
-/** Where the ship is pointed: the vanishing point (CSS px) and the roll. */
-function heading(): { vx: number; vy: number; roll: number } {
-  return {
-    vx: w * (0.5 + 0.16 * Math.sin(t / 97) + 0.05 * Math.sin(t / 41 + 2)),
-    vy: h * (0.5 + 0.12 * Math.sin(t / 131 + 1) + 0.04 * Math.sin(t / 53)),
-    roll: 0.09 * Math.sin(t / 173) + 0.03 * Math.sin(t / 61 + 4)
-  }
+export interface SkyOptions {
+  /** How large the nebulae are drawn against the window's sky (1). Under 1, stars show round them. */
+  nebula?: number
+  /** How far the ship wanders off the middle (1). Under 1, the flight holds nearer the centre. */
+  steer?: number
+  /** How large the stars are drawn (1): a frame seen small, on a phone, wants them larger. */
+  star?: number
+  /** How many stars are in flight (STARS). */
+  count?: number
 }
 
-function draw(dt: number): void {
-  if (!nebCanvas || !starCanvas || !backdrop || !glow) return
-  const nctx = nebCanvas.getContext('2d')
-  const sctx = starCanvas.getContext('2d')
-  if (!nctx || !sctx) return
-  const { vx, vy, roll } = heading()
-  const f = Math.max(w, h) * 0.55
-  const cos = Math.cos(roll)
-  const sin = Math.sin(roll)
+/**
+ * Deep Space's sky at any size: the window's wall (below), and the recorder's brand clip, which
+ * draws one into the frames it records. It keeps its own stars, nebulae and clock; `draw(dt)`
+ * moves it on dt seconds and paints `neb` (half resolution) and `stars`, laid one over the other.
+ */
+export class Sky {
+  readonly neb = document.createElement('canvas')
+  readonly stars = document.createElement('canvas')
+  private backdrop: HTMLCanvasElement | null = null
+  private readonly glow = glowSprite()
+  private readonly field: Star[]
+  // Staggered through the depth so one is always near, one mid-way, one coming.
+  private nebulae: Nebula[] = Array.from({ length: NEBULAE }, (_, i) => newNebula(NEB_NEAR + 0.25 + ((NEB_FAR - NEB_NEAR - 0.25) * (i + rand() * 0.5)) / NEBULAE))
+  private t = 0
+  w = 0
+  h = 0
+  dpr = 1
+  private readonly nebulaScale: number
+  private readonly steer: number
+  private readonly starScale: number
 
-  // The far sky pans a little against the heading; then the nebulae, added light on it.
-  const nr = NEB_RES
-  nctx.globalCompositeOperation = 'source-over'
-  nctx.globalAlpha = 1
-  const mx = (vx - w / 2) * 0.06
-  const my = (vy - h / 2) * 0.06
-  nctx.drawImage(backdrop, (-w * 0.12 - mx) * nr, (-h * 0.12 - my) * nr, w * 1.24 * nr, h * 1.24 * nr)
-  nctx.globalCompositeOperation = 'lighter'
-  for (let i = 0; i < nebulae.length; i++) {
-    const nb = nebulae[i]
-    nb.z -= NEB_SPEED * dt
-    if (nb.z <= NEB_NEAR) {
-      nebulae[i] = newNebula(NEB_FAR)
-      continue
-    }
-    const fadeIn = Math.min(1, (NEB_FAR - nb.z) / 0.45)
-    const fadeOut = Math.min(1, (nb.z - NEB_NEAR) / 0.35)
-    const alpha = 0.85 * fadeIn * fadeOut
-    if (alpha <= 0) continue
-    const scale = f / nb.z
-    const rx = nb.x * cos - nb.y * sin
-    const ry = nb.x * sin + nb.y * cos
-    const cx = vx + rx * scale
-    const cy = vy + ry * scale
-    const size = nb.size * scale
-    nctx.save()
-    nctx.globalAlpha = alpha
-    nctx.translate(cx * nr, cy * nr)
-    nctx.rotate(roll + nb.spin)
-    nctx.drawImage(nb.tex, (-size / 2) * nr, (-size / 2) * nr, size * nr, size * nr)
-    nctx.restore()
+  constructor(o: SkyOptions = {}) {
+    this.nebulaScale = o.nebula ?? 1
+    this.steer = o.steer ?? 1
+    this.starScale = o.star ?? 1
+    this.field = Array.from({ length: o.count ?? STARS }, () => newStar(false))
   }
 
-  // Stars: projected from the vanishing point, a streak from where each was a frame ago.
-  sctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  sctx.clearRect(0, 0, w, h)
-  sctx.globalCompositeOperation = 'lighter'
-  sctx.lineCap = 'round'
-  for (let i = 0; i < stars.length; i++) {
-    const s = stars[i]
-    s.z -= STAR_SPEED * dt
-    const rx = s.x * cos - s.y * sin
-    const ry = s.x * sin + s.y * cos
-    const sx = vx + (rx / s.z) * f
-    const sy = vy + (ry / s.z) * f
-    if (s.z <= 0.02 || sx < -40 || sx > w + 40 || sy < -40 || sy > h + 40) {
-      stars[i] = newStar(true)
-      continue
+  /** A new size (CSS px) and pixel ratio: the canvases and the far sky are made again. */
+  resize(w: number, h: number, dpr: number): void {
+    this.w = w
+    this.h = h
+    this.dpr = dpr
+    this.neb.width = Math.ceil(w * NEB_RES)
+    this.neb.height = Math.ceil(h * NEB_RES)
+    this.stars.width = Math.ceil(w * dpr)
+    this.stars.height = Math.ceil(h * dpr)
+    this.backdrop = this.makeBackdrop()
+    for (const s of this.field) s.px = s.py = NaN
+    this.draw(0)
+  }
+
+  /** Both layers into `ctx`, filling `w` × `h` of it. */
+  paint(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+    ctx.drawImage(this.neb, 0, 0, w, h)
+    ctx.drawImage(this.stars, 0, 0, w, h)
+  }
+
+  /** The far sky: deep space, faint dust and a few thousand stars too far to move. A margin all round for the pan. */
+  private makeBackdrop(): HTMLCanvasElement {
+    const { w, h, dpr } = this
+    const c = document.createElement('canvas')
+    const m = 0.12
+    c.width = Math.ceil(w * (1 + 2 * m) * dpr)
+    c.height = Math.ceil(h * (1 + 2 * m) * dpr)
+    const ctx = c.getContext('2d')
+    if (!ctx) return c
+    const g = ctx.createRadialGradient(c.width * 0.5, c.height * 0.45, 0, c.width * 0.5, c.height * 0.5, Math.max(c.width, c.height) * 0.75)
+    g.addColorStop(0, '#0b0d22')
+    g.addColorStop(0.6, '#060714')
+    g.addColorStop(1, '#020309')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, c.width, c.height)
+    // A faint band of dust across the sky, the Milky Way's idea, from a small noise field smoothed up.
+    const dn = 96
+    const dust = document.createElement('canvas')
+    dust.width = dn
+    dust.height = Math.round((dn * c.height) / c.width)
+    const dctx = dust.getContext('2d')
+    if (dctx) {
+      const img = dctx.createImageData(dust.width, dust.height)
+      const s = Math.floor(rand() * 1e6)
+      const tilt = rand() * 0.8 - 0.4
+      for (let j = 0; j < dust.height; j++) {
+        for (let i = 0; i < dust.width; i++) {
+          const u = i / dust.width
+          const v = j / dust.height
+          const band = Math.exp(-Math.pow((v - 0.5 - (u - 0.5) * tilt) * 3.2, 2))
+          const d = fbm(u * 5, v * 5, s, 4) * band
+          const o = (j * dust.width + i) * 4
+          img.data[o] = 120
+          img.data[o + 1] = 110
+          img.data[o + 2] = 170
+          img.data[o + 3] = Math.max(0, d - 0.25) * 110
+        }
+      }
+      dctx.putImageData(img, 0, 0)
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(dust, 0, 0, c.width, c.height)
     }
-    const near = 1 - s.z
-    const twinkle = 0.8 + 0.2 * Math.sin(t * 2.3 + s.phase)
-    const alpha = Math.min(1, near * 1.4) * twinkle
-    const r = Math.min(3, s.size * (0.35 + 0.9 / (s.z * 3 + 0.4)))
-    sctx.globalAlpha = alpha
-    if (r > 1.6 && s.size > 1.2) {
-      const g = r * 7
-      sctx.globalAlpha = alpha * 0.55
-      sctx.drawImage(glow, sx - g / 2, sy - g / 2, g, g)
+    const count = Math.round((c.width * c.height) / (2600 * dpr * dpr))
+    for (let i = 0; i < count; i++) {
+      const x = rand() * c.width
+      const y = rand() * c.height
+      const a = 0.15 + Math.pow(rand(), 3) * 0.75
+      ctx.fillStyle = STAR_COLORS[Math.floor(rand() * STAR_COLORS.length)]
+      ctx.globalAlpha = a
+      const r = (rand() < 0.04 ? 1.2 : 0.6) * dpr * this.starScale
+      ctx.fillRect(x, y, r, r)
+    }
+    ctx.globalAlpha = 1
+    return c
+  }
+
+
+  /** Where the ship is pointed: the vanishing point (CSS px) and the roll. */
+  private heading(): { vx: number; vy: number; roll: number } {
+    const { w, h, t } = this
+    const k = this.steer
+    return {
+      vx: w * (0.5 + k * (0.16 * Math.sin(t / 97) + 0.05 * Math.sin(t / 41 + 2))),
+      vy: h * (0.5 + k * (0.12 * Math.sin(t / 131 + 1) + 0.04 * Math.sin(t / 53))),
+      roll: k * (0.09 * Math.sin(t / 173) + 0.03 * Math.sin(t / 61 + 4))
+    }
+  }
+
+  /** Move the flight on `dt` seconds and paint it. */
+  draw(dt: number): void {
+    const { backdrop, glow, w, h, dpr } = this
+    if (!backdrop) return
+    this.t += dt
+    const t = this.t
+    const nctx = this.neb.getContext('2d')
+    const sctx = this.stars.getContext('2d')
+    if (!nctx || !sctx) return
+    const { vx, vy, roll } = this.heading()
+    const f = Math.max(w, h) * 0.55
+    const cos = Math.cos(roll)
+    const sin = Math.sin(roll)
+    const nebulae = this.nebulae
+    const stars = this.field
+    // The far sky pans a little against the heading; then the nebulae, added light on it.
+    const nr = NEB_RES
+    nctx.globalCompositeOperation = 'source-over'
+    nctx.globalAlpha = 1
+    const mx = (vx - w / 2) * 0.06
+    const my = (vy - h / 2) * 0.06
+    nctx.drawImage(backdrop, (-w * 0.12 - mx) * nr, (-h * 0.12 - my) * nr, w * 1.24 * nr, h * 1.24 * nr)
+    nctx.globalCompositeOperation = 'lighter'
+    for (let i = 0; i < nebulae.length; i++) {
+      const nb = nebulae[i]
+      nb.z -= NEB_SPEED * dt
+      if (nb.z <= NEB_NEAR) {
+        nebulae[i] = newNebula(NEB_FAR)
+        continue
+      }
+      const fadeIn = Math.min(1, (NEB_FAR - nb.z) / 0.45)
+      const fadeOut = Math.min(1, (nb.z - NEB_NEAR) / 0.35)
+      const alpha = 0.85 * fadeIn * fadeOut
+      if (alpha <= 0) continue
+      const scale = f / nb.z
+      const rx = nb.x * cos - nb.y * sin
+      const ry = nb.x * sin + nb.y * cos
+      const cx = vx + rx * scale
+      const cy = vy + ry * scale
+      const size = nb.size * this.nebulaScale * scale
+      nctx.save()
+      nctx.globalAlpha = alpha
+      nctx.translate(cx * nr, cy * nr)
+      nctx.rotate(roll + nb.spin)
+      nctx.drawImage(nb.tex, (-size / 2) * nr, (-size / 2) * nr, size * nr, size * nr)
+      nctx.restore()
+    }
+
+    // Stars: projected from the vanishing point, a streak from where each was a frame ago.
+    sctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    sctx.clearRect(0, 0, w, h)
+    sctx.globalCompositeOperation = 'lighter'
+    sctx.lineCap = 'round'
+    for (let i = 0; i < stars.length; i++) {
+      const s = stars[i]
+      s.z -= STAR_SPEED * dt
+      const rx = s.x * cos - s.y * sin
+      const ry = s.x * sin + s.y * cos
+      const sx = vx + (rx / s.z) * f
+      const sy = vy + (ry / s.z) * f
+      if (s.z <= 0.02 || sx < -40 || sx > w + 40 || sy < -40 || sy > h + 40) {
+        stars[i] = newStar(true)
+        continue
+      }
+      const near = 1 - s.z
+      const twinkle = 0.8 + 0.2 * Math.sin(t * 2.3 + s.phase)
+      const alpha = Math.min(1, near * 1.4) * twinkle
+      const r = this.starScale * Math.min(3, s.size * (0.35 + 0.9 / (s.z * 3 + 0.4)))
       sctx.globalAlpha = alpha
+      if (r > 1.6 * this.starScale && s.size > 1.2) {
+        const g = r * 7
+        sctx.globalAlpha = alpha * 0.55
+        sctx.drawImage(glow, sx - g / 2, sy - g / 2, g, g)
+        sctx.globalAlpha = alpha
+      }
+      if (!Number.isNaN(s.px) && Math.hypot(sx - s.px, sy - s.py) > 0.6) {
+        sctx.strokeStyle = s.color
+        sctx.lineWidth = r
+        sctx.beginPath()
+        sctx.moveTo(s.px, s.py)
+        sctx.lineTo(sx, sy)
+        sctx.stroke()
+      } else {
+        sctx.fillStyle = s.color
+        sctx.beginPath()
+        sctx.arc(sx, sy, r / 2, 0, Math.PI * 2)
+        sctx.fill()
+      }
+      s.px = sx
+      s.py = sy
     }
-    if (!Number.isNaN(s.px) && Math.hypot(sx - s.px, sy - s.py) > 0.6) {
-      sctx.strokeStyle = s.color
-      sctx.lineWidth = r
-      sctx.beginPath()
-      sctx.moveTo(s.px, s.py)
-      sctx.lineTo(sx, sy)
-      sctx.stroke()
-    } else {
-      sctx.fillStyle = s.color
-      sctx.beginPath()
-      sctx.arc(sx, sy, r / 2, 0, Math.PI * 2)
-      sctx.fill()
-    }
-    s.px = sx
-    s.py = sy
   }
 }
+
+// ---- the window's wall: one sky, the window's size, at FPS while it can be seen ----
+
+let wall: HTMLDivElement | null = null
+let sky: Sky | null = null
+let raf = 0
+let last = 0
 
 function frame(now: number): void {
   raf = 0
-  if (!wall) return
+  if (!wall || !sky) return
   const dt = last ? (now - last) / 1000 : 0
   if (dt && dt < 1 / FPS - 0.004) {
     raf = requestAnimationFrame(frame)
@@ -371,9 +434,7 @@ function frame(now: number): void {
   }
   last = now
   // A long gap (a stall, a background tab) is not a jump across the sky.
-  const step = Math.min(dt, 0.1)
-  t += step
-  draw(step)
+  sky.draw(Math.min(dt, 0.1))
   if (!reduced.matches && !document.hidden) raf = requestAnimationFrame(frame)
 }
 
@@ -384,31 +445,17 @@ function start(): void {
 }
 
 function resize(): void {
-  if (!wall || !nebCanvas || !starCanvas) return
-  w = window.innerWidth
-  h = window.innerHeight
-  dpr = Math.min(window.devicePixelRatio || 1, 2)
-  nebCanvas.width = Math.ceil(w * NEB_RES)
-  nebCanvas.height = Math.ceil(h * NEB_RES)
-  starCanvas.width = Math.ceil(w * dpr)
-  starCanvas.height = Math.ceil(h * dpr)
-  backdrop = makeBackdrop()
-  for (const s of stars) s.px = s.py = NaN
-  draw(0)
+  if (!wall || !sky) return
+  sky.resize(window.innerWidth, window.innerHeight, Math.min(window.devicePixelRatio || 1, 2))
   start()
 }
 
 function build(): void {
   wall = document.createElement('div')
   wall.className = 'cosmos-wall'
-  nebCanvas = document.createElement('canvas')
-  starCanvas = document.createElement('canvas')
-  wall.append(nebCanvas, starCanvas)
+  sky = new Sky()
+  wall.append(sky.neb, sky.stars)
   document.body.prepend(wall)
-  glow = glowSprite()
-  stars = Array.from({ length: STARS }, () => newStar(false))
-  // Staggered through the depth so one is always near, one mid-way, one coming.
-  nebulae = Array.from({ length: NEBULAE }, (_, i) => newNebula(NEB_NEAR + 0.25 + ((NEB_FAR - NEB_NEAR - 0.25) * (i + rand() * 0.5)) / NEBULAE))
   window.addEventListener('resize', resize)
   document.addEventListener('visibilitychange', start)
   reduced.addEventListener('change', start)
@@ -422,9 +469,8 @@ function teardown(): void {
   document.removeEventListener('visibilitychange', start)
   reduced.removeEventListener('change', start)
   wall?.remove()
-  wall = nebCanvas = starCanvas = backdrop = null
-  stars = []
-  nebulae = []
+  wall = null
+  sky = null
 }
 
 /** Settings changed: put the sky up, or take it down. */

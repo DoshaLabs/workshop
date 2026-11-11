@@ -305,3 +305,37 @@ export function drawKnot(ctx: KnotCtx, { S, ph, palette, size, flare = 0, segs =
     }
   }
 }
+
+/**
+ * The strand's width grows with the box, tuned for the app's 24 to 88 px. Drawn far larger (the
+ * project page's hero, the recorder's brand clip), that is a fat tube, so above the app's sizes
+ * the width is scaled back: the same drawing, a finer line.
+ */
+export function fineLine(ctx: KnotCtx, S: number): KnotCtx {
+  const f = S <= 120 ? 1 : Math.max(0.5, 120 / S + 0.35)
+  if (f === 1) return ctx
+  return {
+    get strokeStyle() {
+      return ctx.strokeStyle
+    },
+    set strokeStyle(v) {
+      ctx.strokeStyle = v
+    },
+    get lineWidth() {
+      return ctx.lineWidth / f
+    },
+    set lineWidth(v) {
+      ctx.lineWidth = v * f
+    },
+    get lineCap() {
+      return ctx.lineCap
+    },
+    set lineCap(v) {
+      ctx.lineCap = v
+    },
+    beginPath: () => ctx.beginPath(),
+    moveTo: (x, y) => ctx.moveTo(x, y),
+    lineTo: (x, y) => ctx.lineTo(x, y),
+    stroke: () => ctx.stroke()
+  }
+}

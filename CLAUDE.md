@@ -192,7 +192,11 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   bar's button or ⌘⇧O opens a 9:16 frame you drag anywhere that films what is under it at
   1080 × 1920, or (its bar's `9:16 | Column` switch, `settings.recorder.fit`) the center column
   exactly, at its own size in the display's pixels, the frame following the window and its bar above
-  the column (`centerWindow`, `outSize` in `src/shared/recorder.ts`), with the Mac's sound through BlackHole (the user installs it) and optionally the
+  the column (`centerWindow`, `outSize` in `src/shared/recorder.ts`), or (`Brand`) no screen at all:
+  the brand clip (`recorder/brand.ts`), Deep Space's sky as a `Sky` of its own (`cosmos.ts`: smaller
+  nebulae, larger and more stars, the flight held near the middle) with the Knot turning at its
+  working speed over the word "workshop" (`scripts/wordmark.json`), drawn at 1080 × 1920 and
+  recorded as it is, with the take's sound, with the Mac's sound through BlackHole (the user installs it) and optionally the
   microphone, into `~/Movies/workshop/` (ffmpeg makes it Instagram's H.264 if installed). Core's
   own, on its own partition: tiles still get no screen capture. Smoke films a test pattern, never
   the screen.

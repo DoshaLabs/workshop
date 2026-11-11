@@ -3,7 +3,7 @@
 // large as the hero and small in the five states a session can be in.
 
 import './style.css'
-import { FLARE_MS, MODES, P, TAU, drawKnot, knotPalette, segsFor, wrapClock, type KnotCtx, type KnotMode, type KnotPalette } from '@shared/knot'
+import { FLARE_MS, MODES, P, TAU, drawKnot, fineLine, knotPalette, segsFor, wrapClock, type KnotMode, type KnotPalette } from '@shared/knot'
 import { COSMOS_ID, themeById } from '@shared/themes'
 import { syncCosmos } from '../src/renderer/src/cosmos'
 import { checkEntry, type IndexEntry } from '@shared/tile-index'
@@ -65,41 +65,7 @@ function draw(k: Live, now: number): void {
   const ph = (reduced.matches || look.loop === 0 ? 1.1 : k.clock) * TAU
   k.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   k.ctx.clearRect(0, 0, S, S)
-  drawKnot(large(k.ctx, S), { S, ph, palette: paletteFor(k.mode), size: look.size, flare, segs: Math.max(segsFor(S), Math.round(S * 0.6)) })
-}
-
-/**
- * The strand's width grows with the box, tuned for the app's 24 to 88 px. Drawn far larger, as
- * the hero is, that is a fat tube, so above the app's sizes the width is scaled back: the same
- * drawing, a finer line.
- */
-function large(ctx: CanvasRenderingContext2D, S: number): KnotCtx {
-  const f = S <= 120 ? 1 : Math.max(0.5, 120 / S + 0.35)
-  if (f === 1) return ctx
-  return {
-    get strokeStyle() {
-      return ctx.strokeStyle
-    },
-    set strokeStyle(v) {
-      ctx.strokeStyle = v
-    },
-    get lineWidth() {
-      return ctx.lineWidth / f
-    },
-    set lineWidth(v) {
-      ctx.lineWidth = v * f
-    },
-    get lineCap() {
-      return ctx.lineCap
-    },
-    set lineCap(v) {
-      ctx.lineCap = v
-    },
-    beginPath: () => ctx.beginPath(),
-    moveTo: (x, y) => ctx.moveTo(x, y),
-    lineTo: (x, y) => ctx.lineTo(x, y),
-    stroke: () => ctx.stroke()
-  }
+  drawKnot(fineLine(k.ctx, S), { S, ph, palette: paletteFor(k.mode), size: look.size, flare, segs: Math.max(segsFor(S), Math.round(S * 0.6)) })
 }
 
 let raf = 0

@@ -232,3 +232,15 @@ body,
   border-bottom: 1px solid var(--ws-line);
   cursor: default;
 }
+
+/* ---- The brand clip's preview: its 1080 × 1920 canvas, scaled into the frame's inside (also 9:16). */
+.rec-brand {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.rec-brand canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

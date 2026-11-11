@@ -58,9 +58,10 @@ export function resized(b: Rect, height: number, area: Rect): Rect {
  * What a take films. `reel`: the 9:16 frame you drag anywhere, at 1080 × 1920. `center`: exactly
  * workshop's center column (the focused session, the launcher, a pane), at its own size on the
  * screen, the frame following it; its bar sits above the column, in the window's top bar, where
- * there is room (the column's foot is often the screen's).
+ * there is room (the column's foot is often the screen's). `brand`: no screen at all, the brand
+ * clip (recorder/brand.ts) drawn in the reel's frame and recorded at 1080 × 1920.
  */
-export type RecFit = 'reel' | 'center'
+export type RecFit = 'reel' | 'center' | 'brand'
 
 /** The filmed rectangle on the screen, from the window's own bounds (the bar under it, or above it for `center`). */
 export function innerOf(win: Rect, fit: RecFit = 'reel'): Rect {
@@ -78,7 +79,7 @@ export function centerWindow(column: Rect): Rect {
  * (sharp on a Retina screen), each side even (H.264 wants it), at most 4096 on the long side.
  */
 export function outSize(fit: RecFit, inner: Rect, scale: number): { w: number; h: number } {
-  if (fit === 'reel') return { w: OUT_W, h: OUT_H }
+  if (fit !== 'center') return { w: OUT_W, h: OUT_H }
   const k = Math.min(Math.max(1, scale || 1), 4096 / Math.max(1, inner.width, inner.height))
   const even = (n: number): number => Math.max(2, 2 * Math.round((n * k) / 2))
   return { w: even(inner.width), h: even(inner.height) }
@@ -128,7 +129,7 @@ export interface RecPrefs {
   mic: boolean
   /** Instagram's safe zones drawn in the frame (never while filming). */
   guides: boolean
-  /** The 9:16 frame, or the center column. */
+  /** The 9:16 frame, the center column, or the brand clip. */
   fit: RecFit
 }
 
@@ -138,7 +139,7 @@ export const REC_DEFAULTS: RecPrefs = { sound: true, mic: false, guides: true, f
 export function cleanPrefs(raw: unknown, base: RecPrefs = REC_DEFAULTS): RecPrefs {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const pick = (k: 'sound' | 'mic' | 'guides'): boolean => (typeof r[k] === 'boolean' ? (r[k] as boolean) : base[k])
-  const fit: RecFit = r.fit === 'reel' || r.fit === 'center' ? r.fit : (base.fit ?? 'reel')
+  const fit: RecFit = r.fit === 'reel' || r.fit === 'center' || r.fit === 'brand' ? r.fit : (base.fit ?? 'reel')
   return { sound: pick('sound'), mic: pick('mic'), guides: pick('guides'), fit }
 }
 
