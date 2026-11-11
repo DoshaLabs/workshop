@@ -195,3 +195,40 @@ body,
   overflow: hidden;
   cursor: pointer;
 }
+
+/* ---- What to film: the 9:16 frame, or the center column. ---- */
+.rec-fit {
+  display: inline-flex;
+  margin: 0 4px;
+  padding: 2px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ws-line) 60%, transparent);
+}
+.rec-bar .rec-fit button {
+  height: 26px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 7px;
+}
+.rec-bar .rec-fit button.on {
+  color: var(--ws-bg);
+  background: var(--ws-accent);
+}
+
+/* The center column: the frame sits on the column exactly and follows it, so nothing drags; its bar
+   is above it, in workshop's top bar, where there is always room (the column's foot is often the
+   screen's). */
+.rec.fit-center .rec-frame {
+  inset: 46px 0 0 0;
+  border-radius: 0 0 12px 12px;
+  cursor: default;
+}
+.rec.fit-center .rec-bar {
+  top: 0;
+  bottom: auto;
+  border-radius: 12px 12px 0 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--ws-line);
+  cursor: default;
+}

@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { COUNTDOWN, FPS, OUT_H, OUT_W, REC_BAR, REC_PAD, clock, cropOf, type RecHello, type RecPhase, type RecPrefs, type RecSource } from '@shared/recorder'
+import { COUNTDOWN, FPS, clock, cropOf, innerOf, outSize, type RecFit, type RecHello, type RecPhase, type RecPrefs, type RecSource } from '@shared/recorder'
 import './recorder.css'
 
 declare global {
@@ -49,8 +49,8 @@ function pickType(): { mime: string; ext: string } {
   return { mime: '', ext: 'webm' }
 }
 
-/** Where the filmed rectangle is on the screen now (points), from the window's own position. */
-const innerNow = () => ({ x: window.screenX + REC_PAD, y: window.screenY + REC_PAD, width: window.innerWidth - 2 * REC_PAD, height: window.innerHeight - 2 * REC_PAD - REC_BAR })
+/** Where the filmed rectangle is on the screen now (points), from the window's own position and the fit. */
+const innerNow = (fit: RecFit) => innerOf({ x: window.screenX, y: window.screenY, width: window.innerWidth, height: window.innerHeight }, fit)
 
 /**
  * A smoke run films this instead of the screen: moving bars the size of the display, so the crop,
@@ -90,7 +90,7 @@ async function step<T>(what: string, f: () => Promise<T>): Promise<T> {
   }
 }
 
-async function startTake(opts: { sound: boolean; mic: boolean; onWarn(w: string): void; onSaved(path: string): void; onError(e: string): void }): Promise<Take> {
+async function startTake(opts: { fit: RecFit; sound: boolean; mic: boolean; onWarn(w: string): void; onSaved(path: string): void; onError(e: string): void }): Promise<Take> {
   const src = await window.rec.source()
   const screenStream = src.stub
     ? testPattern(src)
@@ -113,15 +113,17 @@ async function startTake(opts: { sound: boolean; mic: boolean; onWarn(w: string)
   video.srcObject = screenStream
   await video.play()
 
+  // A reel is 1080 × 1920; the center column is filmed at its own size in the display's pixels.
+  const size = outSize(opts.fit, innerNow(opts.fit), src.scale)
   const canvas = document.createElement('canvas')
-  canvas.width = OUT_W
-  canvas.height = OUT_H
+  canvas.width = size.w
+  canvas.height = size.h
   const ctx = canvas.getContext('2d', { alpha: false })!
   ctx.imageSmoothingQuality = 'high'
   // Drawn on a clock, not on the capture's frames: a still screen sends none, and the frame may be moving.
   const draw = () => {
-    const c = cropOf(innerNow(), src.bounds, video.videoWidth, video.videoHeight)
-    if (c) ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, OUT_W, OUT_H)
+    const c = cropOf(innerNow(opts.fit), src.bounds, video.videoWidth, video.videoHeight)
+    if (c) ctx.drawImage(video, c.sx, c.sy, c.sw, c.sh, 0, 0, size.w, size.h)
   }
   draw()
   const timer = window.setInterval(draw, 1000 / FPS)
@@ -270,7 +272,7 @@ function Frame() {
     return window.rec.onTheme(applyVars)
   }, [])
 
-  const setPref = (k: keyof RecPrefs, v: boolean) => {
+  const setPref = <K extends keyof RecPrefs>(k: K, v: RecPrefs[K]) => {
     if (!prefs) return
     const next = { ...prefs, [k]: v }
     setPrefsState(next)
@@ -311,6 +313,7 @@ function Frame() {
     setSaved('')
     try {
       take.current = await startTake({
+        fit: prefs?.fit ?? 'reel',
         sound: !!prefs?.sound,
         mic: !!prefs?.mic,
         onWarn: (w) => setNote(w),
@@ -398,7 +401,7 @@ function Frame() {
     el.setPointerCapture(e.pointerId)
     const y0 = e.screenY
     const x0 = e.screenX
-    const h0 = window.innerHeight - 2 * REC_PAD - REC_BAR
+    const h0 = innerNow('reel').height
     const move = (ev: PointerEvent) => {
       // Whichever way the pointer went further sets the size; the width follows at 9:16.
       const dh = Math.max(ev.screenY - y0, ((ev.screenX - x0) * 16) / 9)
@@ -416,10 +419,12 @@ function Frame() {
   const busy = live || phase === 'countdown' || phase === 'saving'
   const sound = !!prefs?.sound
   const mic = !!prefs?.mic
-  const guides = !!prefs?.guides
+  const fit: RecFit = prefs?.fit ?? 'reel'
+  const reel = fit === 'reel'
+  const guides = reel && !!prefs?.guides
   return (
-    <div className={`rec ${live ? 'is-live' : ''}`}>
-      <div className="rec-frame" onPointerDown={drag}>
+    <div className={`rec fit-${fit} ${live ? 'is-live' : ''}`}>
+      <div className="rec-frame" onPointerDown={reel ? drag : undefined}>
         <div className="rec-inner">
           {guides && !busy && (
             <div className="rec-guides" title="Instagram's own buttons and captions cover these">
@@ -431,7 +436,7 @@ function Frame() {
           {phase === 'countdown' && count > 0 && <div className="rec-count">{count}</div>}
         </div>
       </div>
-      <div className="rec-bar" onPointerDown={drag}>
+      <div className="rec-bar" onPointerDown={reel ? drag : undefined}>
         <button className={`rec-go ${live ? 'is-live' : ''}`} onClick={record} disabled={phase === 'saving' || !prefs} title={live ? 'Stop and save (⌘⇧O)' : phase === 'countdown' ? 'Cancel' : 'Record (3, 2, 1…)'}>
           <Glyph name={live ? 'stop' : 'rec'} />
           <span>{live ? clock(now - started) : phase === 'countdown' ? count : phase === 'saving' ? 'saving…' : 'rec'}</span>
@@ -442,9 +447,19 @@ function Frame() {
         <button className={`rec-tog ${mic ? 'on' : ''}`} disabled={busy} onClick={() => setPref('mic', !mic)} title={mic ? 'Your microphone is mixed in (headphones, or the speakers echo)' : 'No microphone'}>
           <Glyph name={mic ? 'mic' : 'micOff'} />
         </button>
-        <button className={`rec-tog ${guides ? 'on' : ''}`} onClick={() => setPref('guides', !guides)} title="Instagram's safe zones (hidden while recording)">
-          <Glyph name={guides ? 'eye' : 'eyeOff'} />
-        </button>
+        <span className="rec-fit" role="radiogroup" aria-label="What to film">
+          <button role="radio" aria-checked={reel} className={reel ? 'on' : ''} disabled={busy || !prefs} onClick={() => setPref('fit', 'reel')} title="A 9:16 frame you drag anywhere, for Reels and Stories (1080 × 1920)">
+            9:16
+          </button>
+          <button role="radio" aria-checked={!reel} className={!reel ? 'on' : ''} disabled={busy || !prefs} onClick={() => setPref('fit', 'center')} title="The center column: the session you're on, at its own size. Follows the window">
+            Column
+          </button>
+        </span>
+        {reel && (
+          <button className={`rec-tog ${guides ? 'on' : ''}`} onClick={() => setPref('guides', !guides)} title="Instagram's safe zones (hidden while recording)">
+            <Glyph name={guides ? 'eye' : 'eyeOff'} />
+          </button>
+        )}
         {phase === 'saved' && (
           <>
             <button className="rec-tog rec-play" onClick={() => window.rec.play(saved)} title={`Play ${saved}`}>
@@ -459,9 +474,11 @@ function Frame() {
         <button className="rec-tog rec-close" onClick={close} title="Close the recorder (⌘⇧O)">
           <Glyph name="close" />
         </button>
-        <span className="rec-grip" onPointerDown={resize} title="Resize (stays 9:16)">
-          <Glyph name="grip" />
-        </span>
+        {reel && (
+          <span className="rec-grip" onPointerDown={resize} title="Resize (stays 9:16)">
+            <Glyph name="grip" />
+          </span>
+        )}
       </div>
       {note && (
         <div className="rec-note" onClick={() => setNote('')} title="Click to dismiss">

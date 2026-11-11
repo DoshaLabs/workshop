@@ -979,6 +979,16 @@ app.whenReady().then(async () => {
     page: { url: process.env.ELECTRON_RENDERER_URL ? `${process.env.ELECTRON_RENDERER_URL}/recorder.html` : undefined, file: join(__dirname, '../renderer/recorder.html') },
     preload: join(__dirname, '../preload/recorder.js'),
     core: () => win,
+    // The center column on the screen, in points: its place in the page plus the page's on the screen.
+    centerRect: async () => {
+      if (!win || win.isDestroyed() || win.isMinimized()) return null
+      const r = (await win.webContents
+        .executeJavaScript(`(() => { const r = document.querySelector('.col.center')?.getBoundingClientRect(); return r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null })()`)
+        .catch(() => null)) as { x: number; y: number; width: number; height: number } | null
+      if (!r || r.width < 1 || r.height < 1) return null
+      const c = win.getContentBounds()
+      return { x: c.x + r.x, y: c.y + r.y, width: r.width, height: r.height }
+    },
     hello: () => ({ vars: vars(), prefs: settings.get().recorder ?? REC_DEFAULTS }),
     savePrefs: async (recorderPrefs) => void (await settings.patch({ recorder: recorderPrefs })),
     outDir: SMOKE ? join(app.getPath('userData'), 'recordings') : join(homedir(), 'Movies', 'workshop'),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ASPECT, MIN_H, REC, REC_BAR, REC_DEFAULTS, REC_PAD, clock, cleanPrefs, cropOf, firstFrame, innerOf, int, isPhase, resized, takeName, windowFor } from '@shared/recorder'
+import { ASPECT, MIN_H, REC, REC_BAR, REC_DEFAULTS, REC_PAD, centerWindow, clock, cleanPrefs, cropOf, firstFrame, innerOf, int, isPhase, outSize, resized, takeName, windowFor } from '@shared/recorder'
 import { isRecorderKey, shortcutOf } from '@shared/shortcuts'
 import { cleanSettings } from '../src/main/settings'
 import { readFileSync } from 'node:fs'
@@ -83,14 +83,18 @@ describe('the file', () => {
 describe('settings', () => {
   it('prefs: booleans only, field by field', () => {
     expect(cleanPrefs(undefined)).toEqual(REC_DEFAULTS)
-    expect(cleanPrefs({ sound: false, mic: 'yes', guides: false, extra: 1 })).toEqual({ sound: false, mic: false, guides: false })
-    expect(cleanPrefs({ mic: true }, { sound: false, mic: false, guides: false })).toEqual({ sound: false, mic: true, guides: false })
+    expect(cleanPrefs({ sound: false, mic: 'yes', guides: false, extra: 1 })).toEqual({ sound: false, mic: false, guides: false, fit: 'reel' })
+    expect(cleanPrefs({ mic: true }, { sound: false, mic: false, guides: false, fit: 'center' })).toEqual({ sound: false, mic: true, guides: false, fit: 'center' })
+    expect(cleanPrefs({ fit: 'square' }).fit).toBe('reel')
+    expect(cleanPrefs({ fit: 'center' }).fit).toBe('center')
+    // Settings saved before `fit` existed read as the 9:16 frame.
+    expect(cleanPrefs({ sound: true, mic: false, guides: true }, { sound: true, mic: false, guides: true } as never).fit).toBe('reel')
   })
   it('core settings keep them, and leave them out until first saved', () => {
     expect(cleanSettings({}).recorder).toBeUndefined()
-    expect(cleanSettings({ recorder: { sound: false } }).recorder).toEqual({ sound: false, mic: false, guides: true })
+    expect(cleanSettings({ recorder: { sound: false } }).recorder).toEqual({ sound: false, mic: false, guides: true, fit: 'reel' })
     const base = cleanSettings({ recorder: { mic: true } })
-    expect(cleanSettings({ theme: 'nope' }, base).recorder).toEqual({ sound: true, mic: true, guides: true })
+    expect(cleanSettings({ theme: 'nope' }, base).recorder).toEqual({ sound: true, mic: true, guides: true, fit: 'reel' })
   })
   it('phases', () => {
     expect(isPhase('recording')).toBe(true)
@@ -120,5 +124,26 @@ describe('the preload', () => {
     const src = readFileSync(join(__dirname, '../src/preload/recorder.ts'), 'utf8')
     const used = new Set([...src.matchAll(/'(ws:rec:[a-z-]+)'/g)].map((m) => m[1]))
     expect([...used].sort()).toEqual(Object.values(REC).sort())
+  })
+})
+
+describe('the center column fit', () => {
+  const column = { x: 500, y: 300, width: 800, height: 1100 }
+  it('frames the column exactly, its bar above it', () => {
+    const w = centerWindow(column)
+    expect(innerOf(w, 'center')).toEqual(column)
+    expect(w.y).toBe(column.y - REC_PAD - REC_BAR)
+    // The reel's inside of the same window would be off by the bar: the fit is what places it.
+    expect(innerOf(w).y).toBe(column.y - REC_BAR)
+  })
+  it('films the column in the display\'s own pixels, each side even', () => {
+    expect(outSize('center', { x: 0, y: 0, width: 801, height: 1101 }, 2)).toEqual({ w: 1602, h: 2202 })
+    expect(outSize('center', { x: 0, y: 0, width: 333, height: 777 }, 1)).toEqual({ w: 334, h: 778 })
+    expect(outSize('reel', column, 2)).toEqual({ w: 1080, h: 1920 })
+  })
+  it('caps the long side at 4096', () => {
+    const o = outSize('center', { x: 0, y: 0, width: 1600, height: 2400 }, 2)
+    expect(Math.max(o.w, o.h)).toBeLessThanOrEqual(4096)
+    expect(o.w % 2 + o.h % 2).toBe(0)
   })
 })

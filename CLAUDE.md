@@ -190,7 +190,9 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   `src/renderer/src/recorder/`, its preload `src/preload/recorder.ts`, the sound helper
   `native/recaudio.swift`; `docs/progress/2026-11-10-recorder.md`): deck's, carried over. The top
   bar's button or ⌘⇧O opens a 9:16 frame you drag anywhere that films what is under it at
-  1080 × 1920, with the Mac's sound through BlackHole (the user installs it) and optionally the
+  1080 × 1920, or (its bar's `9:16 | Column` switch, `settings.recorder.fit`) the center column
+  exactly, at its own size in the display's pixels, the frame following the window and its bar above
+  the column (`centerWindow`, `outSize` in `src/shared/recorder.ts`), with the Mac's sound through BlackHole (the user installs it) and optionally the
   microphone, into `~/Movies/workshop/` (ffmpeg makes it Instagram's H.264 if installed). Core's
   own, on its own partition: tiles still get no screen capture. Smoke films a test pattern, never
   the screen.

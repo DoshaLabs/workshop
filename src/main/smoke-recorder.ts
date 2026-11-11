@@ -10,7 +10,7 @@
 import type { BrowserWindow, WebContents } from 'electron'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { ASPECT, innerOf } from '@shared/recorder'
+import { ASPECT, innerOf, outSize } from '@shared/recorder'
 import type { Recorder } from './recorder'
 import { findInPath, shellEnv } from './env'
 import { execFileSync } from 'node:child_process'
@@ -112,6 +112,52 @@ export async function recorderSmoke(
     }
     check('recorder: the button is back to rest after the take', !((await button())?.cls.includes('is-live') ?? true))
   }
+
+  // The center column: the frame sits on it exactly, its bar above, follows core's window, and the
+  // take is the column at its own size.
+  const center = async () => {
+    const r = (await js(`(() => { const r = document.querySelector('.col.center').getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height } })()`)) as { x: number; y: number; width: number; height: number }
+    const c = win.getContentBounds()
+    return { x: Math.round(c.x + r.x), y: Math.round(c.y + r.y), width: Math.round(r.width), height: Math.round(r.height) }
+  }
+  const onColumn = async () => {
+    const want = await center()
+    const got = innerOf(recorder.bounds()!, 'center')
+    return Math.abs(got.x - want.x) <= 1 && Math.abs(got.y - want.y) <= 1 && Math.abs(got.width - want.width) <= 1 && Math.abs(got.height - want.height) <= 1
+  }
+  await pjs(`document.querySelectorAll('.rec-fit button')[1].click(); true`)
+  const snapped = await waitFor(onColumn)
+  check('recorder: Column puts the frame on the center column, its bar above it', snapped, JSON.stringify({ frame: innerOf(recorder.bounds()!, 'center'), column: await center() }))
+  check('recorder: Column is kept in core settings, and hides the 9:16 grip', (await waitFor(async () => JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8')).recorder?.fit === 'center')) && (await pjs(`!document.querySelector('.rec-grip') && document.querySelector('.rec').classList.contains('fit-center')`)) === true)
+  const before = win.getBounds()
+  win.setBounds({ ...before, x: before.x + 40, width: before.width - 60 })
+  check('recorder: the column frame follows the window', await waitFor(onColumn), JSON.stringify({ frame: innerOf(recorder.bounds()!, 'center'), column: await center() }))
+  win.setBounds(before)
+  await waitFor(onColumn)
+  await pjs(`document.querySelector('.rec-go').click(); true`)
+  if (await waitFor(() => recorder.getState().phase === 'recording', 8000)) {
+    await sleep(1200)
+    cmdShiftO(win.webContents)
+    const ok = await waitFor(() => recorder.getState().phase === 'saved', 60_000)
+    const ffprobe = findInPath(shellEnv().PATH, 'ffprobe')
+    if (ok && ffprobe && recorder.lastSaved.endsWith('.mp4')) {
+      const display = (await import('electron')).screen.getDisplayMatching(recorder.bounds()!)
+      const want = outSize('center', innerOf(recorder.bounds()!, 'center'), display.scaleFactor)
+      let got = ''
+      try {
+        got = execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,width,height', '-of', 'csv=p=0', recorder.lastSaved], { encoding: 'utf8', timeout: 20_000 }).trim()
+      } catch (e) {
+        got = (e as Error).message
+      }
+      check('recorder: a Column take is the column at its own size (ffprobe)', got === `h264,${want.w},${want.h}`, `${got} want ${want.w}x${want.h}`)
+    } else check('recorder: a Column take is saved', ok, recorder.getState().phase)
+  } else check('recorder: a Column take starts', false, recorder.getState().phase)
+  await pjs(`document.querySelectorAll('.rec-fit button')[0].click(); true`)
+  const back = await waitFor(() => {
+    const i = innerOf(recorder.bounds()!)
+    return Math.abs(i.width - Math.round(i.height * ASPECT)) <= 1
+  })
+  check('recorder: 9:16 brings the reel frame back', back, JSON.stringify(recorder.bounds()))
 
   // ⌘⇧O again, with nothing filming, closes the frame.
   cmdShiftO(win.webContents)

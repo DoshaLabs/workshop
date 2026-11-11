@@ -54,9 +54,34 @@ export function resized(b: Rect, height: number, area: Rect): Rect {
   return windowFor(b.x, b.y, Math.min(Math.max(MIN_H, want), Math.max(MIN_H, maxH(area))))
 }
 
-/** The filmed rectangle on the screen, from the window's own bounds. */
-export function innerOf(win: Rect): Rect {
-  return { x: win.x + REC_PAD, y: win.y + REC_PAD, width: win.width - 2 * REC_PAD, height: win.height - 2 * REC_PAD - REC_BAR }
+/**
+ * What a take films. `reel`: the 9:16 frame you drag anywhere, at 1080 × 1920. `center`: exactly
+ * workshop's center column (the focused session, the launcher, a pane), at its own size on the
+ * screen, the frame following it; its bar sits above the column, in the window's top bar, where
+ * there is room (the column's foot is often the screen's).
+ */
+export type RecFit = 'reel' | 'center'
+
+/** The filmed rectangle on the screen, from the window's own bounds (the bar under it, or above it for `center`). */
+export function innerOf(win: Rect, fit: RecFit = 'reel'): Rect {
+  const top = fit === 'center' ? REC_BAR : 0
+  return { x: win.x + REC_PAD, y: win.y + REC_PAD + top, width: win.width - 2 * REC_PAD, height: win.height - 2 * REC_PAD - REC_BAR }
+}
+
+/** The frame's window around a filmed rectangle `column` (screen points), its bar above it: `center`'s. */
+export function centerWindow(column: Rect): Rect {
+  return { x: int(column.x - REC_PAD), y: int(column.y - REC_PAD - REC_BAR), width: Math.round(column.width) + 2 * REC_PAD, height: Math.round(column.height) + 2 * REC_PAD + REC_BAR }
+}
+
+/**
+ * The file's size: 1080 × 1920 for a reel; for `center`, the column in the display's own pixels
+ * (sharp on a Retina screen), each side even (H.264 wants it), at most 4096 on the long side.
+ */
+export function outSize(fit: RecFit, inner: Rect, scale: number): { w: number; h: number } {
+  if (fit === 'reel') return { w: OUT_W, h: OUT_H }
+  const k = Math.min(Math.max(1, scale || 1), 4096 / Math.max(1, inner.width, inner.height))
+  const even = (n: number): number => Math.max(2, 2 * Math.round((n * k) / 2))
+  return { w: even(inner.width), h: even(inner.height) }
 }
 
 /**
@@ -103,15 +128,18 @@ export interface RecPrefs {
   mic: boolean
   /** Instagram's safe zones drawn in the frame (never while filming). */
   guides: boolean
+  /** The 9:16 frame, or the center column. */
+  fit: RecFit
 }
 
-export const REC_DEFAULTS: RecPrefs = { sound: true, mic: false, guides: true }
+export const REC_DEFAULTS: RecPrefs = { sound: true, mic: false, guides: true, fit: 'reel' }
 
-/** Drops anything that is not a boolean, field by field, over `base`. */
+/** Drops anything that is not what its field holds, field by field, over `base`. */
 export function cleanPrefs(raw: unknown, base: RecPrefs = REC_DEFAULTS): RecPrefs {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  const pick = (k: keyof RecPrefs): boolean => (typeof r[k] === 'boolean' ? (r[k] as boolean) : base[k])
-  return { sound: pick('sound'), mic: pick('mic'), guides: pick('guides') }
+  const pick = (k: 'sound' | 'mic' | 'guides'): boolean => (typeof r[k] === 'boolean' ? (r[k] as boolean) : base[k])
+  const fit: RecFit = r.fit === 'reel' || r.fit === 'center' ? r.fit : (base.fit ?? 'reel')
+  return { sound: pick('sound'), mic: pick('mic'), guides: pick('guides'), fit }
 }
 
 export type RecPhase = 'idle' | 'countdown' | 'recording' | 'saving' | 'saved' | 'error'

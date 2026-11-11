@@ -33,7 +33,7 @@ import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { CH } from '@shared/ipc'
-import { REC, cleanPrefs, firstFrame, int, isPhase, resized, takeName, type RecHello, type RecPrefs, type RecSource, type RecState } from '@shared/recorder'
+import { REC, centerWindow, cleanPrefs, firstFrame, int, isPhase, resized, takeName, type Rect, type RecFit, type RecHello, type RecPrefs, type RecSource, type RecState } from '@shared/recorder'
 import { isRecorderKey } from '@shared/shortcuts'
 import { findInPath } from './env'
 
@@ -51,6 +51,8 @@ export interface RecorderDeps {
   preload: string
   /** Core's window: the frame opens over its display, and the top bar hears the state. */
   core: () => BrowserWindow | null
+  /** The center column on the screen (points), for the `center` fit; null if it cannot be seen. */
+  centerRect: () => Promise<Rect | null>
   hello: () => { vars: Record<string, string>; prefs: RecPrefs }
   savePrefs: (p: RecPrefs) => Promise<void>
   /** Where takes land. */
@@ -72,6 +74,8 @@ export class Recorder {
   private state: RecState = { open: false, phase: 'idle', since: 0 }
   /** The last file saved (smoke reads it). */
   lastSaved = ''
+  /** Stops following core's window (the `center` fit), while the frame is open. */
+  private unfollow: (() => void) | null = null
 
   constructor(private readonly deps: RecorderDeps) {
     this.dir = join(deps.userData, 'recorder')
@@ -159,6 +163,8 @@ export class Recorder {
       e.preventDefault()
     })
     win.on('closed', () => {
+      this.unfollow?.()
+      this.unfollow = null
       this.win = null
       this.endTake()
       void this.restoreAudio()
@@ -168,6 +174,29 @@ export class Recorder {
     else void win.loadFile(this.deps.page.file)
     this.win = win
     this.setState({ open: true, phase: 'idle' })
+    // The center fit follows core's window: moved, resized, a column dragged wider by the layout.
+    if (core && !core.isDestroyed()) {
+      const follow = () => void this.place()
+      for (const ev of ['move', 'resize', 'enter-full-screen', 'leave-full-screen'] as const) core.on(ev as 'move', follow)
+      this.unfollow = () => {
+        for (const ev of ['move', 'resize', 'enter-full-screen', 'leave-full-screen'] as const) core.off(ev as 'move', follow)
+      }
+    }
+    void this.place()
+  }
+
+  private fit(): RecFit {
+    return this.deps.hello().prefs.fit ?? 'reel'
+  }
+
+  /**
+   * The `center` fit: the frame over the center column exactly, its bar above it. Nothing to do for
+   * a reel (the user placed it). A center that cannot be measured (core minimized) leaves it be.
+   */
+  private async place(): Promise<void> {
+    if (!this.isOpen() || this.fit() !== 'center') return
+    const r = await this.deps.centerRect()
+    if (r && this.isOpen() && this.fit() === 'center') this.win!.setBounds(centerWindow(r))
   }
 
   close(): void {
@@ -286,7 +315,8 @@ export class Recorder {
     await run(
       ffmpeg,
       ['-y', '-hide_banner', '-loglevel', 'error', '-i', take.path,
-        '-vf', 'scale=1080:1920:flags=lanczos,fps=30,format=yuv420p',
+        // A reel is Instagram's 1080 × 1920; the center column keeps its own size (the page made it even).
+        '-vf', `${this.fit() === 'center' ? 'scale=trunc(iw/2)*2:trunc(ih/2)*2' : 'scale=1080:1920'}:flags=lanczos,fps=30,format=yuv420p`,
         '-c:v', 'libx264', '-profile:v', 'high', '-level', '4.2', '-preset', 'medium', '-crf', '17', '-maxrate', '25M', '-bufsize', '50M',
         '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
         '-movflags', '+faststart', out],
@@ -312,7 +342,18 @@ export class Recorder {
     })
     ipcMain.handle(REC.setPrefs, async (e, p: unknown) => {
       if (!mine(e)) throw new Error('not the recorder')
-      await this.deps.savePrefs(cleanPrefs(p, this.deps.hello().prefs))
+      const was = this.fit()
+      const next = cleanPrefs(p, this.deps.hello().prefs)
+      // The fit is not changed under a take: the page disables the switch, and main holds to it too.
+      if (this.state.phase !== 'idle' && this.state.phase !== 'saved' && this.state.phase !== 'error') next.fit = was
+      await this.deps.savePrefs(next)
+      if (next.fit === was) return
+      // Back to a reel: the 9:16 frame where it first opens. To the center: over the column.
+      if (next.fit === 'reel') {
+        const core = this.deps.core()
+        const area = (core && !core.isDestroyed() ? screen.getDisplayMatching(core.getBounds()) : screen.getDisplayMatching(this.win!.getBounds())).workArea
+        this.win!.setBounds(firstFrame(area))
+      } else await this.place()
     })
     ipcMain.on(REC.phase, (e, phase: unknown) => {
       if (mine(e) && isPhase(phase)) this.setState({ phase })
@@ -323,11 +364,12 @@ export class Recorder {
     })
     // The border or the bar dragged: the window's new top-left corner.
     ipcMain.on(REC.move, (e, x: unknown, y: unknown) => {
-      if (mine(e) && Number.isFinite(x) && Number.isFinite(y)) this.win!.setPosition(int(x as number), int(y as number))
+      // The center fit is where the column is, not where it is dragged.
+      if (mine(e) && this.fit() === 'reel' && Number.isFinite(x) && Number.isFinite(y)) this.win!.setPosition(int(x as number), int(y as number))
     })
     // The corner handle: the filmed rectangle's new height, the top-left corner staying put.
     ipcMain.on(REC.resize, (e, height: unknown) => {
-      if (!mine(e)) return
+      if (!mine(e) || this.fit() !== 'reel') return
       const b = this.win!.getBounds()
       this.win!.setBounds(resized(b, Number(height), screen.getDisplayMatching(b).workArea))
     })
