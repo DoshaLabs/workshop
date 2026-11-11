@@ -424,30 +424,30 @@ export function App() {
               </article>
             )
           })}
-          {/* The + is the column's last cell, as in deck. Its menu opens in its place: every tile's
-              page is a webview laid over the window, so nothing core draws can sit on top of one. */}
-          {picker ? (
-            <TilePicker
-              tiles={tiles}
-              countOf={countOf}
-              max={MAX_INSTANCES}
-              onAdd={(t) => {
-                another(t)
-                setPicker(false)
-              }}
-              onOff={close}
-              onOn={(id) => setOff((o) => o.filter((x) => x !== id))}
-              onClose={() => setPicker(false)}
-            />
-          ) : (
-            <button className={`tile tile-plus ${tileDrag.mark(null)}`} title="Add a tile, or build a new one" onClick={() => setPicker(true)} {...tileDrag.target(null)}>
-              +
-            </button>
-          )}
+          {/* The + is the column's last cell, as in deck. Its menu is a lightbox over the window. */}
+          <button className={`tile tile-plus ${picker ? 'armed' : ''} ${tileDrag.mark(null)}`} title="Add a tile, or build a new one" onClick={() => setPicker(true)} {...tileDrag.target(null)}>
+            +
+          </button>
         </div>
       </aside>
 
       <TileLayer instances={instances} viewOf={viewOf} />
+
+      {/* The + menu, over the whole window and its tile pages (the layer ranks above .tile-layer). */}
+      {picker && (
+        <TilePicker
+          tiles={tiles}
+          countOf={countOf}
+          max={MAX_INSTANCES}
+          onAdd={(t) => {
+            another(t)
+            setPicker(false)
+          }}
+          onOff={close}
+          onOn={(id) => setOff((o) => o.filter((x) => x !== id))}
+          onClose={() => setPicker(false)}
+        />
+      )}
 
       {/* A tile's page over the whole window, below a strip that is core's alone: the page cannot
           draw on it (it is outside the webview, which core places) and so cannot hide the way out

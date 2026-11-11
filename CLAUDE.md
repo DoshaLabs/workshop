@@ -65,7 +65,8 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   with Wikipedia at the top (`shared/column.ts` `DEFAULT_ORDER`). The left column's session tiles
   are one row too, so the two columns line up. A wheel a tile's page cannot use scrolls the column
   (`preload/tile.ts`).
-- The `+` is the tile column's last cell (`TilePicker.tsx`), a card in three tabs. Built in:
+- The `+` is the tile column's last cell; its menu (`TilePicker.tsx`) is a lightbox over the whole
+  window and its tile pages (`.lightbox`, z-index above `.tile-layer`; Esc or the backdrop closes it), in three tabs. Built in:
   `tiles/`. Yours: dev folders, "make one with Claude" (copies `template/` to
   `~/workshop-tiles/<id>`, `src/main/scaffold.ts`, loads it as a dev tile, starts a session
   there), "load a folder", stop loading. Marketplace: installed tiles (update, remove with or

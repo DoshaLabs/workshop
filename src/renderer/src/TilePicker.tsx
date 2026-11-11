@@ -3,11 +3,13 @@
 // folder"), Marketplace (tiles installed from a git repo, and the index's). Every row shows the same
 // things on every tab: icon, name, hint, its permissions in plain words, and whether it is on.
 //
-// It is a card IN the column, in the +'s place, not a popover: every tile's page is a webview laid
-// over the window, and nothing core draws can sit on top of one. That is also why the install
-// prompt is drawn inside this card rather than as a dialog.
+// It is a lightbox: a card centred over the whole window, above every tile's page (Colin, 11 Nov
+// 2026: in the column's last cell it was too crowded). Tile pages are webviews in .tile-layer, a
+// fixed layer; .lightbox is a later fixed layer with a higher z-index, so it covers them, as the
+// overlay's strip does. A click on the backdrop or Esc closes it; the install prompt stays inside
+// the card.
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { TileInfo } from '@shared/ipc'
 import type { Permissions } from '@shared/manifest'
 import type { IndexEntry } from '@shared/tile-index'
@@ -53,12 +55,17 @@ export function TilePicker({
       return 'builtin'
     }
   })
-  const card = useRef<HTMLElement>(null)
-  // In braces on purpose: this Chromium's scrollIntoView returns a promise, and an effect that
-  // returns anything but a function takes the whole window down when the menu closes.
+  // Esc closes the menu, and only the menu: caught on the way down so a pane open in the center
+  // (whose Esc is a bubbling listener on the window) stays open.
   useEffect(() => {
-    void card.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [])
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      onClose()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [onClose])
   const pick = (t: Tab): void => {
     setTab(t)
     try {
@@ -95,26 +102,28 @@ export function TilePicker({
   }
 
   return (
-    <section className="picker" ref={card}>
-      <header className="head">
-        <span className="name">Tiles</span>
-        <button className="ghost" title="Close" onClick={onClose}>
-          ×
-        </button>
-      </header>
-      <nav className="pick-tabs" role="tablist">
-        {TABS.map(([k, label]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} data-tab={k} onClick={() => pick(k)}>
-            {label}
+    <div className="lightbox" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <section className="picker" role="dialog" aria-label="Tiles">
+        <header className="head">
+          <span className="name">Tiles</span>
+          <button className="ghost" title="Close" onClick={onClose}>
+            ×
           </button>
-        ))}
-      </nav>
-      <div className="picker-body">
-        {tab === 'builtin' && <BuiltIn tiles={tiles} row={row} />}
-        {tab === 'yours' && <Yours tiles={tiles} row={row} onClose={onClose} />}
-        {tab === 'market' && <Market tiles={tiles} row={row} onOn={onOn} />}
-      </div>
-    </section>
+        </header>
+        <nav className="pick-tabs" role="tablist">
+          {TABS.map(([k, label]) => (
+            <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} data-tab={k} onClick={() => pick(k)}>
+              {label}
+            </button>
+          ))}
+        </nav>
+        <div className="picker-body">
+          {tab === 'builtin' && <BuiltIn tiles={tiles} row={row} />}
+          {tab === 'yours' && <Yours tiles={tiles} row={row} onClose={onClose} />}
+          {tab === 'market' && <Market tiles={tiles} row={row} onOn={onOn} />}
+        </div>
+      </section>
+    </div>
   )
 }
 

@@ -538,19 +538,52 @@ button {
   place-items: center;
   color: var(--ws-muted);
 }
-/* ---- the tile column's + menu: a card in the column (nothing can be drawn over a tile's page) */
+/* ---- the tile column's + menu: a lightbox over the whole window. .tile-layer (every tile's page)
+   is a fixed layer with no z-index; this one, later and at 30, covers it, the top bar (10) and the
+   overlay strip (20). It is never a drag region, or the backdrop over the top bar would move the
+   window instead of closing the menu. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  /* The card's top is pinned (not centred), so a taller tab grows it downward only. */
+  --lightbox-top: max(var(--bar), 12vh);
+  display: grid;
+  justify-items: center;
+  align-items: start;
+  padding: var(--lightbox-top) 24px 24px;
+  background: color-mix(in srgb, var(--ws-bg) 62%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-app-region: no-drag;
+}
+.tile-plus.armed {
+  color: var(--ws-ink);
+  border-color: var(--ws-accent);
+}
 .picker {
-  flex: none;
-  background: var(--ws-surface, var(--ws-panel));
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: calc(100vh - var(--lightbox-top) - 24px);
+  /* The panel, not --ws-surface: Deep Space's surface is see-through, and the center showed through. */
+  background: var(--ws-panel);
+  backdrop-filter: blur(18px);
   border: 1px solid var(--ws-accent);
   border-radius: var(--tile-radius);
+  box-shadow: 0 18px 60px color-mix(in srgb, #000 45%, transparent);
   overflow: hidden;
+}
+.picker > .head,
+.picker > .pick-tabs {
+  flex: none;
 }
 .picker-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px;
+  padding: 10px 14px 14px;
+  overflow-y: auto;
+  min-height: 0;
 }
 .picker h3 {
   margin: 10px 0 0;

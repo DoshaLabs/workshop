@@ -78,6 +78,9 @@ export async function installs(check: Check, { win, liveByTile, userData }: Ctx)
   await waitFor('the + menu', () => has('.picker .pick-tabs'))
   const tabs = (await js(`[...document.querySelectorAll('.picker [role=tab]')].map((b) => b.textContent)`)) as string[]
   check('menu: three tabs, Built in, Yours, Marketplace', JSON.stringify(tabs) === '["Built in","Yours","Marketplace"]', JSON.stringify(tabs))
+  // A lightbox over the window: what is on top in the middle of a tile's page is the menu's backdrop or card, not the page.
+  const onTop = await js(`(() => { const r = document.querySelector('.tiles [data-face]').getBoundingClientRect(); return !!document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)?.closest('.lightbox') })()`)
+  check('menu: a lightbox over the window, above the tile pages', onTop === true)
   await click('.picker [data-tab="builtin"]')
   await sleep(150)
   const builtin = await text('.picker-body')
@@ -85,8 +88,11 @@ export async function installs(check: Check, { win, liveByTile, userData }: Ctx)
   check('menu: Built in holds Today, Reminders and Git, each with its permissions in words and whether it is on', builtin.includes('Today') && builtin.includes('Reminders') && builtin.includes('Git') && builtin.includes('reach en.wikipedia.org') && (await js(`document.querySelectorAll('.picker .pick-state.is-on').length`)) === 4 && !builtin.includes('Probe'), builtin.slice(0, 300))
   const rows = (await js(`[...document.querySelectorAll('.picker .pick-row')].map((r) => [r.querySelector('.pick-name b')?.textContent, r.querySelector('.pick-full')?.textContent ?? ''])`)) as [string, string][]
   check('menu: a built-in tile with a backend says, on a line of its own, that it has full access to this Mac', rows.some(([n, t]) => n === 'Trusted' && /full access to this Mac/i.test(t)) && rows.some(([n, t]) => n === 'Git' && /full access to this Mac/i.test(t)) && rows.filter(([, t]) => t).length === 2, JSON.stringify(rows))
+  const topOf = (): Promise<number> => js(`document.querySelector('.picker').getBoundingClientRect().top`) as Promise<number>
+  const builtinTop = await topOf()
   await click('.picker [data-tab="yours"]')
   await sleep(150)
+  check('menu: its top stays put when a tab of another height is chosen', Math.abs((await topOf()) - builtinTop) < 1, `${builtinTop} → ${await topOf()}`)
   const yours = await text('.picker-body')
   check('menu: Yours holds the folders under development, load a folder and make one with Claude', yours.includes('Probe') && yours.includes('Load a folder') && yours.includes('Build a new tile') && yours.includes('Stop loading'), yours.slice(0, 300))
 
@@ -165,7 +171,10 @@ export async function installs(check: Check, { win, liveByTile, userData }: Ctx)
   check('remove: the folder and its data are gone, and the column with it', !(await exists(join(userData, 'tiles', 'hello-repo'))) && !(await exists(join(userData, 'tile-data', 'hello-repo'))) && !(await has('.tiles [data-face="hello-repo"]')))
   check('remove: it is offered from the index again', await has('.picker [data-install="hello-repo"]'))
 
-  await click('.picker .head .ghost')
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+  await waitFor('Esc to close the menu', async () => !(await has('.lightbox')), 3_000).catch(() => {})
+  check('menu: Esc closes it', !(await has('.lightbox')))
   delete process.env.WORKSHOP_INDEX
 }
 
@@ -277,6 +286,9 @@ export async function realIndex(check: Check, { win, liveByTile, userData }: Ctx
   await sleep(200)
   check('real remove: with "also delete what it stored", the folder and its data go', !(await exists(dir)) && !(await exists(join(userData, 'tile-data', 'pomodoro'))))
 
-  await click('.picker .head .ghost')
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+  await waitFor('Esc to close the menu', async () => !(await has('.lightbox')), 3_000).catch(() => {})
+  check('menu: Esc closes it', !(await has('.lightbox')))
   delete process.env.WORKSHOP_INDEX
 }
