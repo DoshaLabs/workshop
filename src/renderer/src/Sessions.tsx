@@ -19,7 +19,7 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
   const [cwd, setCwd] = useState(recent[0] ?? '')
   const [worktree, setWorktree] = useState(false)
   const [model, setModel] = useState('')
-  const [mode, setMode] = useState('')
+  const [mode, setMode] = useState('auto')
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
   const [error, setError] = useState('')
