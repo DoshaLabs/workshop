@@ -172,7 +172,10 @@ if (hello) {
 
   // Spotify and Music (bridge 1.3): only on a tile whose manifest asks for "music". Values are
   // checked here for a clear error early, and again in main, which is what counts.
-  const control = (op: string, arg?: unknown, bad?: string | null): Promise<void> => (bad ? Promise.reject(new Error(bad)) : ipcRenderer.invoke(CH.musicControl, op, arg))
+  /** ipcRenderer.invoke wraps a refusal as "Error invoking remote method …: Error: <message>"; the page gets the message. */
+  const plain = (err: unknown): Error => new Error(String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ''))
+  const control = (op: string, arg?: unknown, bad?: string | null): Promise<void> =>
+    bad ? Promise.reject(new Error(bad)) : ipcRenderer.invoke(CH.musicControl, op, arg).catch((err) => Promise.reject(plain(err)))
   const music = perms.music
     ? {
         music: {
@@ -205,8 +208,6 @@ if (hello) {
 
   // Sign-in (bridge 1.5): only on a tile whose manifest asks for "oauth". Core checks the URL,
   // adds its own state, catches the loopback callback and hands back its query.
-  /** ipcRenderer.invoke wraps a refusal as "Error invoking remote method …: Error: <message>"; the page gets the message. */
-  const plain = (err: unknown): Error => new Error(String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ''))
   const oauth =
     perms.oauth && hello.oauthRedirect
       ? {

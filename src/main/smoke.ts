@@ -1194,7 +1194,10 @@ async function knotClock(check: (name: string, ok: boolean, detail?: string) => 
     await sleep(400)
     const after = await counts()
     const still = await over(2000)
-    check('knot clock: reduced motion draws one still frame per knot', (await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) === true && after.draws - before.draws === knots, `${after.draws - before.draws} frames for ${knots} knots`)
+    // One still frame per knot; a moving frame already due as the setting changed may land too (the
+    // next check, nothing more under reduced motion, is what shows the clock stops).
+    const drawn = after.draws - before.draws
+    check('knot clock: reduced motion draws one still frame per knot', (await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`)) === true && drawn >= knots && drawn <= 2 * knots, `${drawn} frames for ${knots} knots`)
     check('knot clock: then nothing more under reduced motion', still.draws === 0 && still.wakes === 0, JSON.stringify(still))
     await cdp.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
     await sleep(300)
