@@ -19,6 +19,12 @@ export interface Transcript {
   title: string | null
   /** True once the transcript file has been found (a fresh session has none until its first prompt). */
   found: boolean
+  /**
+   * Whether the last turn is still going, as the file says: opened by your prompt, closed by the
+   * CLI's end-of-turn note. Undefined until the file has said either. Core uses it when it has
+   * missed the hooks (a restart), since the CLI's poll reads a background shell as busy.
+   */
+  turn?: 'open' | 'closed'
 }
 
 /** Blocks kept per session: a tile shows the tail, and pins itself to the end. */
@@ -51,6 +57,15 @@ export function applyLine(t: Transcript, line: string, sidechain = false): boole
   }
   // In a session's file, a subagent's lines (its own tile shows them) and the CLI's own notes are not the conversation.
   if ((o.isSidechain && !sidechain) || o.isMeta) return false
+  // The end of a turn: the CLI notes how long it took and that the stop hooks ran.
+  if (o.type === 'system' && (o.subtype === 'turn_duration' || o.subtype === 'stop_hook_summary')) {
+    if (sidechain || t.turn === 'closed') return false
+    t.turn = 'closed'
+    return true
+  }
+  // A compaction's summary is written as a user line, for the model: the earlier conversation
+  // retold, system reminders and all. It is not a prompt, and the tile never shows it.
+  if (o.isCompactSummary || o.isVisibleInTranscriptOnly) return false
   const msg = o.message as Json | undefined
   if (!msg || typeof msg !== 'object') return false
   const ts = Date.parse(String(o.timestamp ?? '')) || Date.now()
@@ -58,7 +73,7 @@ export function applyLine(t: Transcript, line: string, sidechain = false): boole
   if (o.type === 'user') {
     const origin = o.origin as Json | undefined
     const human = !origin || origin.kind === 'human'
-    if (typeof msg.content === 'string') return human ? pushUser(t, msg.content, ts) : false
+    if (typeof msg.content === 'string') return human ? opens(t, pushUser(t, msg.content, ts), sidechain) : false
     if (!Array.isArray(msg.content)) return false
     let changed = false
     const texts: string[] = []
@@ -74,7 +89,7 @@ export function applyLine(t: Transcript, line: string, sidechain = false): boole
         }
       }
     }
-    if (texts.length && human) changed = pushUser(t, texts.join('\n'), ts) || changed
+    if (texts.length && human) changed = opens(t, pushUser(t, texts.join('\n'), ts), sidechain) || changed
     return changed
   }
 
@@ -101,6 +116,12 @@ export function applyLine(t: Transcript, line: string, sidechain = false): boole
     return changed
   }
   return false
+}
+
+/** A prompt of yours (`pushed`) opens a turn. */
+function opens(t: Transcript, pushed: boolean, sidechain: boolean): boolean {
+  if (pushed && !sidechain) t.turn = 'open'
+  return pushed
 }
 
 /** Keep only the tail. Returns true if anything was dropped. */

@@ -318,6 +318,21 @@ export class SessionManager {
     }
   }
 
+  /**
+   * What a session's transcript says of its turn. The hooks say it first; this covers what core
+   * missed while it was down (a restart forgets turnOpen, and the poll then believed a background
+   * shell's "busy" until the next prompt; Colin, 11 Nov 2026).
+   */
+  onTurn(id: string, turn: 'open' | 'closed' | undefined): void {
+    const r = this.rt.get(id)
+    if (!r || !turn || r.turnOpen !== undefined) return
+    r.turnOpen = turn === 'open'
+    if (!r.turnOpen && r.status === 'busy') {
+      r.status = 'idle'
+      this.broadcast()
+    }
+  }
+
   /** A hook from a session. `sessionId` is the one its token belongs to; the payload must agree. */
   onHook(event: HookEvent, payload: HookPayload): void {
     const rec = this.records.find((x) => x.claudeSessionId === payload.session_id)

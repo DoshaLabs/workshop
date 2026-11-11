@@ -95,6 +95,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   let agents: AgentTracker | null = null
   let helpers: Helpers | null = null
   const transcripts = new TranscriptWatcher(projects, (t) => {
+    sessionsRef?.onTurn(t.id, t.turn)
     send(CH.transcriptChanged, t)
     agents?.onTranscript(t)
     o.onTranscript?.(t)

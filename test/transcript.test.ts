@@ -71,6 +71,39 @@ describe('applyLine', () => {
   })
 })
 
+// Colin, 11 Nov 2026: an idle compaction filled a session tile with its summary, and a restart
+// left an idle session "working" (a background shell reads as busy to the CLI's poll).
+describe('compaction and the turn', () => {
+  const at = '2026-11-11T17:28:48.000Z'
+  const prompt = (text: string): string => JSON.stringify({ type: 'user', timestamp: at, message: { role: 'user', content: text } })
+  const end = (subtype: string): string => JSON.stringify({ type: 'system', subtype, timestamp: at, isMeta: false })
+  const compact = JSON.stringify({
+    type: 'user',
+    timestamp: at,
+    isCompactSummary: true,
+    isVisibleInTranscriptOnly: true,
+    message: { role: 'user', content: 'This session is being continued from a previous conversation <system-reminder>NOT SHOWN</system-reminder>' }
+  })
+
+  it("never shows a compaction's summary", () => {
+    const t = parse([prompt('Fix the cards'), end('turn_duration'), JSON.stringify({ type: 'system', subtype: 'compact_boundary', timestamp: at }), compact].join('\n'))
+    expect(t.blocks.map((b) => (b.kind === 'user' ? b.text : b.kind))).toEqual(['Fix the cards'])
+  })
+  it('a prompt opens the turn and the CLI\'s end-of-turn note closes it; a compaction does neither', () => {
+    expect(parse('').turn).toBeUndefined()
+    expect(parse(prompt('Fix the cards')).turn).toBe('open')
+    expect(parse([prompt('Fix the cards'), end('stop_hook_summary')].join('\n')).turn).toBe('closed')
+    expect(parse([prompt('Fix the cards'), end('turn_duration'), compact].join('\n')).turn).toBe('closed')
+    expect(parse([prompt('a'), end('turn_duration'), prompt('b')].join('\n')).turn).toBe('open')
+  })
+  it("a subagent's file never moves its session's turn", () => {
+    const t = emptyTranscript('agent:x')
+    applyLine(t, JSON.stringify({ type: 'user', isSidechain: true, timestamp: at, message: { role: 'user', content: 'do it' } }), true)
+    applyLine(t, end('turn_duration'), true)
+    expect(t.turn).toBeUndefined()
+  })
+})
+
 describe('TranscriptWatcher', () => {
   let projects: string
   beforeEach(() => {
