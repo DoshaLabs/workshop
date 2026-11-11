@@ -21,6 +21,14 @@ describe('the tile index', () => {
     expect(r).toMatchObject({ ok: true, entry: { id: 'focus-timer', permissions: { net: ['api.example.com'], door: { ops: ['start'], timeoutMs: 10000 } } } })
   })
 
+  // Spotify's entry was dropped as malformed (11 Nov 2026): the stand-in manifest claimed bridge "*".
+  it('takes the permissions newer bridges added: oauth, sessions launch, transcripts', () => {
+    const spotify = { music: true, storage: true, oauth: ['accounts.spotify.com'], net: ['accounts.spotify.com', 'api.spotify.com'] }
+    expect(checkEntry(entry({ permissions: spotify })).ok).toBe(true)
+    expect(checkEntry(entry({ permissions: { sessions: 'launch' } })).ok).toBe(true)
+    expect(checkEntry(entry({ permissions: { sessions: 'read', transcripts: true } })).ok).toBe(true)
+  })
+
   it('fills in what may be left out: hint and category', () => {
     const { hint: _h, category: _c, ...rest } = entry()
     expect(checkEntry(rest)).toMatchObject({ ok: true, entry: { hint: '', category: 'other' } })

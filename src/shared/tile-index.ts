@@ -9,7 +9,7 @@
 // manifest in the cloned commit is still the truth, and install refuses a tile whose manifest asks
 // for something the index did not list. A bad entry is dropped with a reason, never the whole index.
 
-import { ID_RE, checkManifest, type Permissions } from './manifest'
+import { BRIDGE_VERSION, ID_RE, checkManifest, type Permissions } from './manifest'
 import semver from 'semver'
 
 export const CATEGORIES = ['tools', 'notes', 'sessions', 'media', 'games', 'emulators', 'fun', 'other'] as const
@@ -95,7 +95,11 @@ export function checkEntry(raw: unknown, opts: { local?: boolean } = {}): { ok: 
   let permissions: Permissions = {}
   // The trusted tier is for tiles that ship with workshop; the index never lists one (for now).
   if (isObj(raw.permissions) && 'backend' in raw.permissions) errors.push('permissions.backend: the trusted tier is not open to tiles from the index')
-  const stand = checkManifest({ id: 'x', name: 'x', version: '0.0.0', workshop: '*', author: 'x', entry: 'index.html', permissions: raw.permissions ?? {} })
+  // A stand-in manifest, only to check the permissions' shapes. It claims this core's own bridge: with
+  // "*", whose lowest version is 0.0.0, every permission newer than 1.0 (oauth, launch, transcripts)
+  // read as asked of a bridge without it, and an entry asking for one was dropped (Spotify's, 11 Nov
+  // 2026). Whether the tile's own range fits is the manifest's business, checked at install.
+  const stand = checkManifest({ id: 'x', name: 'x', version: '0.0.0', workshop: `^${BRIDGE_VERSION}`, author: 'x', entry: 'index.html', permissions: raw.permissions ?? {} })
   if (stand.ok) permissions = stand.manifest.permissions
   else errors.push(...stand.errors)
 
