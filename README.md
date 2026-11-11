@@ -11,8 +11,8 @@ are welcome contributions, not launch scope.
 the tile column and choose **Build a new tile**, and workshop starts a session that builds one with
 you. The [tile section](#build-a-tile) below has the whole recipe.
 
-Open source under MIT, by [DoshaLabs](https://github.com/DoshaLabs). Project page:
-`https://doshalabs.github.io/workshop/` (coming soon).
+Open source under MIT, by [DoshaLabs](https://github.com/DoshaLabs). Project page and
+marketplace: [doshalabs.github.io/workshop](https://doshalabs.github.io/workshop/).
 
 ---
 
@@ -22,11 +22,10 @@ Most Claude Code tools are session managers: several sessions in one window. Ant
 desktop app does that now, and does it well. Workshop does it too, and then gives the rest of the
 window to **tiles**: small apps that sit beside your sessions and that anyone can write.
 
-The idea is World of Warcraft add-ons. An add-on is a folder with a manifest; you drop it in and
-it runs; people share them, and the best ones get used by everyone. [Raycast's
-extensions](https://github.com/raycast/extensions) work the same way today: open source, one public
-index, authors competing for installs. Workshop wants that for the desktop you code in. Designing a
-tile is fun, and that fun is the point.
+A tile is a folder with a manifest: you drop it in and it runs. People share them, list them in
+one open [marketplace](https://doshalabs.github.io/workshop/#marketplace), and the best ones get
+used by everyone. Workshop wants that for the desktop you code in. Designing a tile is fun, and
+that fun is the point.
 
 <p align="center">
   <img src="docs/assets/app.png" width="100%" alt="The workshop window in Deep Space: a session's conversation on the left, the new-session form in the middle, and the Git, Reminders and Wikipedia tiles on the right">
@@ -35,8 +34,9 @@ tile is fun, and that fun is the point.
 
 ## What is in it today
 
-Workshop runs from source. There is **no packaged app, no installer and no public tile index
-yet**; those are next on the [roadmap](#roadmap).
+Workshop runs from source, and `npm run install-app` builds the Mac app from it. There is **no
+download or installer yet**; that is next on the [roadmap](#roadmap). Tiles from the
+[marketplace](https://doshalabs.github.io/workshop/#marketplace) install from the + menu.
 
 - **Sessions.** Each one is the real `claude` command, unchanged, in its own tmux session, so it
   keeps running when you quit. The left column shows each session's conversation as it happens,

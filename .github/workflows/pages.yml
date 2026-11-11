@@ -7,7 +7,11 @@ on:
     branches: [main]
     paths:
       - 'site/**'
-      - 'src/shared/knot.ts'
+      # The page imports core's own code: the Knot, the index's rules, permissions in words, and the
+      # built-in tiles' manifests and icons for the marketplace.
+      - 'src/shared/**'
+      - 'tiles/*/tile.json'
+      - 'tiles/*/icon.svg'
       - 'src/renderer/src/cosmos.ts'
       - 'src/shared/themes.ts'
       - 'docs/assets/**'

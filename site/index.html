@@ -18,10 +18,11 @@
         <h1>workshop</h1>
         <p class="lede">Claude Code sessions side by side in one Mac window, and a column of small apps beside them that anyone can write and share.</p>
         <p class="actions">
-          <a class="button primary" href="https://github.com/DoshaLabs/workshop">Source on GitHub</a>
+          <a class="button primary" href="#marketplace">Browse the marketplace</a>
           <a class="button" href="#tiles">Build a tile</a>
+          <a class="button" href="https://github.com/DoshaLabs/workshop">Source on GitHub</a>
         </p>
-        <p class="fine">macOS and Claude Code first. Open source under MIT. It runs from source today; there is no installer yet.</p>
+        <p class="fine">macOS and Claude Code first. Open source under MIT. Build the Mac app from source today; there is no download yet.</p>
       </div>
     </header>
 
@@ -36,13 +37,13 @@
         <ul class="columns">
           <li><strong>Sessions</strong> on the left, most recent first: what each said, its context and cost, and the Knot showing whether it is working or waiting for you.</li>
           <li><strong>The middle</strong> is the session you are on, a terminal. A tile can open there at reading size, or you can start a new session in a folder or a fresh worktree.</li>
-          <li><strong>Tiles</strong> on the right: Git, Reminders, Wikipedia with the weather, and whatever you build or install.</li>
+          <li><strong>Tiles</strong> on the right: Git, Reminders, Today with the weather, and whatever you build or install from the <a href="#marketplace">marketplace</a>. Any tile can open large in the middle, or pop out into a small square you drag anywhere.</li>
         </ul>
       </section>
 
       <section id="tiles" class="sheet">
         <h2>Tiles anyone can write</h2>
-        <p class="prose">A tile is a folder: a manifest and a web page. Drop the folder in and it runs, the way World of Warcraft add-ons work, or Raycast extensions. Write one with any web stack, share it from your own repository, and anyone can load it. No build step ever runs on the user's machine.</p>
+        <p class="prose">A tile is a folder: a manifest and a web page. Drop the folder in and it runs. Write one with any web stack, share it from your own repository, and list it in the marketplace for anyone to install. No build step ever runs on the user's machine.</p>
         <div class="split">
           <pre class="code" aria-label="A tile's manifest, tile.json"><code>{
   "id": "focus-timer",
@@ -67,6 +68,26 @@ node bin/workshop.mjs tile check ./focus-timer</code></pre>
         </div>
       </section>
 
+      <section id="marketplace" class="sheet market">
+        <div class="market-head">
+          <h2>Marketplace</h2>
+          <p class="market-count" id="market-count" aria-live="polite"></p>
+        </div>
+        <p class="prose">Tiles people have built and listed. Each one lives in its author's own repository; the marketplace pins the exact commit you get, checks it the way workshop does before it loads a tile, and shows you everything it asks for before you install. In workshop: press <strong>+</strong> at the foot of the tile column and open <strong>Marketplace</strong>.</p>
+        <div class="market-grid" id="market-listed">
+          <p class="market-wait">Reading the index…</p>
+        </div>
+        <h3 class="market-sub">Comes with workshop</h3>
+        <div class="market-grid" id="market-builtin"></div>
+        <div class="market-foot">
+          <div>
+            <h3>List your tile</h3>
+            <p class="prose">Push your tile to its own repository, then open a pull request that adds one entry to <a href="https://github.com/DoshaLabs/workshop-index">the index</a>. A check runs core's own rules on the commit you pin and lists what it asks for; it is listed when the check passes. A tile that reads your conversations and also reaches the network is read by a person first.</p>
+          </div>
+          <p class="actions"><a class="button" href="https://github.com/DoshaLabs/workshop-index#readme">How to submit</a> <a class="button" href="https://github.com/DoshaLabs/workshop-index/blob/main/tiles.json">tiles.json</a></p>
+        </div>
+      </section>
+
       <section class="sheet">
         <h2>Nothing a stranger wrote gets your Mac</h2>
         <p class="prose">Each tile runs in its own sandboxed page, on its own origin, with no Node, no files and no network. It reaches workshop through one object, <code>window.workshop</code>, and only for what its manifest asks. You see the list before it runs.</p>
@@ -81,6 +102,8 @@ node bin/workshop.mjs tile check ./focus-timer</code></pre>
           <div><dt>camera, microphone</dt><dd>Passed to the macOS prompt</dd></div>
           <div><dt>overlay</dt><dd>Cover the window for a moment, after a click</dd></div>
           <div><dt>music</dt><dd>What Spotify or Music is playing, and the controls</dd></div>
+          <div><dt>oauth</dt><dd>Sign you in to a service; workshop catches the redirect</dd></div>
+          <div><dt>transcripts</dt><dd>Read your sessions' conversations, with a loud warning first</dd></div>
         </dl>
         <p class="prose">A second, trusted tier adds a Node program with full access to the Mac. Only tiles that ship with workshop may use it (Git does, to run <code>git</code>); any other tile that asks is refused.</p>
       </section>
@@ -107,6 +130,7 @@ cd workshop</code></pre></li>
           <li><pre class="code"><code>npm install</code></pre></li>
           <li><pre class="code"><code>npm run dev</code></pre></li>
         </ol>
+        <p class="prose">Or build the Mac app into <code>/Applications</code> with <code>npm run install-app</code>. It offers its own updates when the repository it was built from changes.</p>
       </section>
 
       <section class="sheet">
@@ -115,22 +139,24 @@ cd workshop</code></pre></li>
           <div>
             <h3>Working now</h3>
             <ul>
-              <li>Sessions: start, park, resume, ⌘1–9</li>
-              <li>The tile sandbox and the whole bridge above</li>
-              <li>Git (Changes and Worktrees), Reminders, Wikipedia</li>
+              <li>Sessions: start, park, resume, ⌘1–9, each conversation live in its tile</li>
+              <li>Answer a session's permission prompts from its tile, or pause it before its next step</li>
+              <li>A session's subagents and helper sessions as one pack under it, each one killable</li>
+              <li>The marketplace: an index, and install, update and remove from the + menu</li>
+              <li>The tile sandbox and the whole bridge above; tiles open large or pop out</li>
+              <li>Git (Changes, Worktrees, History), Reminders, Today</li>
               <li>Build a tile with Claude, <code>tile dev</code>, <code>tile check</code></li>
-              <li>Install a tile from a git repository at a pinned commit</li>
-              <li>Deep Space and seven other themes; the Knot and sprite packs</li>
+              <li>A preview pane for files a session points at; a screen recorder for 9:16 clips or the session itself</li>
+              <li>A Mac app built from source that updates itself; Deep Space and the other themes; the Knot and sprite packs</li>
             </ul>
           </div>
           <div>
             <h3>Not yet</h3>
             <ul>
-              <li>A packaged app and an install script</li>
-              <li>The public index of tiles, and browsing it in the app</li>
-              <li>Answering permission prompts from a session's tile</li>
-              <li>Subagents as tiles; Git's History and PRs tabs</li>
-              <li>Spend, Files and Posture tiles</li>
+              <li>A download and an install script</li>
+              <li>Git's PRs tab</li>
+              <li>Spend, Files and web-app tiles</li>
+              <li>Rankings: most installed, most used</li>
             </ul>
           </div>
         </div>

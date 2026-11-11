@@ -745,11 +745,12 @@ riding the strand: workshop's own version of the "AlgoGlyph" in Colin's Cura app
 there; no code is shared). `src/shared/knot.ts` holds the curve, the status language and the
 colour maths (pure, tested); `src/renderer/src/Knot.tsx` runs it. It sits in every session's head
 where the dot was (`Mascot.tsx` falls back to it), and in the top left of the window, right of
-the traffic lights (`AppMark`), where it is full size and fast while any session works. Its
+the traffic lights (`AppMark`), where it is full size and quicker while any session works. Its
 boxes (`BOX` in `knot.ts`) are measured against deck: at rest it stands as tall as Foxtrot (15
-px in a 24 px box in a session's head; about 56 in the 88 px top bar, against his 56–60), so
-the top bar is deck's 88 px (`--bar`) and the traffic lights sit at deck's `{ x: 14, y: 37 }`
-(`docs/progress/2026-11-10-bar.md`).
+px in a 24 px box in a session's head), so the top bar is deck's 88 px (`--bar`) and the traffic
+lights sit at deck's `{ x: 14, y: 37 }` (`docs/progress/2026-11-10-bar.md`). The top bar's mark
+was then made 10% smaller (a 79 px box centred in the bar, about 50 px tall at rest) and turns
+30% slower than a session's knot in the same mode (`MARK_PACE`; Colin, 11 Nov 2026).
 
 | Status | Mode | Size | Loop | Frames/s | Colour |
 |---|---|---|---|---|---|

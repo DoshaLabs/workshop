@@ -126,7 +126,8 @@ code {
   margin: 0 auto;
 }
 .hero-knot {
-  width: min(100%, 560px);
+  /* 10% under the first 560 (Colin, 11 Nov 2026). */
+  width: min(100%, 500px);
   aspect-ratio: 1;
   justify-self: end;
   display: block;
@@ -406,8 +407,9 @@ footer p {
   }
   .hero-knot {
     justify-self: center;
-    width: min(78vw, 380px);
+    width: min(70vw, 340px);
   }
+
   .split,
   .status,
   .perms,
@@ -426,5 +428,154 @@ footer p {
   .modes canvas {
     width: 72px;
     height: 72px;
+  }
+}
+
+/* ── The marketplace: the index's tiles as cards ──────────────────────────── */
+.market-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.market-count {
+  font-family: var(--ui);
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 14px;
+  margin: 1.4em 0 1.8em;
+}
+.market-sub {
+  margin-top: 0.4em;
+  color: var(--muted);
+}
+.market-wait {
+  font-family: var(--ui);
+  color: var(--muted);
+}
+.tile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgb(4 5 13 / 0.55);
+  font-family: var(--ui);
+  min-width: 0;
+  transition: border-color 0.15s;
+}
+.tile-card:hover {
+  border-color: rgb(185 156 255 / 0.6);
+}
+.tile-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.tile-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  font-weight: 800;
+}
+.tile-card-icon img {
+  display: block;
+}
+.tile-card-title {
+  flex: 1;
+  min-width: 0;
+}
+.tile-card h4 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+.tile-card-by {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.tile-card-cat {
+  flex: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.tile-card-hint {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1rem;
+  line-height: 1.45;
+}
+.tile-card-label {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tile-card-asks {
+  list-style: none;
+  margin: -4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.9rem;
+}
+.tile-card-asks li {
+  position: relative;
+  padding-left: 16px;
+}
+.tile-card-asks li::before {
+  content: '·';
+  position: absolute;
+  left: 2px;
+  color: var(--accent);
+  font-weight: 800;
+}
+.tile-card-repo {
+  margin-top: auto;
+  padding-top: 4px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.market-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-top: 1.4em;
+  border-top: 1px solid var(--line);
+}
+.market-foot .actions {
+  flex: none;
+  margin: 0;
+}
+@media (max-width: 820px) {
+  .market-foot {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
