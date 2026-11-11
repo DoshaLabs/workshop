@@ -21,6 +21,7 @@ import { uiSmoke, wheelSmoke } from './smoke-ui'
 import { musicSmoke } from './smoke-music'
 import type { MusicHost } from './music'
 import { recorderSmoke } from './smoke-recorder'
+import { leashSmoke } from './smoke-leash'
 import type { Recorder } from './recorder'
 
 interface Ctx {
@@ -194,7 +195,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await sleep(200)
     const wikiStore = JSON.parse(await readFile(join(userData, 'tile-data', 'wikipedia', 'store.json'), 'utf8')) as { places?: { name: string }[] }
     check('wikipedia page: the place is kept in workshop.storage', wikiStore.places?.[0]?.name === 'Lisbon', JSON.stringify(wikiStore))
-    await waitFor('the picture of the day', async () => (await wjs(`!!document.querySelector('.wiki-text .wiki-title')`)) === true)
+    await waitFor('the picture of the day', async () => (await wjs(`!!document.querySelector('.wiki-text .wiki-caption')`)) === true)
     const show = await post(door.port, '/tile/wikipedia', { op: 'show', args: ['Red fox'] }, auth)
     check('wikipedia door: show opens the article in the tile', (await wjs(`document.querySelector('.wiki-article .wiki-title')?.textContent ?? ''`)).includes('Red fox'))
     const found = await post(door.port, '/tile/wikipedia', { op: 'search', args: ['red', 'fox'] }, auth)
@@ -212,6 +213,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
       return finish(results, ctx)
     }
     await sessions(check, ctx)
+    await leashSmoke(check, ctx)
     await files(check, ctx)
     await themes(check, ctx)
     await mascot(check, ctx)
@@ -321,7 +323,7 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
     wiki.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
     wiki.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
   }
-  await waitFor('the picture to be up', async () => (await wjs(`document.body.classList.contains('wiki-picture') && !!document.querySelector('.wiki-text .wiki-title')`)) === true)
+  await waitFor('the picture to be up', async () => (await wjs(`document.body.classList.contains('wiki-picture') && !!document.querySelector('.wiki-text .wiki-caption')`)) === true)
 
   const bare = (await wjs(`workshop.openOverlay().then(() => 'opened', (e) => e.message)`)) as string
   check('overlay: refused without a click in the page', /click or key/.test(bare), bare)
@@ -1173,6 +1175,11 @@ async function restart(check: (name: string, ok: boolean, detail?: string) => vo
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'before the restart\\r'); true`)
   await waitFor('its turn', async () => (await screen(id)).includes('DONE before the restart'))
   await waitFor('its transcript', () => (core.transcripts.get(id)?.blocks.length ?? 0) > 0)
+  // The leash across the restart: paused, a tool call held when this core goes (main/leash.ts).
+  await js(`window.core.leash(${JSON.stringify(id)}, 'pause')`)
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'bash echo across-the-restart\\r'); true`)
+  const heldBefore = await waitFor('the held call', () => (core.sessions.view(id)?.leash.held.length ?? 0) === 1, 8000).then(() => true, () => false)
+  check('restart: a paused session’s call is held before core goes', heldBefore)
 
   core.stop()
   door.stop()
@@ -1218,6 +1225,14 @@ export async function runRestarted(ctx: Ctx): Promise<number> {
       check('it is reattached', await waitFor('the pty', () => !!view()?.attached, 5000).then(() => true, () => false))
       check('its conversation is read again', await waitFor('the transcript', () => userTexts().includes('before the restart'), 5000).then(() => true, () => false), JSON.stringify(userTexts()))
       check('its tile is drawn', await waitFor('the tile', async () => (await js(`!!document.querySelector('[data-session="${id}"]')`)) === true, 5000).then(() => true, () => false))
+      // The leash: the pause stood, the held call found this core and is held again; resume runs it.
+      check('it is still paused', view()?.leash.paused === true)
+      const heldAgain = await waitFor('the held call to come back', () => (view()?.leash.held.length ?? 0) === 1, 8000).then(() => true, () => false)
+      const before = (await screen(id)).includes('BASH across-the-restart')
+      check('the call held when core went is held by this one, not run', heldAgain && !before, JSON.stringify(view()?.leash))
+      await js(`window.core.leash(${JSON.stringify(id)}, 'resume')`)
+      check('resume runs it', await waitFor('the held call to run', async () => (await screen(id)).includes('BASH across-the-restart'), 8000).then(() => true, () => false))
+      await waitFor('its turn', async () => (await screen(id)).includes('DONE bash echo across-the-restart'), 5000).catch(() => undefined)
       await js(`window.core.ptyInput(${JSON.stringify(id)}, 'after the restart\\r'); true`)
       const typed = await waitFor('the turn', async () => (await screen(id)).includes('DONE after the restart'), 10_000).then(() => true, () => false)
       // The hooks find the new core through <profile>/port, with the token kept on disk.
