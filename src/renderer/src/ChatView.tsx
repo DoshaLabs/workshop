@@ -11,7 +11,7 @@ import type { ChatBlock } from '@shared/transcript'
 import { Markdown } from './Markdown'
 import { useTranscript } from './transcripts'
 
-export function ChatView({ id, status, attention }: { id: string; status: SessionStatus; attention: boolean }) {
+export function ChatView({ id, status, attention, empty }: { id: string; status: SessionStatus; attention: boolean; /** What an empty conversation says (a subagent's has nothing to ask). */ empty?: string }) {
   const t = useTranscript(id)
   const box = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
@@ -30,7 +30,7 @@ export function ChatView({ id, status, attention }: { id: string; status: Sessio
   if (blocks.length === 0)
     return (
       <div className="chat chat-empty">
-        <p>{t?.found ? 'Nothing to show yet.' : busy ? 'Starting…' : 'A fresh session. Ask it something below.'}</p>
+        <p>{empty ?? (t?.found ? 'Nothing to show yet.' : busy ? 'Starting…' : 'A fresh session. Ask it something below.')}</p>
       </div>
     )
 
