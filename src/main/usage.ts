@@ -68,6 +68,19 @@ export class UsageTracker {
     this.push(u)
   }
 
+  /**
+   * A Codex session's context use, from its app-server. No cost: Codex reports tokens, not dollars
+   * (docs/progress/2026-11-11-codex.md), so its cost stays unknown rather than guessed.
+   */
+  setContext(id: string, pct: number): void {
+    const was = this.sessions.get(id) ?? { context: null, costUsd: null }
+    if (was.context === pct) return
+    this.sessions.set(id, { ...was, context: pct })
+    const u = this.get()
+    this.last = JSON.stringify([u.fiveHour, u.sevenDay, u.sessions])
+    this.push(u)
+  }
+
   /** A session that is gone takes its figures with it. */
   forget(id: string): void {
     this.sessions.delete(id)

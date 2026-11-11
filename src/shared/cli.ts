@@ -72,7 +72,22 @@ export function codexTuiArgs(o: CodexLaunch): string[] {
   return args
 }
 
-/** The app-server's argv after `codex`. */
-export function codexServerArgs(sock: string): string[] {
-  return ['app-server', '--listen', `unix://${sock}`]
+/**
+ * The app-server's argv after `codex`. `trusted` folders (worktrees core made for the session:
+ * Colin, 11 Nov 2026) are trusted for this server only, so Codex does not ask "Trust this folder?"
+ * for each new worktree path. Nothing is written to the user's config. The folder goes in the
+ * VALUE, as an inline table: 0.167.1 splits a `-c` key on every dot, quotes or not
+ * (config/src/overrides.rs), and the session-flags layer merges into the user's `projects`, so
+ * their own trusted folders stay trusted (seen with the real CLI). The server answers the TUI's
+ * trust check (`config/read`), so the override goes on the server, not the TUI.
+ */
+export function codexServerArgs(sock: string, trusted: string[] = []): string[] {
+  const args = ['app-server', '--listen', `unix://${sock}`]
+  if (trusted.length) args.push('-c', `projects={${trusted.map((p) => `${tomlString(p)}={trust_level="trusted"}`).join(',')}}`)
+  return args
+}
+
+/** A TOML basic string: JSON's escapes are all TOML's, except that TOML has no `\/` (JSON.stringify never writes one). */
+function tomlString(s: string): string {
+  return JSON.stringify(s).replace(/[\u007f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
 }

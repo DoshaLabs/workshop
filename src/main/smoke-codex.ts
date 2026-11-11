@@ -68,19 +68,43 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   const tuiArgv = async (): Promise<string[]> => (JSON.parse(await readFile(`${sock}.tui.json`, 'utf8').catch(() => '{}')) as { argv?: string[] }).argv ?? []
   const argv = await tuiArgv()
   const rec = core.sessions.find(id)
-  check('codex: the session is kept as Codex, its thread id not yet known', rec?.cli === 'codex' && rec.cliSessionId === '', JSON.stringify(rec && { cli: rec.cli, sid: rec.cliSessionId }))
+  check('codex: the session is kept as Codex', rec?.cli === 'codex', JSON.stringify(rec && { cli: rec.cli }))
   check('codex: the TUI connects to the session\'s own server, in its folder, with the mode\'s flags', argv.join(' ') === `--remote unix://${sock} -C ${cwd} -s read-only -a on-request`, argv.join(' '))
   const w = windows(id)
   check('codex: one tmux session, the TUI attached and the app-server beside it', w.length === 2 && /^0:[^:]+:1$/.test(w[0]) && w[1].startsWith('1:app-server:0'), w.join(' '))
   const server = JSON.parse(await readFile(join(userData, `fake-codex-server-${id}.json`), 'utf8')) as { argv: string[]; cwd: string; env: Record<string, string> }
   check('codex: the app-server runs in the session\'s folder (the session runs in the server\'s)', server.cwd === cwd && server.argv.join(' ') === `app-server --listen unix://${sock}`, `${server.cwd} ${server.argv.join(' ')}`)
   check('codex: the server has the session\'s door env (its tools run there), and no token in argv', server.env.WORKSHOP_SESSION === id && /auth\/[0-9a-f]{6}\.header$/.test(server.env.WORKSHOP_AUTH ?? '') && !!server.env.WORKSHOP_TILE && !server.argv.some((x) => /[0-9a-f]{48}/.test(x)), JSON.stringify(server.env))
-  check('codex: a session not yet heard from is unknown, not stuck starting', core.sessions.view(id)?.status === 'unknown', core.sessions.view(id)?.status)
+  check('codex: a new session is never stuck starting', core.sessions.view(id)?.status !== 'starting', core.sessions.view(id)?.status)
 
-  // Typing reaches the TUI (the terminal is the real one).
+  // Phase 2: core is a second client of the session's app-server.
+  await waitFor('core to find the thread', () => /^[0-9a-f-]{36}$/.test(core.sessions.find(id)?.cliSessionId ?? ''), 10_000).catch(() => undefined)
+  const threadId = core.sessions.find(id)?.cliSessionId ?? ''
+  check('codex: core finds the session\'s thread on its server (not the ephemeral side thread) and keeps its id', /^[0-9a-f-]{36}$/.test(threadId), threadId)
+
+  // Typing reaches the TUI (the terminal is the real one), and the turn reaches core.
   core.sessions.input(id, 'hello codex\r')
   await waitFor('the echo', async () => (await screen(id)).includes('> hello codex'), 5000).catch(() => undefined)
   check('codex: what you type reaches the TUI', (await screen(id)).includes('> hello codex'))
+  await waitFor('the turn in the transcript', () => (core.transcripts.get(id)?.blocks.length ?? 0) >= 3, 10_000).catch(() => undefined)
+  const blocks = core.transcripts.get(id)?.blocks ?? []
+  check('codex: the conversation as a session tile shows it: the prompt, the command (shell dropped), the reply', blocks.length === 3 && blocks[0].kind === 'user' && blocks[0].text === 'hello codex' && blocks[1].kind === 'tool' && blocks[1].label === 'touch hello.txt' && blocks[1].done && !blocks[1].error && blocks[2].kind === 'text' && blocks[2].text.startsWith('Made **hello.txt**'), JSON.stringify(blocks))
+  await waitFor('the turn to end', () => core.sessions.view(id)?.status === 'idle' && core.sessions.view(id)?.attention === true, 5000).catch(() => undefined)
+  const v = core.sessions.view(id)
+  check('codex: a finished turn is idle and waits for you', v?.status === 'idle' && v.attention === true, JSON.stringify(v && { status: v.status, attention: v.attention }))
+  await waitFor('the title', () => core.sessions.view(id)?.title === 'Make hello.txt', 5000).catch(() => undefined)
+  check('codex: Codex\'s name for the thread is the title; the side thread\'s is ignored', core.sessions.view(id)?.title === 'Make hello.txt', String(core.sessions.view(id)?.title))
+  check('codex: its context use, from token usage (25,840 of 258,400); no cost guessed', core.usage.get().sessions[id]?.context === 10 && core.usage.get().sessions[id]?.costUsd === null, JSON.stringify(core.usage.get().sessions[id]))
+
+  // An approval: the session needs you, and core never answers it (the terminal does).
+  core.sessions.input(id, 'ask\r')
+  await waitFor('needs you', () => core.sessions.view(id)?.status === 'blocked', 5000).catch(() => undefined)
+  await sleep(1500)
+  check('codex: an approval waiting marks the session as needing you', core.sessions.view(id)?.status === 'blocked' && core.sessions.view(id)?.attention === true, core.sessions.view(id)?.status)
+  check('codex: core never answers the approval request (the first answer wins; the terminal\'s is the one)', !existsSync(`${sock}.answers.json`))
+  core.sessions.input(id, 'yes\r')
+  await waitFor('idle again', () => core.sessions.view(id)?.status === 'idle', 5000).catch(() => undefined)
+  check('codex: answered in the terminal, it goes on', core.sessions.view(id)?.status === 'idle', core.sessions.view(id)?.status)
 
   // Its tile in the column: the codex badge, and no pause (the leash is Claude Code's hooks).
   await js(`document.querySelector('.session-plus')?.click(); true`)
@@ -88,6 +112,9 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   await waitFor('its tile', async () => (await js(`!!${tile}`)) === true, 5000).catch(() => undefined)
   const head = (await js(`(() => { const t = ${tile}; return t && { badges: [...t.querySelectorAll('.head .badge')].map((b) => b.textContent.trim()), pause: !!t.querySelector('.head .leash-toggle') } })()`)) as { badges: string[]; pause: boolean } | null
   check('codex: its tile wears a codex badge and no pause', !!head && head.badges.includes('codex') && !head.pause, JSON.stringify(head))
+  await waitFor('its conversation', async () => (await js(`!!${tile}?.querySelector('.chat-tool')`)) === true, 5000).catch(() => undefined)
+  const drawn = (await js(`(() => { const t = ${tile}; return t && { user: t.querySelector('.chat-user')?.textContent, bold: t.querySelector('.chat-text strong')?.textContent, tool: t.querySelector('.chat-tool')?.textContent, title: t.querySelector('.subname')?.textContent } })()`)) as Record<string, string> | null
+  check('codex: its tile draws the conversation as a Claude session\'s: prompt, markdown, tool line, title', !!drawn && drawn.user === 'hello codex' && drawn.bold === 'hello.txt' && /touch hello\.txt/.test(drawn.tool ?? '') && (drawn.title ?? '').includes('Make hello.txt'), JSON.stringify(drawn))
 
   // Park, then resume: the same tmux session, reattached.
   core.sessions.park(id)
@@ -123,10 +150,11 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   const wtSock = join(userData, 'codex', `${wtId}.sock`)
   await waitFor('the worktree TUI', () => existsSync(`${wtSock}.tui.json`), 15_000).catch(() => undefined)
   const wtArgv = (JSON.parse(await readFile(`${wtSock}.tui.json`, 'utf8').catch(() => '{}')) as { argv?: string[] }).argv ?? []
-  const wtServer = JSON.parse(await readFile(join(userData, `fake-codex-server-${wtId}.json`), 'utf8').catch(() => '{}')) as { cwd?: string }
+  const wtServer = JSON.parse(await readFile(join(userData, `fake-codex-server-${wtId}.json`), 'utf8').catch(() => '{}')) as { cwd?: string; argv?: string[] }
   const wtRec = core.sessions.find(wtId)
   check('codex: a worktree session starts in .workshop/worktrees/<name> on worktree-<name>, made by core', wtRec?.cwd === wtPath && wtRec.worktree && wtRec.name === 'codex-wt' && g('worktree', 'list').includes(wtPath) && execFileSync('git', ['-C', wtPath, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim() === 'worktree-codex-wt', JSON.stringify(wtRec && { cwd: wtRec.cwd, name: wtRec.name }))
   check('codex: its TUI and server both run in the worktree, and Codex never sees --worktree', wtArgv.join(' ').includes(`-C ${wtPath}`) && !wtArgv.includes('--worktree') && wtServer.cwd === wtPath, `${wtArgv.join(' ')} | ${wtServer.cwd}`)
+  check('codex: the worktree core made is trusted for its own server only (no "Trust this folder?")', (wtServer.argv ?? []).join(' ') === `app-server --listen unix://${wtSock} -c projects={${JSON.stringify(wtPath)}={trust_level="trusted"}}`, (wtServer.argv ?? []).join(' '))
   check('codex: the main tree stays clean (.workshop/ is excluded, nothing tracked changed)', g('status', '--porcelain') === '', g('status', '--porcelain'))
   await core.sessions.kill(wtId)
 

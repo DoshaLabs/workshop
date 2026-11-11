@@ -91,8 +91,24 @@ export class TranscriptWatcher {
     this.poll()
   }
 
+  /**
+   * Conversations this watcher does not tail itself: a Codex session's, which core reads from the
+   * session's app-server (main/codex-link.ts). Kept here so `get` answers the window and the tile
+   * bridge alike, for either CLI. `put` keeps it and tells everyone; `drop` forgets it.
+   */
+  private external = new Map<string, Transcript>()
+
+  put(t: Transcript): void {
+    this.external.set(t.id, t)
+    this.emit(t)
+  }
+
+  drop(id: string): void {
+    this.external.delete(id)
+  }
+
   get(id: string): Transcript | null {
-    return this.tails.get(id)?.transcript ?? null
+    return this.tails.get(id)?.transcript ?? this.external.get(id) ?? null
   }
 
   /** The transcript file of a watched session, null until the CLI has written it. */
@@ -104,6 +120,7 @@ export class TranscriptWatcher {
     if (this.timer) clearInterval(this.timer)
     this.timer = null
     this.tails.clear()
+    this.external.clear()
   }
 
   private poll(): void {

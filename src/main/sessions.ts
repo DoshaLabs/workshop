@@ -374,6 +374,40 @@ export class SessionManager {
     }
   }
 
+  // ---- signals from a Codex session's app-server (main/codex-link.ts) ----
+
+  /** The thread a Codex session runs, learnt once: kept, so it resumes on that thread after a reboot. */
+  setCodexThread(id: string, threadId: string): void {
+    const rec = this.records.find((x) => x.id === id)
+    if (!rec || rec.cli !== 'codex' || rec.cliSessionId === threadId) return
+    rec.cliSessionId = threadId
+    this.save()
+  }
+
+  /** Its thread's status: working, idle, or waiting on you (an approval, a question). */
+  codexStatus(id: string, status: SessionStatus, needsYou: boolean): void {
+    const rec = this.records.find((x) => x.id === id)
+    const r = this.rt.get(id)
+    if (!rec || !r || rec.cli !== 'codex') return
+    const attention = needsYou ? true : status === 'busy' ? false : r.attention
+    if (r.status === status && r.attention === attention) return
+    if (status === 'busy') rec.activeAt = Date.now()
+    r.status = status
+    r.attention = attention
+    this.broadcast()
+  }
+
+  /** A turn ended: it waits for you, as a Claude Code session after its Stop hook. */
+  codexTurnDone(id: string): void {
+    const rec = this.records.find((x) => x.id === id)
+    const r = this.rt.get(id)
+    if (!rec || !r || rec.cli !== 'codex') return
+    rec.activeAt = Date.now()
+    r.status = 'idle'
+    r.attention = true
+    this.broadcast()
+  }
+
   /** A hook from a session. `sessionId` is the one its token belongs to; the payload must agree. */
   onHook(event: HookEvent, payload: HookPayload): void {
     const rec = this.records.find((x) => isSession(x, payload.session_id))
@@ -470,7 +504,9 @@ export class SessionManager {
     const run = ['codex', ...tui].map(shq).join(' ')
     const tuiCmd = `${wait}; ${run}; s=$?; [ $s -eq 0 ] && tmux kill-session -t ${shq(rec.tmuxName)}; exit $s`
     const env = Object.entries({ ...(this.o.cliEnv?.() ?? {}), WORKSHOP_AUTH: this.authFile(rec), WORKSHOP_SESSION: rec.id }).map(([k, v]) => `${k}=${v}`)
-    const serverCmd = 'exec ' + ['env', ...env, 'codex', ...codexServerArgs(sock)].map(shq).join(' ')
+    // A Codex worktree is always one core made (Codex refuses --worktree under --remote): trusted.
+    const trusted = rec.worktree ? [rec.cwd] : []
+    const serverCmd = 'exec ' + ['env', ...env, 'codex', ...codexServerArgs(sock, trusted)].map(shq).join(' ')
     await this.o.tmux.newSession({ name: rec.tmuxName, cwd: rec.cwd, command: tuiCmd, cols: SPAWN_COLS, rows: SPAWN_ROWS })
     try {
       await this.o.tmux.newWindow({ session: rec.tmuxName, name: 'app-server', cwd: rec.cwd, command: serverCmd })

@@ -33,6 +33,13 @@ describe('codexTuiArgs', () => {
   it('the server listens on the same socket', () => {
     expect(codexServerArgs(SOCK)).toEqual(['app-server', '--listen', `unix://${SOCK}`])
   })
+  it('a worktree core made is trusted for that server only, the folder in the value (a -c key splits on dots)', () => {
+    expect(codexServerArgs(SOCK, ['/r/.workshop/worktrees/a.b'])).toEqual(['app-server', '--listen', `unix://${SOCK}`, '-c', 'projects={"/r/.workshop/worktrees/a.b"={trust_level="trusted"}}'])
+  })
+  it('a folder with quotes, backslashes or control characters stays one TOML string', () => {
+    const v = codexServerArgs(SOCK, ['/r/we"ird\\path\u007f'])[4]
+    expect(v).toBe('projects={"/r/we\\"ird\\\\path\\u007f"={trust_level="trusted"}}')
+  })
 })
 
 describe('the launcher’s Codex modes', () => {

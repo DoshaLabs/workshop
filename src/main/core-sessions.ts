@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { CH } from '@shared/ipc'
-import { isSession, type NewSessionOpts, type SessionsState } from '@shared/sessions'
+import { isSession, type NewSessionOpts, type SessionView, type SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import type { Door } from './door'
 import { findInPath, shellEnv } from './env'
@@ -21,6 +21,7 @@ import { startPreview } from './preview'
 import { keepImage } from './drops'
 import { CommitRecorder, CommitStore, type CommitRecord } from './commits'
 import { Leash } from './leash'
+import { CodexLink } from './codex-link'
 import { AgentTracker } from './agents'
 import { Helpers } from './helpers'
 import type { AgentsState } from '@shared/agents'
@@ -106,7 +107,35 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     transcripts.sync(open.filter((x) => x.cli !== 'codex').map((x) => ({ id: x.id, cliSessionId: x.cliSessionId })))
     agents?.keepParents(new Set(open.map((x) => x.id)))
     helpers?.keepParents(new Set(s.sessions.map((x) => x.id)))
+    syncCodex(open.filter((x) => x.cli === 'codex' && x.tmuxAlive))
   }
+
+  // Codex sessions: core is a second client of each one's app-server while it is open (main/codex-link.ts).
+  const codexLinks = new Map<string, CodexLink>()
+  const syncCodex = (live: SessionView[]): void => {
+    const keep = new Set(live.map((x) => x.id))
+    for (const [id, link] of codexLinks) {
+      if (keep.has(id)) continue
+      link.stop()
+      codexLinks.delete(id)
+      transcripts.drop(id)
+    }
+    for (const v of live) {
+      if (codexLinks.has(v.id) || !sessionsRef) continue
+      const id = v.id
+      const link = new CodexLink(id, sessionsRef.codexSocket(v), v.cwd, v.cliSessionId, {
+        thread: (tid) => sessionsRef?.setCodexThread(id, tid),
+        status: (st, needsYou) => sessionsRef?.codexStatus(id, st, needsYou),
+        turnDone: () => sessionsRef?.codexTurnDone(id),
+        title: (name) => sessionsRef?.setTitle(id, name),
+        transcript: (t) => transcripts.put(t),
+        context: (pct) => usageRef?.setContext(id, pct)
+      })
+      codexLinks.set(id, link)
+      link.start()
+    }
+  }
+  let usageRef: UsageTracker | null = null
 
   // The leash and permission prompts. Its view is part of each session's state; a change is drawn at once.
   let sessionsRef: SessionManager | null = null
@@ -138,6 +167,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     o.onUsage(u)
   })
   sessionsRef = sessions
+  usageRef = usage
   const agentsState = (): AgentsState => ({ agents: [...tracker.list(), ...helperList.list()], leash: tracker.hasLeash() })
   // The wolfpack's tails: the subagents' files once seen, and the helpers' by session id.
   let subagentTails: { id: string; path: string | null }[] = []
@@ -323,6 +353,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     stop() {
       fleet.stop()
       tracker.stop()
+      for (const link of codexLinks.values()) link.stop()
+      codexLinks.clear()
       transcripts.stop()
       preview.stop()
       sessions.detachAll()

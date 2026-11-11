@@ -2,28 +2,42 @@
 // A stand-in for OpenAI's `codex` CLI, used only by `npm run smoke` (src/main/smoke-codex.ts).
 // Shaped on codex-cli 0.167.1 as workshop runs it (docs/progress/2026-11-11-codex.md):
 //
-// - `codex app-server --listen unix://<path>`: listens on that socket (it speaks nothing yet: the
-//   JSON-RPC comes with phase 2) and writes what it was started with, its folder and the WORKSHOP_*
-//   names in its env, to $WORKSHOP_HOME/fake-codex-server-<$WORKSHOP_SESSION>.json.
+// - `codex app-server --listen unix://<path> [-c …]`: JSON-RPC over a WebSocket (upgrade to /rpc)
+//   on that socket, as the real one: initialize, thread/loaded/list, thread/read, thread/resume
+//   (subscribes the caller), thread/items/list (newest first). It writes its argv, folder and the
+//   WORKSHOP_* names in its env to $WORKSHOP_HOME/fake-codex-server-<$WORKSHOP_SESSION>.json.
 // - Anything else is the TUI: `[resume <id>] --remote unix://<path> -C <dir> [flags] [-- prompt]`.
-//   It connects to the socket (refusing to run without one, as the real TUI does), then prints
-//   `FAKE CODEX` with its argv as JSON and `CONNECTED <path>`, and echoes each line typed as
-//   `> line`, and writes its argv to <path>.tui.json. `exit` ends it cleanly (status 0), `crash` with status 3.
+//   It connects to the server as a client (refusing to run without one), starts its thread (the
+//   resumed id, else a new one) plus an ephemeral side thread (Codex's own side work: core must
+//   ignore it), writes its argv to <path>.tui.json, prints `FAKE CODEX <argv>` and `CONNECTED`.
+//   Each line typed is a turn: status active, the prompt, `touch hello.txt` run, a markdown reply,
+//   token usage, turn completed, status idle, and a name for the thread after the first. `ask`
+//   instead asks for approval of `rm -rf build` (a server request to every subscriber; any answer
+//   is written to <path>.answers.json, so smoke can see core never answers) until `yes` is typed.
+//   `exit` ends the TUI cleanly (status 0), `crash` with status 3.
 
-const net = require('node:net')
 const fs = require('node:fs')
+const http = require('node:http')
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
+const { WebSocket, WebSocketServer } = require('ws')
 
 const argv = process.argv.slice(2)
+const sockOf = (flag) => {
+  const at = argv.indexOf(flag)
+  return at >= 0 ? String(argv[at + 1]).replace(/^unix:\/\//, '') : ''
+}
 
 if (argv[0] === '--version') {
   console.log('codex-cli 0.0.0-fake')
   process.exit(0)
 }
 
-if (argv[0] === 'app-server') {
-  const at = argv.indexOf('--listen')
-  const sock = at >= 0 ? String(argv[at + 1]).replace(/^unix:\/\//, '') : ''
+if (argv[0] === 'app-server') server()
+else tui()
+
+function server() {
+  const sock = sockOf('--listen')
   if (!sock) {
     console.error('fake codex: app-server needs --listen unix://<path>')
     process.exit(2)
@@ -32,50 +46,174 @@ if (argv[0] === 'app-server') {
   if (process.env.WORKSHOP_HOME) {
     fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-codex-server-${process.env.WORKSHOP_SESSION || 'none'}.json`), JSON.stringify({ argv, cwd: process.cwd(), env }))
   }
+  /** id → { thread, items: [{turnId, item, startedAtMs, completedAtMs}], subs: Set<ws> } */
+  const threads = new Map()
+  let pendingAsk = null
+  let reqId = 1000
+  let named = false
+  const send = (ws, m) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ jsonrpc: '2.0', ...m }))
+  const notify = (th, method, params) => {
+    for (const ws of th.subs) send(ws, { method, params: { threadId: th.thread.id, ...params } })
+  }
+  const makeThread = (id, ephemeral) => {
+    const thread = { id, cwd: process.cwd(), ephemeral, parentThreadId: null, source: 'cli', createdAt: Math.floor(Date.now() / 1000), name: null, status: { type: 'idle' }, preview: '' }
+    const th = { thread, items: [], subs: new Set() }
+    threads.set(id, th)
+    return th
+  }
+  const status = (th, s) => {
+    th.thread.status = s
+    notify(th, 'thread/status/changed', { status: s })
+  }
+  const item = (th, turnId, it, done) => {
+    const at = Date.now()
+    if (done) {
+      const had = th.items.find((e) => e.item.id === it.id)
+      if (had) Object.assign(had, { item: it, completedAtMs: at })
+      else th.items.push({ turnId, item: it, startedAtMs: at, completedAtMs: at })
+    } else th.items.push({ turnId, item: it, startedAtMs: at, completedAtMs: null })
+    notify(th, done ? 'item/completed' : 'item/started', { item: it, turnId, completedAtMs: at })
+  }
+  const exec = (id, status, exitCode) => ({ type: 'commandExecution', id, command: "/bin/zsh -lc 'touch hello.txt'", cwd: process.cwd(), status, exitCode, aggregatedOutput: null, commandActions: [], processId: null, source: 'agent', pluginId: null, scriptPath: null, durationMs: null })
+  const turn = (th, text) => {
+    const turnId = randomUUID()
+    status(th, { type: 'active', activeFlags: [] })
+    item(th, turnId, { type: 'userMessage', id: randomUUID(), clientId: null, content: [{ type: 'text', text, text_elements: [] }] }, true)
+    const c = randomUUID()
+    item(th, turnId, exec(c, 'inProgress', null), false)
+    item(th, turnId, exec(c, 'completed', 0), true)
+    item(th, turnId, { type: 'agentMessage', id: randomUUID(), text: `Made **hello.txt** for: ${text}\n\n- one\n- two`, phase: null, memoryCitation: null, delivery: null, questions: null }, true)
+    notify(th, 'thread/tokenUsage/updated', { turnId, tokenUsage: { total: { totalTokens: 13931 }, last: { totalTokens: 25840, inputTokens: 25000, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: 840, reasoningOutputTokens: 0 }, modelContextWindow: 258400 } })
+    notify(th, 'turn/completed', { turn: { id: turnId, items: [], status: 'completed' } })
+    status(th, { type: 'idle' })
+    if (!named) {
+      named = true
+      th.thread.name = 'Make hello.txt'
+      notify(th, 'thread/name/updated', { threadName: 'Make hello.txt' })
+      // The side thread gets a name of its own: core must not take it.
+      for (const side of threads.values()) if (side.thread.ephemeral) notify(side, 'thread/name/updated', { threadName: 'SIDE THREAD' })
+    }
+  }
+  const answers = []
+  const hs = http.createServer((_q, r) => r.writeHead(426).end())
+  const wss = new WebSocketServer({ server: hs, path: '/rpc' })
+  wss.on('connection', (ws) => {
+    ws.on('close', () => {
+      for (const th of threads.values()) th.subs.delete(ws)
+    })
+    ws.on('message', (data) => {
+      let m
+      try { m = JSON.parse(String(data)) } catch { return }
+      const reply = (result) => send(ws, { id: m.id, result })
+      if (m.id !== undefined && !m.method) {
+        // An answer to a server request.
+        answers.push(m)
+        fs.writeFileSync(`${sock}.answers.json`, JSON.stringify(answers))
+        return
+      }
+      const p = m.params || {}
+      switch (m.method) {
+        case 'initialize': return reply({ userAgent: 'fake/0', codexHome: '', platformFamily: 'unix', platformOs: 'macos' })
+        case 'initialized': return
+        case 'thread/loaded/list': return reply({ data: [...threads.keys()], nextCursor: null })
+        case 'thread/read': {
+          const th = threads.get(p.threadId)
+          return th ? reply({ thread: th.thread }) : send(ws, { id: m.id, error: { code: -32600, message: 'no such thread' } })
+        }
+        case 'thread/resume': {
+          const th = threads.get(p.threadId)
+          if (!th) return send(ws, { id: m.id, error: { code: -32600, message: 'no such thread' } })
+          th.subs.add(ws)
+          return reply({ thread: th.thread, model: 'fake', cwd: th.thread.cwd })
+        }
+        case 'thread/items/list': {
+          const th = threads.get(p.threadId)
+          const data = th ? [...th.items].reverse().slice(0, p.limit || 50) : []
+          return reply({ data, nextCursor: null, backwardsCursor: null })
+        }
+        // The fake TUI's own calls (the real TUI starts its thread with thread/start and turns with turn/start).
+        case 'fake/hello': {
+          const th = threads.get(p.resume) || makeThread(p.resume || randomUUID(), false)
+          th.subs.add(ws)
+          if (![...threads.values()].some((t) => t.thread.ephemeral)) makeThread(randomUUID(), true)
+          return reply({ threadId: th.thread.id })
+        }
+        case 'fake/prompt': {
+          const th = threads.get(p.threadId)
+          if (!th) return
+          if (p.text === 'ask') {
+            status(th, { type: 'active', activeFlags: ['waitingOnApproval'] })
+            pendingAsk = { th, id: reqId++ }
+            for (const s of th.subs) send(s, { id: pendingAsk.id, method: 'item/commandExecution/requestApproval', params: { threadId: th.thread.id, turnId: 't', itemId: 'i', command: 'rm -rf build', cwd: process.cwd(), reason: 'clean' } })
+          } else if (p.text === 'yes' && pendingAsk) {
+            notify(pendingAsk.th, 'serverRequest/resolved', { requestId: pendingAsk.id })
+            status(pendingAsk.th, { type: 'idle' })
+            pendingAsk = null
+          } else turn(th, p.text)
+          return reply({})
+        }
+        default:
+          if (m.id !== undefined) send(ws, { id: m.id, error: { code: -32601, message: `fake codex: ${m.method}` } })
+      }
+    })
+  })
   try { fs.rmSync(sock, { force: true }) } catch {}
-  const server = net.createServer((c) => c.on('error', () => {}))
-  server.listen(sock, () => console.log(`fake codex app-server on ${sock}`))
+  hs.listen(sock, () => console.log(`fake codex app-server on ${sock}`))
   const stop = () => { try { fs.rmSync(sock, { force: true }) } catch {}; process.exit(0) }
   process.on('SIGTERM', stop)
   process.on('SIGHUP', stop)
-  return
 }
 
-// The TUI.
-const at = argv.indexOf('--remote')
-const sock = at >= 0 ? String(argv[at + 1]).replace(/^unix:\/\//, '') : ''
-if (!sock) {
-  console.error('fake codex: workshop always runs the TUI with --remote')
-  process.exit(2)
-}
-if (argv.includes('--worktree')) {
-  // As 0.167.1 answers it.
-  console.error('Error: `--worktree` is only supported for local sessions')
-  process.exit(1)
-}
-const conn = net.connect(sock)
-conn.on('error', (err) => {
-  console.error(`fake codex: cannot reach the app-server at ${sock}: ${err.message}`)
-  process.exit(4)
-})
-conn.on('connect', () => {
-  // Beside the socket too: a long argv wraps on the screen.
-  fs.writeFileSync(`${sock}.tui.json`, JSON.stringify({ argv, cwd: process.cwd() }))
-  console.log(`FAKE CODEX ${JSON.stringify(argv)}`)
-  console.log(`CONNECTED ${sock}`)
-  process.stdin.setEncoding('utf8')
-  if (process.stdin.isTTY) process.stdin.setRawMode(false)
-  let buf = ''
-  process.stdin.on('data', (d) => {
-    buf += d.replace(/\r/g, '\n')
-    let i
-    while ((i = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, i).trim()
-      buf = buf.slice(i + 1)
-      if (!line) continue
-      if (line === 'exit') process.exit(0)
-      if (line === 'crash') process.exit(3)
-      console.log(`> ${line}`)
-    }
+function tui() {
+  const sock = sockOf('--remote')
+  if (!sock) {
+    console.error('fake codex: workshop always runs the TUI with --remote')
+    process.exit(2)
+  }
+  if (argv.includes('--worktree')) {
+    // As 0.167.1 answers it.
+    console.error('Error: `--worktree` is only supported for local sessions')
+    process.exit(1)
+  }
+  const resume = argv[0] === 'resume' ? argv[1] : null
+  let target
+  try {
+    target = fs.realpathSync(sock)
+  } catch (err) {
+    console.error(`fake codex: cannot reach the app-server at ${sock}: ${err.message}`)
+    process.exit(4)
+  }
+  const ws = new WebSocket(`ws+unix://${target}:/rpc`)
+  let next = 1
+  const call = (method, params) => ws.send(JSON.stringify({ jsonrpc: '2.0', id: next++, method, params }))
+  let threadId = null
+  ws.on('error', (err) => {
+    console.error(`fake codex: cannot reach the app-server at ${sock}: ${err.message}`)
+    process.exit(4)
   })
-})
+  ws.on('message', (data) => {
+    const m = JSON.parse(String(data))
+    if (m.id === 1 && m.result?.threadId) threadId = m.result.threadId
+  })
+  ws.on('open', () => {
+    call('fake/hello', { resume, cwd: process.cwd() })
+    fs.writeFileSync(`${sock}.tui.json`, JSON.stringify({ argv, cwd: process.cwd() }))
+    console.log(`FAKE CODEX ${JSON.stringify(argv)}`)
+    console.log(`CONNECTED ${sock}`)
+    process.stdin.setEncoding('utf8')
+    let buf = ''
+    process.stdin.on('data', (d) => {
+      buf += d.replace(/\r/g, '\n')
+      let i
+      while ((i = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, i).trim()
+        buf = buf.slice(i + 1)
+        if (!line) continue
+        if (line === 'exit') process.exit(0)
+        if (line === 'crash') process.exit(3)
+        console.log(`> ${line}`)
+        if (threadId) call('fake/prompt', { threadId, text: line })
+      }
+    })
+  })
+}
