@@ -340,7 +340,7 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
   })()`)) as Record<string, number | string> | null
   check(
     'overlay: the page covers the window below core\'s strip',
-    !!cover && cover.left === 0 && cover.right === cover.w && cover.bottom === cover.h && cover.top === cover.strip && cover.strip === 88 && cover.name === 'Wikipedia',
+    !!cover && cover.left === 0 && cover.right === cover.w && cover.bottom === cover.h && cover.top === cover.strip && cover.strip === 88 && cover.name === 'Today',
     JSON.stringify(cover)
   )
   // Nothing core draws comes through it: the middle of every cell is the overlay's page. (Session

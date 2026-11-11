@@ -1,7 +1,7 @@
 // The Wikipedia tile, ported from deck: Wikipedia's picture of the day full bleed, a clock and the
-// weather top left, a search box laid over the picture top right. The picture changes every two
-// minutes (today's, then two from the archive, then today's again); ‹ › step by hand. A search
-// darkens the picture and lists hits; a hit opens its lead section in place. A click on the
+// top left, the weather top right. The picture changes every two minutes (today's, then two from
+// the archive, then today's again); ‹ › step by hand. A session's search (the door) darkens the
+// picture and lists hits; a hit opens its lead section in place. A click on the
 // picture opens it large over the whole window (deck's lightbox): the tile asks core for the
 // overlay view, and this same page draws the dimmed backdrop and the picture in it. The head's
 // expand button still opens the tile as a pane.
@@ -43,9 +43,6 @@ const $ = (id) => document.getElementById(id)
 const bgBox = $('bg')
 const main = $('main')
 const weatherBox = $('weather')
-const form = $('search')
-const q = $('q')
-const clearBtn = $('clear')
 const lightbox = $('lightbox')
 
 const SEARCH_DEBOUNCE_MS = 350
@@ -243,41 +240,15 @@ async function runSearch(text) {
   }
 }
 
-let debounce = 0
-q.addEventListener('input', () => {
-  article = null
-  query = q.value
-  clearTimeout(debounce)
-  if (!query.trim()) void runSearch('').catch(() => {})
-  else debounce = setTimeout(() => void runSearch(query).catch(() => {}), SEARCH_DEBOUNCE_MS)
-  render()
-})
-form.addEventListener('submit', (e) => {
-  e.preventDefault()
-  clearTimeout(debounce)
-  void runSearch(q.value).catch(() => {})
-})
-q.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    e.preventDefault()
-    reset()
-  }
-})
-form.addEventListener('click', (e) => e.stopPropagation())
-clearBtn.addEventListener('click', only(() => reset()))
-
 /** Back to the picture: no search, no article, no places editor. */
 function reset() {
   searchSeq++
-  clearTimeout(debounce)
   query = ''
-  q.value = ''
   hits = null
   searching = false
   searchErr = null
   article = null
   placesOpen = false
-  q.blur()
   render()
 }
 
@@ -447,8 +418,7 @@ function renderPicture() {
       'div',
       { class: 'wiki-text' },
       el('span', { class: 'wiki-tagline' }, el('span', { class: 'wiki-tag' }, tag), steps),
-      el('h3', { class: 'wiki-title' }, pic.title),
-      pic.credit && el('p', { class: 'wiki-summary' }, pic.credit),
+      el('p', { class: 'wiki-caption' }, pic.credit && el('span', { class: 'wiki-credit' }, `${pic.credit}: `), pic.title),
       view === 'pane' && el('button', { class: 'wiki-commons', title: pic.url, onclick: only(() => ws.openExternal(pic.url)) }, 'on Wikimedia Commons ↗')
     )
   )
@@ -497,7 +467,7 @@ function renderLightbox() {
 }
 
 function renderResults() {
-  const list = el('div', { class: 'wiki-panel' })
+  const list = el('div', { class: 'wiki-panel' }, el('button', { class: 'wiki-back', title: 'Back to the picture (Esc)', onclick: only(reset) }, '‹ picture'))
   if (searchErr) list.append(el('div', { class: 'wiki-none' }, searchErr))
   else if (hits && hits.length === 0 && !searching) list.append(el('div', { class: 'wiki-none' }, `Nothing for “${query.trim()}”`))
   for (const h of hits ?? [])
@@ -549,11 +519,12 @@ function renderPlaces() {
         closePlaces()
       } else if (e.key === 'Enter' && placeHits?.[0]) pickPlace(placeHits[0])
     })
-    panel = el('div', { class: 'wiki-panel wiki-places', onclick: (e) => e.stopPropagation() }, el('div', { class: 'wiki-places-head' }), el('div', { class: 'wiki-places-list' }), input, el('div', { class: 'wiki-places-hits' }))
+    const done = el('button', { class: 'wiki-places-done', title: 'Back to the picture (Esc)', onclick: only(closePlaces) }, 'Done')
+    panel = el('div', { class: 'wiki-panel wiki-places', onclick: (e) => e.stopPropagation() }, el('div', { class: 'wiki-places-head' }), el('div', { class: 'wiki-places-list' }), input, done, el('div', { class: 'wiki-places-hits' }))
     put(main, panel)
   }
   const first = places === null
-  const [head, list, input] = panel.children
+  const [head, list, input, done] = panel.children
   put(head, 
     el('span', { class: 'wiki-tag' }, first ? 'weather: where are you?' : 'weather'),
     el(
@@ -576,7 +547,8 @@ function renderPlaces() {
   )
   const full = (places ?? []).length >= PLACES_MAX
   input.disabled = full
-  input.placeholder = full ? `${PLACES_MAX} places is the most` : first ? 'your city, e.g. Lisbon, Portugal' : 'add a place: Lisbon, Portugal'
+  input.placeholder = full ? `${PLACES_MAX} places is the most` : first ? 'your city, e.g. Lisbon, Portugal' : 'Add a place: Lisbon, Portugal'
+  done.hidden = first
   renderPlaceHits()
 }
 
@@ -596,14 +568,13 @@ function render() {
   document.body.className = `wiki wiki-${o}${view === 'tile' ? '' : ` ${view}`}`
   document.body.title = o === 'picture' && pic && view !== 'overlay' ? 'See it large' : ''
   renderLightbox()
-  clearBtn.hidden = !(query || o !== 'picture')
   renderBg()
   renderWeather()
   if (o === 'picture') renderPicture()
   else if (o === 'results') renderResults()
   else if (o === 'article') renderArticle()
   else renderPlaces()
-  void ws.head.set({ title: o === 'article' ? article.title : 'Wikipedia' })
+  void ws.head.set({ title: o === 'article' ? article.title : 'Today' })
 }
 
 // A click on the picture opens it over the whole window. Core lets a tile do that only in answer
@@ -635,7 +606,7 @@ ws.door.handle('search', async (args) => {
   const text = args.join(' ')
   article = null
   placesOpen = false
-  q.value = text
+  query = text
   const xs = await runSearch(text)
   return xs.map((h) => ({ title: h.title, description: h.description, url: h.url }))
 })

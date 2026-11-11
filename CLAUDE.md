@@ -44,10 +44,11 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   cross as functions and are rebuilt into properties with `executeInMainWorld`.
 - `src/main/storage.ts`, `src/main/door.ts`, `bin/workshop-tile.mjs`: storage (5 MB, atomic) and
   the door (127.0.0.1, bearer token, caller from the token, browser `Origin` refused).
-- `tiles/wikipedia/`: deck's Wikipedia tile ported onto the contract, plain JS with no build
-  step: the picture of the day full bleed (cycling every 2 minutes, today's then two from the
-  archive), a clock and the weather (Open-Meteo; asks for a city on first run, places kept in
-  `workshop.storage`) top left, search and an in-tile article over the picture. A click opens it as
+- `tiles/wikipedia/` (named "Today"; the id stays `wikipedia`): deck's Wikipedia tile ported onto
+  the contract, plain JS with no build step: the picture of the day full bleed (cycling every 2
+  minutes, today's then two from the archive), a clock top left and the weather top right
+  (Open-Meteo; asks for a city on first run, places kept in `workshop.storage`). No search box:
+  a session's door search lists hits and opens an article over the picture. A click opens it as
   a pane, which shows the picture whole. Rules in `dist/wiki.js`, tested as shipped.
 - `tiles/reminders/`: deck's Reminders ported onto the contract (storage, sessions read, door,
   notify): to-dos, notes and a log by project. Its rules are `dist/model.js` (tested as shipped by

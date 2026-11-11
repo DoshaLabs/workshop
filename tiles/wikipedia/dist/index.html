@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src 'self'; img-src https://upload.wikimedia.org https://thumb.wikimedia.org; connect-src https://en.wikipedia.org https://api.open-meteo.com https://geocoding-api.open-meteo.com; style-src 'self'; script-src 'self'" />
-    <title>Wikipedia</title>
+    <title>Today</title>
     <link rel="stylesheet" href="tile.css" />
   </head>
   <body class="wiki">
@@ -14,13 +14,9 @@
         <span class="wiki-clock-time" id="time"></span>
         <span class="wiki-clock-date" id="date"></span>
       </div>
-      <div id="weather"></div>
     </div>
+    <div class="wiki-weather-corner" id="weather"></div>
     <div id="main"></div>
-    <form id="search" class="wiki-search" autocomplete="off">
-      <input id="q" placeholder="search wikipedia" spellcheck="false" />
-      <button type="button" id="clear" class="wiki-clear" title="Clear (Esc)" hidden>×</button>
-    </form>
     <div id="lightbox"></div>
     <script type="module" src="tile.js"></script>
   </body>

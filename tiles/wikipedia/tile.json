@@ -1,11 +1,11 @@
 {
   "id": "wikipedia",
-  "name": "Wikipedia",
+  "name": "Today",
   "version": "0.3.0",
   "workshop": "^1.1",
   "author": "DoshaLabs",
   "repo": "https://github.com/DoshaLabs/workshop",
-  "hint": "Today's picture, a clock, the weather, and search",
+  "hint": "Wikipedia's picture of the day, a clock and the weather",
   "icon": "icon.svg",
   "entry": "dist/index.html",
   "pane": true,

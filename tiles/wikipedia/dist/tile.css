@@ -132,6 +132,19 @@ button {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+/* The picture's line: who took it, then what it is. */
+.wiki-caption {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wiki-credit {
+  font-weight: 700;
+}
 .wiki-summary {
   margin: 0;
   font-size: 12px;
@@ -143,7 +156,7 @@ button {
   overflow: hidden;
 }
 
-/* The clock and the weather under it, top left over the picture: a shadow instead of chrome. */
+/* The clock top left and the weather top right, over the picture: a shadow instead of chrome. */
 .wiki-corner {
   position: absolute;
   top: 8px;
@@ -172,6 +185,22 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.12em;
   opacity: 0.85;
+}
+
+.wiki-weather-corner {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 8px rgba(0, 0, 0, 0.5);
+  z-index: 2;
+}
+.wiki-weather-corner .wiki-weather {
+  align-items: flex-end;
+  text-align: right;
 }
 
 /* The weather: the first place large, the others a line each; the whole block opens the places editor. */
@@ -244,6 +273,23 @@ button {
 }
 
 /* The places editor, in the results panel's frame. */
+.wiki-places-done {
+  flex: none;
+  align-self: flex-start;
+  margin: 2px 8px 4px;
+  padding: 3px 14px;
+  border-radius: 999px;
+  background: var(--ws-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+.wiki-places-done:hover {
+  filter: brightness(1.1);
+}
+.wiki-places-done[hidden] {
+  display: none;
+}
 .wiki-places-head {
   display: flex;
   align-items: center;
@@ -315,68 +361,7 @@ button {
   gap: 8px;
 }
 
-/* The search box: no chrome until it has focus, just white text over the picture. */
-.wiki-search {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: flex;
-  align-items: center;
-  max-width: calc(100% - 16px);
-  margin: 0;
-  border-radius: 999px;
-  border: 1px solid transparent;
-  background: transparent;
-  transition: background 120ms ease, border-color 120ms ease;
-  z-index: 2;
-}
-.wiki-search:hover,
-.wiki-search:focus-within {
-  background: rgba(0, 0, 0, 0.35);
-  border-color: rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(6px);
-}
-.wiki-search input {
-  width: 150px;
-  min-width: 0;
-  padding: 4px 10px;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  color: #fff;
-  font-size: 12px;
-  text-align: right;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
-  transition: width 160ms ease;
-  user-select: text;
-}
-.wiki-search input::placeholder {
-  color: rgba(255, 255, 255, 0.75);
-}
-.wiki-search:focus-within input,
-.wiki-results .wiki-search input,
-.wiki-article .wiki-search input {
-  width: 220px;
-  text-align: left;
-}
-.wiki-clear {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  margin-right: 2px;
-  border-radius: 50%;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 15px;
-  line-height: 1;
-}
-.wiki-clear[hidden] {
-  display: none;
-}
-.wiki-clear:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-/* Results, an article, the places editor: a scrolling panel under the search box. */
+/* Results, an article, the places editor: a scrolling panel under the clock. */
 .wiki-panel {
   position: absolute;
   inset: 40px 8px 8px;
@@ -498,6 +483,9 @@ body.pane.wiki-picture .wiki-text {
 body.pane .wiki-text .wiki-tag {
   color: var(--ws-muted);
   opacity: 1;
+}
+body.pane .wiki-text .wiki-caption {
+  font-size: 14px;
 }
 body.pane .wiki-text .wiki-summary {
   color: var(--ws-muted);
