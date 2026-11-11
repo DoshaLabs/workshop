@@ -118,13 +118,34 @@ describe('approvals (codexAsk)', () => {
   })
   it('another thread\'s approval, and every other request, is not ours to show (or answer)', () => {
     expect(codexAsk('item/commandExecution/requestApproval', { ...cmd, threadId: 'other' }, T)).toBeNull()
-    for (const m of ['item/tool/requestUserInput', 'mcpServer/elicitation/request', 'item/tool/call', 'account/chatgptAuthTokens/refresh', 'attestation/generate', 'execCommandApproval', 'applyPatchApproval'])
+    for (const m of ['item/tool/requestUserInput', 'item/tool/call', 'account/chatgptAuthTokens/refresh', 'attestation/generate', 'execCommandApproval', 'applyPatchApproval'])
       expect(codexAsk(m, { ...cmd }, T)).toBeNull()
     expect(codexAsk('item/commandExecution/requestApproval', null, T)).toBeNull()
+  })
+  // As codex-cli 0.167.1 sent it before calling a workshop tile's tool (11 Nov 2026).
+  const mcp = {
+    threadId: T, turnId: 't', serverName: 'workshop', mode: 'form',
+    _meta: { codex_approval_kind: 'mcp_tool_call', persist: ['session', 'always'], tool_name: 'reminders', tool_description: 'The workshop\'s Reminders tile…', tool_params: { op: 'add', args: ['buy oat milk'] }, tool_params_display: [{ name: 'op', value: 'add', display_name: 'op' }, { name: 'args', value: ['buy oat milk'], display_name: 'args' }] },
+    message: 'Allow the workshop MCP server to run tool "reminders"?', requestedSchema: { type: 'object', properties: {} }
+  }
+  it("an MCP tool's approval: the server's tool, its arguments as the label, the call as the body", () => {
+    expect(codexAsk('mcpServer/elicitation/request', mcp, T)).toEqual({ tool: 'workshop.reminders', label: 'op: add, args: ["buy oat milk"]', body: '{\n  "op": "add",\n  "args": [\n    "buy oat milk"\n  ]\n}', answerable: true })
+    expect(codexAsk('mcpServer/elicitation/request', { ...mcp, _meta: { ...mcp._meta, tool_params_display: [] } }, T)).toMatchObject({ label: mcp.message })
+  })
+  it('any other elicitation (a form asking for input, a URL) is not ours', () => {
+    expect(codexAsk('mcpServer/elicitation/request', { ...mcp, _meta: null, requestedSchema: { type: 'object', properties: { name: { type: 'string' } } } }, T)).toBeNull()
+    expect(codexAsk('mcpServer/elicitation/request', { ...mcp, _meta: { ...mcp._meta, codex_approval_kind: 'other' } }, T)).toBeNull()
+    expect(codexAsk('mcpServer/elicitation/request', { threadId: T, turnId: null, serverName: 'x', mode: 'url', _meta: null, message: 'sign in', url: 'https://x', elicitationId: 'e' }, T)).toBeNull()
+    expect(codexAsk('mcpServer/elicitation/request', { ...mcp, threadId: 'other' }, T)).toBeNull()
   })
   it('the reply: accept once, or decline (the turn goes on)', () => {
     expect(codexDecision(true)).toEqual({ decision: 'accept' })
     expect(codexDecision(false)).toEqual({ decision: 'decline' })
+    expect(codexDecision(true, 'item/fileChange/requestApproval')).toEqual({ decision: 'accept' })
+  })
+  it("an MCP tool's reply is an action: accept with the empty form's content, never a persist", () => {
+    expect(codexDecision(true, 'mcpServer/elicitation/request')).toEqual({ action: 'accept', content: {}, _meta: null })
+    expect(codexDecision(false, 'mcpServer/elicitation/request')).toEqual({ action: 'decline', content: null, _meta: null })
   })
   it('waiting on approval is an active flag', () => {
     expect(codexWaitingOnApproval({ type: 'active', activeFlags: ['waitingOnApproval'] })).toBe(true)

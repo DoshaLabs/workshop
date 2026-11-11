@@ -75,7 +75,7 @@ export function codexCommand(cmd: string): string {
 }
 
 /** The server requests that are approvals core may show (and answer only on the user's click). */
-export const CODEX_APPROVALS = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval'] as const
+export const CODEX_APPROVALS = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval', 'mcpServer/elicitation/request'] as const
 
 /** An approval request as the session's ask: what to show, and whether the tile may answer it. */
 export interface CodexAsk extends ToolCallView {
@@ -117,13 +117,38 @@ export function codexAsk(method: string, params: unknown, threadId: string, item
       }
       return { ...toolView('Permissions', reason || str(p.cwd), body), answerable: false }
     }
+    case 'mcpServer/elicitation/request': {
+      // Codex's own question before an MCP tool runs (a tile's tool from workshop's server, or
+      // any of the user's servers). Any other elicitation is a server's form asking for input:
+      // not a yes or no, so not ours.
+      const meta = p._meta as Json | null | undefined
+      if (p.mode !== 'form' || !meta || meta.codex_approval_kind !== 'mcp_tool_call') return null
+      const tool = str(meta.tool_name)
+      if (!tool) return null
+      const show = (v: unknown): string => (typeof v === 'string' ? v : JSON.stringify(v) ?? '')
+      const display = Array.isArray(meta.tool_params_display) ? (meta.tool_params_display as Json[]) : []
+      const label = display.map((d) => `${str(d.display_name) || str(d.name)}: ${show(d.value)}`).join(', ')
+      let body = ''
+      try {
+        body = meta.tool_params !== undefined && meta.tool_params !== null ? JSON.stringify(meta.tool_params, null, 2) : ''
+      } catch {
+        body = ''
+      }
+      return { ...toolView(`${str(p.serverName)}.${tool}`, label || str(p.message), body), answerable: true }
+    }
     default:
       return null
   }
 }
 
-/** The reply to a command or file-change approval: Allow runs it once, Deny declines it and the turn goes on. */
-export function codexDecision(allow: boolean): { decision: 'accept' | 'decline' } {
+/**
+ * The reply to an approval core showed: Allow runs it once, Deny declines it and the turn goes on.
+ * A command or file change takes a decision; an MCP tool's approval (an elicitation) an action,
+ * with empty content for its empty form (Codex's `persist` offer, session or always, is the
+ * terminal's to give).
+ */
+export function codexDecision(allow: boolean, method = ''): { decision: 'accept' | 'decline' } | { action: 'accept' | 'decline'; content: Record<string, never> | null; _meta: null } {
+  if (method === 'mcpServer/elicitation/request') return { action: allow ? 'accept' : 'decline', content: allow ? {} : null, _meta: null }
   return { decision: allow ? 'accept' : 'decline' }
 }
 

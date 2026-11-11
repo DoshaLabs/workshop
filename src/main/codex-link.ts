@@ -288,7 +288,7 @@ export class CodexLink {
     if (!r || !ws || ws.readyState !== WebSocket.OPEN) return false
     if (r.method === 'item/permissions/requestApproval') return false
     this.drop(key)
-    ws.send(JSON.stringify({ jsonrpc: '2.0', id: r.rpcId, result: codexDecision(allow) }))
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: r.rpcId, result: codexDecision(allow, r.method) }))
     return true
   }
 

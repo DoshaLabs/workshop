@@ -151,13 +151,15 @@ function server() {
     mcp.set(m[1], { rpc, ready, child })
     process.on('exit', () => child.kill())
   }
-  const request = (th, method, params, fileItem, alsoTo) => {
-    const r = { th, id: reqId++, fileItem }
+  const request = (th, method, params, fileItem, alsoTo, onAnswer) => {
+    const r = { th, id: reqId++, fileItem, onAnswer }
     pending.push(r)
     const to = new Set([...th.subs, ...(alsoTo ? alsoTo.subs : [])])
     for (const ws of to) send(ws, { id: r.id, method, params: { threadId: th.thread.id, turnId: 't', startedAtMs: Date.now(), ...params } })
   }
-  const resolve = (r, decision) => {
+  const resolve = (r, result) => {
+    const decision = result?.decision
+    r.onAnswer?.(result)
     notify(r.th, 'serverRequest/resolved', { requestId: r.id })
     if (r.th.root) notify(r.th.root.th, 'serverRequest/resolved', { requestId: r.id })
     if (r.fileItem) item(r.th, 't', { ...r.fileItem, status: decision === 'accept' ? 'completed' : 'declined' }, true)
@@ -178,7 +180,7 @@ function server() {
         answers.push(m)
         fs.writeFileSync(`${sock}.answers.json`, JSON.stringify(answers))
         const at = pending.findIndex((r) => r.id === m.id)
-        if (at >= 0) resolve(pending.splice(at, 1)[0], m.result?.decision)
+        if (at >= 0) resolve(pending.splice(at, 1)[0], m.result)
         return
       }
       const p = m.params || {}
@@ -266,6 +268,21 @@ function server() {
           if (p.text === 'ask') {
             status(th, { type: 'active', activeFlags: ['waitingOnApproval'] })
             request(th, 'item/commandExecution/requestApproval', { kind: 'command', itemId: 'i', environmentId: null, command: "/bin/zsh -lc 'rm -rf build'", cwd: process.cwd(), reason: 'clean' })
+          } else if (p.text === 'asktool') {
+            // As 0.167.1 asks before an MCP tool runs (captured 11 Nov 2026): the call's item, then
+            // an elicitation with Codex's approval meta; accept calls workshop's server for real.
+            const call = { type: 'mcpToolCall', id: `exec-${randomUUID()}`, server: 'workshop', tool: 'reminders', status: 'inProgress', arguments: { op: 'list', args: ['--all'] }, result: null, error: null, durationMs: null }
+            item(th, 't', call, false)
+            status(th, { type: 'active', activeFlags: ['waitingOnApproval'] })
+            request(th, 'mcpServer/elicitation/request', {
+              serverName: 'workshop', mode: 'form', message: 'Allow the workshop MCP server to run tool "reminders"?', requestedSchema: { type: 'object', properties: {} },
+              _meta: { codex_approval_kind: 'mcp_tool_call', persist: ['session', 'always'], tool_name: 'reminders', tool_description: '', tool_params: call.arguments, tool_params_display: [{ name: 'op', value: 'list', display_name: 'op' }, { name: 'args', value: ['--all'], display_name: 'args' }] }
+            }, undefined, undefined, async (res) => {
+              if (res?.action !== 'accept') return item(th, 't', { ...call, status: 'failed', error: { message: 'user rejected MCP tool call' } }, true)
+              const srv = mcp.get('workshop')
+              const r = srv ? (await srv.ready, await srv.rpc('tools/call', { name: 'reminders', arguments: call.arguments, _meta: { threadId: th.thread.id } })) : { error: { message: 'no server' } }
+              item(th, 't', { ...call, status: r.error || r.result?.isError ? 'failed' : 'completed', result: r.result ?? null, error: r.error ?? null }, true)
+            })
           } else if (p.text === 'askfile') {
             const itemId = randomUUID()
             const fc = { type: 'fileChange', id: itemId, status: 'inProgress', changes: [{ path: path.join(process.cwd(), 'notes.md'), kind: { type: 'add' }, diff: '+# Notes' }] }

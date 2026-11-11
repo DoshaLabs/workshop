@@ -275,7 +275,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   turn read back at its end for items the server never sent live). The wolfpack: its subagents
   (child threads) followed by `src/main/codex-pack.ts` into the same pack tile, `agent:<thread
   id>` transcripts and asks; kill interrupts the child's turn and tells the parent in one typed
-  line (`codexKillLine`); no pause. Tiles: Codex has no `--plugin-dir`, so each server starts `bin/workshop-mcp.mjs` (`-c mcp_servers.workshop`, `env_vars` passing the session's WORKSHOP_*), a relay listing core's `/core/tools` (a tool per tile with door ops, its skills as the description, and `doc`; `src/shared/door-tools.ts`) and calling the door's own `/tile/<id>`; Codex asks its own approval before each call, in the terminal only for now. Not yet: both plans' windows in the top bar. Hook ids
+  line (`codexKillLine`); no pause. Tiles: Codex has no `--plugin-dir`, so each server starts `bin/workshop-mcp.mjs` (`-c mcp_servers.workshop`, `env_vars` passing the session's WORKSHOP_*), a relay listing core's `/core/tools` (a tool per tile with door ops, its skills as the description, and `doc`; `src/shared/door-tools.ts`) and calling the door's own `/tile/<id>`; Codex asks its own approval before each call (an MCP elicitation), shown on the same card; Allow is that call once. Not yet: both plans' windows in the top bar. Hook ids
   match through `isSession` (never on ''). Smoke: `test/fixtures/fake-codex/codex` (speaks the
   app-server protocol), `smoke-codex.ts`.
 - `transcripts` (bridge 1.7): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed

@@ -262,6 +262,22 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   check('codex: doc opens a file (relative to the session\'s folder) in the preview pane', !opened.isError && (await shownDoc()) === join(cwd, 'plan.md'), `${JSON.stringify(opened).slice(0, 200)} ${await shownDoc()}`)
   rpc.close()
 
+  // Codex asks before an MCP tool runs (an elicitation with its approval meta): the same card,
+  // Allow is accept once, and the call then goes through the door.
+  const answered0 = (await answers()).length
+  core.sessions.input(id, 'asktool\r')
+  await waitFor('the card', async () => (await card()) !== null, 5000).catch(() => undefined)
+  const c5 = await card()
+  check("codex: an MCP tool's approval shows as the tile's tool and its arguments", !!c5 && c5.tool === 'workshop.reminders' && c5.label === 'op: list, args: ["--all"]' && /"op": "list"/.test(c5.body) && c5.buttons.join() === 'allow,deny', JSON.stringify(c5))
+  await js(`document.querySelector('.leash-card.is-ask [data-answer="allow"]')?.click(); true`)
+  await waitFor('an answer', async () => (await answers()).length > answered0, 5000).catch(() => undefined)
+  await noCard()
+  const a5 = (await answers()).slice(answered0) as { result?: { action?: unknown; content?: unknown } }[]
+  check('codex: Allow accepts that tool call once (no persist)', a5.length === 1 && a5[0].result?.action === 'accept' && JSON.stringify(a5[0].result?.content) === '{}' && (await card()) === null, JSON.stringify(a5))
+  const toolLine = async (): Promise<{ done?: boolean; error?: boolean; name?: string } | undefined> => [...(core.transcripts.get(id)?.blocks ?? [])].reverse().find((b) => b.kind === 'tool' && b.name === 'workshop.reminders') as never
+  await waitFor('the call to finish', async () => (await toolLine())?.done === true, 5000).catch(() => undefined)
+  check('codex: the allowed tool then runs through the door, and the tile answers', (await toolLine())?.done === true && (await toolLine())?.error === false, JSON.stringify(await toolLine()))
+
   // Its tile in the column: the codex badge, and no pause (the leash is Claude Code's hooks).
   await js(`document.querySelector('.session-plus')?.click(); true`)
   const tile = `document.querySelector('.session-tile[data-session="${id}"]')`
