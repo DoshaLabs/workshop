@@ -2463,11 +2463,10 @@ textarea,
   user-select: none;
   -webkit-user-select: none;
 }
-/* A session tile's conversation scrolls for history; at its ends the wheel goes on to the column. */
+/* A session tile's conversation never scrolls itself: the wheel is the column's, and the tile
+   stays pinned to the latest (history is in the terminal). Its text sits a little back from the ink. */
 .session-tile .chat {
-  overflow-y: auto;
-  overscroll-behavior: auto;
-  scrollbar-width: none;
+  color: color-mix(in srgb, var(--ws-ink) 72%, var(--ws-muted));
 }
 .focus-pane.file-over {
   outline: 1.5px solid var(--ws-accent);

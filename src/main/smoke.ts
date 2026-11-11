@@ -401,11 +401,11 @@ async function instances(check: (name: string, ok: boolean, detail?: string) => 
   check('column: extra instances and heights come back from core\'s settings with the window\'s storage cleared', !!liveByTile.get('probe.2'))
   await waitFor('the probe to be drawn', async () => (await win.webContents.executeJavaScript(`!!document.querySelector('[data-face="probe"]')`)) === true, 3000).catch(() => undefined)
   check('column: a height set with ↕ is kept', (await win.webContents.executeJavaScript(`document.querySelector('[data-face="probe"]').closest('.tile').style.getPropertyValue('--span')`)) === '2')
-  // ↕ and × in the column write through to settings.json.
+  // ↕ and × in the column write through to settings.json; two rows is the most, so ↕ goes back to one.
   await win.webContents.executeJavaScript(`(() => { const t = document.querySelector('[data-face="probe"]').closest('.tile'); [...t.querySelectorAll('.head .ghost')].find((b) => b.textContent.includes('↕')).click(); return true })()`)
-  await waitFor('the height to be saved', async () => JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8')).column?.spans?.probe === 3, 3000).catch(() => undefined)
+  await waitFor('the height to be saved', async () => JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8')).column?.spans?.probe === 1, 3000).catch(() => undefined)
   const savedColumn = JSON.parse(await readFile(join(userData, 'settings.json'), 'utf8')).column
-  check('column: ↕ is saved in settings.json, not the window\'s storage', savedColumn?.spans?.probe === 3 && savedColumn?.extra?.includes('probe.2') && (await win.webContents.executeJavaScript(`localStorage.getItem('workshop.span')`)) === null, JSON.stringify(savedColumn))
+  check('column: ↕ is saved in settings.json, not the window\'s storage', savedColumn?.spans?.probe === 1 && savedColumn?.extra?.includes('probe.2') && (await win.webContents.executeJavaScript(`localStorage.getItem('workshop.span')`)) === null, JSON.stringify(savedColumn))
   check('instances: the second page knows it is probe.2', (await js('probe.2', 'workshop.instance')) === 'probe.2')
   check('instances: web storage is per instance', (await js('probe.2', `localStorage.getItem('mine')`)) === null)
   check('instances: workshop.storage is per tile', JSON.stringify(await js('probe.2', `workshop.storage.get('k')`)) === '{"a":1,"list":[1,2]}')

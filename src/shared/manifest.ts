@@ -95,7 +95,10 @@ export interface Manifest {
 
 export type Checked = { ok: true; manifest: Manifest } | { ok: false; errors: string[] }
 
-export const ID_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/
+/** The tallest a tile may be, in rows of the column (a manifest's `span`, or what ↕ made it). */
+export const MAX_SPAN = 2
+
+export const ID_RE =/^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/
 const OP_RE = /^[a-z][a-z0-9-]{0,31}$/
 const HOST_RE = /^(\*\.)?(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/
 export const DOOR_TIMEOUT_DEFAULT = 10_000
@@ -208,7 +211,7 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
   const multiple = bool('multiple')
   let span = 1
   if (raw.span !== undefined) {
-    if (typeof raw.span !== 'number' || !Number.isInteger(raw.span) || raw.span < 1 || raw.span > 4) errors.push('span: a whole number from 1 to 4')
+    if (typeof raw.span !== 'number' || !Number.isInteger(raw.span) || raw.span < 1 || raw.span > MAX_SPAN) errors.push(`span: a whole number from 1 to ${MAX_SPAN}`)
     else span = raw.span
   }
 

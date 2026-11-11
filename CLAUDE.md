@@ -55,7 +55,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   moves to its own repo (section 3). What the port changed in core and what it could not do:
   `docs/progress/2026-11-10.md` section 8.
 - Layout: three equal columns, as in deck. The tile column is four rows tall: a tile is one row
-  (its manifest's `span`, 1 for every core tile) and ↕ on its head steps it taller. A new profile's column starts
+  (its manifest's `span`, 1 or 2; Git is 2) and ↕ on its head steps it to two rows at most. A new profile's column starts
   with Wikipedia at the top (`shared/column.ts` `DEFAULT_ORDER`). The left column's session tiles
   are one row too, so the two columns line up. A wheel a tile's page cannot use scrolls the column
   (`preload/tile.ts`).
@@ -151,7 +151,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   `src/shared/transcript.ts`), finding `<session id>.jsonl` under the CLI's config folder by
   name. The focused session's terminal is in the center and its tile leaves the column, as in
   deck (the center's head has its ⌘ number and park ×); a conversation is pinned to the latest and
-  scrolls up for history; files dropped on a session (`drop.ts`) are pasted as paths on the
+  never scrolls itself (the wheel is the column's; its text a little greyer than the ink); files dropped on a session (`drop.ts`) are pasted as paths on the
   terminal or a tile, and wait as a chip on a prompt bar; parked
   sessions are a Closed card at the foot. A render error stays in its piece (`Guard.tsx`).
 - Usage: the top bar's 5-hour and weekly meters are always there (a dash and a tooltip until a

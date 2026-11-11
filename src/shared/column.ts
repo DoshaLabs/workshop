@@ -3,14 +3,14 @@
 // window storage does not reset the column. It used to live in the window's localStorage; the first
 // start that finds none in settings takes what is there once (`legacyColumn`).
 
-import { ID_RE } from './manifest'
+import { ID_RE, MAX_SPAN } from './manifest'
 
 export interface ColumnState {
   /** Tiles whose first instance is turned off (tile ids). */
   off: string[]
   /** Second and later instances that are on: `<id>.<n>`, n 2 to 4. */
   extra: string[]
-  /** Heights set with ↕, by instance, in rows (1 to 4). */
+  /** Heights set with ↕, by instance, in rows (1 to MAX_SPAN; a taller one saved before is cut to it). */
   spans: Record<string, number>
   /** The tile column's order, by instance, once a tile has been dragged (shared/order.ts). */
   order?: string[]
@@ -39,7 +39,7 @@ export function cleanColumn(raw: unknown): ColumnState | null {
   const list = (v: unknown, ok: (x: unknown) => x is string): string[] => (Array.isArray(v) ? [...new Set(v.filter(ok))].slice(0, LIMIT) : [])
   const spans: Record<string, number> = {}
   if (r.spans && typeof r.spans === 'object' && !Array.isArray(r.spans))
-    for (const [k, n] of Object.entries(r.spans as Record<string, unknown>).slice(0, LIMIT)) if (isInstance(k) && Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 4) spans[k] = n as number
+    for (const [k, n] of Object.entries(r.spans as Record<string, unknown>).slice(0, LIMIT)) if (isInstance(k) && Number.isInteger(n) && (n as number) >= 1) spans[k] = Math.min(n as number, MAX_SPAN)
   // The two orders are left out until first saved, so a column without them reads as before.
   const order = Array.isArray(r.order) ? { order: list(r.order, (x): x is string => typeof x === 'string' && isInstance(x)) } : {}
   const sessions = Array.isArray(r.sessions) ? { sessions: list(r.sessions, isSessionId) } : {}

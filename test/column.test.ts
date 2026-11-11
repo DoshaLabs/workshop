@@ -14,7 +14,7 @@ describe('cleanColumn', () => {
         extra: ['probe.2', 'probe.5', 'probe', '../x.2', 'probe.2'],
         spans: { wikipedia: 3, 'probe.2': 4, probe: 9, other: 1.5, 'x y': 2 }
       })
-    ).toEqual({ off: ['wikipedia'], extra: ['probe.2'], spans: { wikipedia: 3, 'probe.2': 4 } })
+    ).toEqual({ off: ['wikipedia'], extra: ['probe.2'], spans: { wikipedia: 2, 'probe.2': 2, probe: 2 } })
   })
   it('null for what is not a column', () => {
     expect(cleanColumn(null)).toBeNull()

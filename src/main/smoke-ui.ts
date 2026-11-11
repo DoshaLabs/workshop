@@ -107,7 +107,7 @@ export async function uiSmoke(check: Check, o: { win: BrowserWindow; core: CoreS
   })()`)) as { s: number[]; t: number[]; sTop: number; tTop: number }
   check('session tiles: each is one row of the tile column tall', rows.s.length >= 2 && rows.t.length > 0 && rows.s.every((h) => Math.abs(h - rows.t[0]) <= 1), JSON.stringify(rows))
   check('session tiles: the two columns start level', Math.abs(rows.sTop - rows.tTop) <= 1, JSON.stringify(rows))
-  check('session tiles: the conversation scrolls for history, the wheel going on to the column at its ends', (await js(`(() => { const c = getComputedStyle(document.querySelector('.session-tile .chat')); return c.overflowY + ' ' + c.overscrollBehaviorY })()`)) === 'auto auto')
+  check('session tiles: the conversation never scrolls itself, the wheel is the column\'s', (await js(`getComputedStyle(document.querySelector('.session-tile .chat')).overflowY`)) === 'hidden')
   if (process.env.WORKSHOP_SHOT_COLUMNS) {
     await sleep(800)
     await writeFile(process.env.WORKSHOP_SHOT_COLUMNS, (await win.webContents.capturePage()).toPNG())

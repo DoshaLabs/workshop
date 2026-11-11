@@ -38,7 +38,7 @@ nothing is ever built on the user's machine.
   "entry": "dist/index.html",
   "pane": false,                true: the tile can open large in the center column
   "multiple": false,            true: up to four instances at once
-  "span": 1,                    height in the column, 1 to 4 (each about 190 px)
+  "span": 1,                    height in the column, 1 or 2 (each about 190 px)
   "permissions": { }
 }
 ```

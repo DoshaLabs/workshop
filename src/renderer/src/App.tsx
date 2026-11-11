@@ -15,6 +15,7 @@ import { setPalette } from './terminals'
 import { shortcutOrder, type LaunchPrefill, type SessionsState } from '@shared/sessions'
 import { stepFrom } from '@shared/shortcuts'
 import { LEGACY_KEYS, firstColumn, legacyColumn, type ColumnState } from '@shared/column'
+import { MAX_SPAN } from '@shared/manifest'
 import type { Usage } from '@shared/usage'
 import { UsageMeter } from './UsageMeter'
 import { TileLayer, type Instance } from './TileLayer'
@@ -29,8 +30,6 @@ import { useReorder } from './reorder'
 import { arrange, moved, ordered, pruned } from '@shared/order'
 
 const MAX_INSTANCES = 4
-/** The tile column is this many rows tall, as deck's is by default: a tile is one row unless it asks for more or ↕ made it taller. */
-const ROWS = 4
 
 /** Paints the window: the variables, and the attributes the stylesheet keys the wall and dark mode on. */
 function applyTheme(t: ThemeState): void {
@@ -131,7 +130,7 @@ export function App() {
   }, [columnReady, off, extra, spans, order, sessionOrder])
   const spanOf = (i: Instance): number => {
     const n = spans[i.key] ?? i.tile.manifest.span
-    return Number.isInteger(n) && n >= 1 && n <= ROWS ? n : 1
+    return Number.isInteger(n) && n >= 1 ? Math.min(n, MAX_SPAN) : 1
   }
 
   useEffect(() => {
@@ -403,7 +402,7 @@ export function App() {
                       +
                     </button>
                   )}
-                  <button className="ghost" title={spanOf(i) < ROWS ? `Make it taller: ${spanOf(i) + 1} rows of ${ROWS}` : 'Back to one row'} onClick={() => setSpans((s) => ({ ...s, [i.key]: spanOf(i) < ROWS ? spanOf(i) + 1 : 1 }))}>
+                  <button className="ghost" title={spanOf(i) < MAX_SPAN ? `Make it taller: ${spanOf(i) + 1} rows` : 'Back to one row'} onClick={() => setSpans((s) => ({ ...s, [i.key]: spanOf(i) < MAX_SPAN ? spanOf(i) + 1 : 1 }))}>
                     ↕
                   </button>
                   {t.manifest.pane && (
