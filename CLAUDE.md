@@ -54,7 +54,9 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   `test/reminders.test.ts`), its page `dist/tile.js`. It lives here until the index exists, then
   moves to its own repo (section 3). What the port changed in core and what it could not do:
   `docs/progress/2026-11-10.md` section 8.
-- Layout: three equal columns, as in deck. The tile column is four rows tall: a tile is one row
+- Layout: three equal columns, as in deck. A column holds 3.8 rows (`--tile-rows`, `--tile-gap`
+  and `--tile-radius` in `styles.css`, shared by both columns; a tile's page is clipped to its
+  tile's corners in `TileLayer.tsx`): a tile is one row
   (its manifest's `span`, 1 or 2; Git is 2) and ↕ on its head steps it to two rows at most. A new profile's column starts
   with Wikipedia at the top (`shared/column.ts` `DEFAULT_ORDER`). The left column's session tiles
   are one row too, so the two columns line up. A wheel a tile's page cannot use scrolls the column

@@ -52,6 +52,12 @@ button {
      app's mark (the Knot) fills it at his height. main's trafficLightPosition centres the
      window's buttons in it. */
   --bar: 88px;
+  /* Both columns' tiles, sessions and the tile column alike: the space between them, their
+     corners (TileLayer.tsx rounds a tile's page to match) and how many rows fill a column (a
+     little under four, so each tile is a little taller than a quarter and the next one shows). */
+  --tile-gap: 6px;
+  --tile-radius: 10px;
+  --tile-rows: 3.8;
   height: 100%;
   padding: var(--bar) 8px 8px;
   -webkit-app-region: drag;
@@ -418,14 +424,14 @@ button {
   background: transparent;
   border: none;
 }
-/* The column is four rows tall, as deck's is: a tile is one row (a quarter of the column) times
-   its span, and the rest scroll on. App.tsx sets --span (the manifest's, or what ↕ made it). */
+/* A column holds --tile-rows rows: a tile is one row times its span, and the rest scroll on.
+   App.tsx sets --span (the manifest's, or what ↕ made it). */
 .tile-scroll {
   height: 100%;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--tile-gap);
   container-type: size;
   scrollbar-width: none;
 }
@@ -433,13 +439,13 @@ button {
   /* What a tile stacks inside it (a session tile's prompt bar) stays inside it, never over the
      window's layers (a tile page, the overlay). */
   isolation: isolate;
-  --row: calc((100cqh - 3 * 8px) / 4);
-  height: calc(var(--span, 1) * var(--row) + (var(--span, 1) - 1) * 8px);
+  --row: calc((100cqh - (var(--tile-rows) - 1) * var(--tile-gap)) / var(--tile-rows));
+  height: calc(var(--span, 1) * var(--row) + (var(--span, 1) - 1) * var(--tile-gap));
   display: flex;
   flex-direction: column;
   background: var(--ws-surface, var(--ws-panel));
   border: 1px solid var(--ws-line);
-  border-radius: 10px;
+  border-radius: var(--tile-radius);
   overflow: hidden;
   flex: none;
 }
@@ -537,7 +543,7 @@ button {
   flex: none;
   background: var(--ws-surface, var(--ws-panel));
   border: 1px solid var(--ws-accent);
-  border-radius: 10px;
+  border-radius: var(--tile-radius);
   overflow: hidden;
 }
 .picker-body {
@@ -840,8 +846,8 @@ button {
   height: 100%;
 }
 
-/* ---- the session column (SessionColumn.tsx): tiles of conversations, as deck's left column. Four
-   to a column, one row of the tile column each, so the two line up; the rest scroll on. */
+/* ---- the session column (SessionColumn.tsx): tiles of conversations, as deck's left column, one
+   row of the tile column each, so the two line up; the rest scroll on. */
 .col.sessions,
 :root[data-wall='true'] .col.sessions {
   background: transparent;
@@ -853,7 +859,7 @@ button {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--tile-gap);
   container-type: size;
   scrollbar-width: none;
 }
@@ -891,7 +897,7 @@ button {
   flex: none;
   background: var(--ws-surface, var(--ws-panel));
   border: 1px solid var(--ws-line);
-  border-radius: 10px;
+  border-radius: var(--tile-radius);
   overflow: hidden;
 }
 .session-center .head {
