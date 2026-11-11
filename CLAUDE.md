@@ -676,9 +676,9 @@ the top bar is deck's 88 px (`--bar`) and the traffic lights sit at deck's `{ x:
 | Status | Mode | Size | Loop | Frames/s | Colour |
 |---|---|---|---|---|---|
 | busy | work | 1 | 2.4 s | 30 | accent → busy |
-| idle, unknown | rest | 0.8 | 22 s | 6 | accent → starting |
-| needs you (blocked, or attention) | needs | 0.92 | 7 s | 15 | blocked → busy |
-| starting | start | 0.86 | 5 s | 15 | starting → accent |
+| idle, unknown | rest | 0.8 | 22 s | 30 | accent → starting |
+| needs you (blocked, or attention) | needs | 0.92 | 7 s | 30 | blocked → busy |
+| starting | start | 0.86 | 5 s | 30 | starting → accent |
 | dead | dead | 0.8 | still | 0 | dead → muted; the head dimmed |
 
 Size changes ease over a few hundred ms in the same box. The strand thins with the radius, only

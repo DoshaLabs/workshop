@@ -74,7 +74,7 @@ describe('the status language', () => {
     expect(MODES.start.size).toBeLessThan(MODES.needs.size)
     expect(MODES.needs.size).toBeLessThan(MODES.work.size)
     expect(MODES.work.loop).toBeLessThan(MODES.rest.loop / 5)
-    expect(MODES.rest.fps).toBeLessThanOrEqual(8)
+    for (const m of ["work", "needs", "start", "rest"] as const) expect(MODES[m].fps).toBe(30)
     expect(MODES.dead.loop).toBe(0)
   })
 })

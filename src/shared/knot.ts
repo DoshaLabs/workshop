@@ -24,7 +24,7 @@ export interface ModeLook {
   size: number
   /** Seconds per loop (one turn of tilt and pulse); 0 holds still. */
   loop: number
-  /** Frames a second at most: an idle knot needs very few. */
+  /** Frames a second at most: 30 for every moving knot (Colin, 10 Nov 2026), so none steps. */
   fps: number
 }
 
@@ -35,11 +35,11 @@ export interface ModeLook {
  */
 export const MODES: Record<KnotMode, ModeLook> = {
   work: { size: 1, loop: 2.4, fps: 30 },
-  needs: { size: 0.92, loop: 7, fps: 15 },
-  start: { size: 0.86, loop: 5, fps: 15 },
+  needs: { size: 0.92, loop: 7, fps: 30 },
+  start: { size: 0.86, loop: 5, fps: 30 },
   // At rest the knot stands as tall as Foxtrot does in deck (see BOX). deck's own fox swings
   // from 56–60 px awake to 44 asleep, about this much; speed and colour carry the rest.
-  rest: { size: 0.8, loop: 22, fps: 6 },
+  rest: { size: 0.8, loop: 22, fps: 30 },
   dead: { size: 0.8, loop: 0, fps: 0 }
 }
 

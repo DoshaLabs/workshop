@@ -103,7 +103,7 @@ function tick(now: number): void {
     }
     const look = k.look ?? MODES[k.mode]
     const flaring = now - k.flareAt < FLARE_MS
-    // Each knot at its own frame rate, as in the app: an idle one wants six a second.
+    // Each knot at its own frame rate, as in the app (30 a second while it moves).
     const fps = flaring ? 30 : look.fps
     if (k.last && fps && now - k.last < 1000 / fps - 2) continue
     if (!fps && k.last && !flaring) continue
