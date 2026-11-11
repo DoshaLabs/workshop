@@ -2,7 +2,7 @@
 // webview core's window attaches, answers the bridge and runs the door) and the sessions
 // (main/core-sessions.ts).
 
-import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protocol, shell, utilityProcess, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
+import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protocol, screen, shell, utilityProcess, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import { existsSync, mkdtempSync, readFileSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -35,6 +35,7 @@ import { launchRequest, type LaunchPrefill, type SessionsState } from '@shared/s
 import type { Usage } from '@shared/usage'
 import { parseBuildInfo } from '@shared/update'
 import { Updater, bundleOf } from './updates'
+import { placeWindow } from './window-bounds'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
 const RESTARTED = process.argv.includes('--smoke-restarted')
@@ -735,12 +736,35 @@ function bridge(): void {
   })
 }
 
+const MIN_WINDOW = { width: 900, height: 600 }
+
+/** Where the window opens: smoke's fixed size (its layout checks and pictures), else window-bounds.ts. */
+function windowBounds(): { x?: number; y?: number; width: number; height: number } {
+  if (SMOKE) return { width: 1500, height: 950 }
+  return placeWindow(settings.get().window, screen.getAllDisplays().map((d) => d.workArea), screen.getPrimaryDisplay().workArea, MIN_WINDOW)
+}
+
+/** Saves where the window is, a moment after it stops moving or changing size (not in smoke). */
+function rememberBounds(w: BrowserWindow): void {
+  if (SMOKE) return
+  let timer: NodeJS.Timeout | undefined
+  const save = (): void => {
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      // Full screen and minimised are states, not places: what is kept is the normal window.
+      if (w.isDestroyed() || w.isFullScreen() || w.isMinimized()) return
+      settings.patch({ window: w.getNormalBounds() }).catch((err) => console.error('[window] its place could not be saved:', err))
+    }, 500)
+  }
+  w.on('resize', save)
+  w.on('move', save)
+}
+
 function createWindow(): void {
   win = new BrowserWindow({
-    width: 1500,
-    height: 950,
-    minWidth: 900,
-    minHeight: 600,
+    ...windowBounds(),
+    minWidth: MIN_WINDOW.width,
+    minHeight: MIN_WINDOW.height,
     show: !SMOKE,
     title: 'workshop',
     titleBarStyle: 'hiddenInset',
@@ -780,6 +804,7 @@ function createWindow(): void {
   }
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   else void win.loadFile(join(__dirname, '../renderer/index.html'))
+  rememberBounds(win)
   win.on('closed', () => (win = null))
 }
 

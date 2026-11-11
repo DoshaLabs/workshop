@@ -7,6 +7,7 @@ import { dirname } from 'node:path'
 import { DEFAULT_THEME_ID, THEMES, type Appearance } from '@shared/themes'
 import { cleanColumn, type ColumnState } from '@shared/column'
 import { cleanPrefs, type RecPrefs } from '@shared/recorder'
+import { cleanRect, type Rect } from './window-bounds'
 
 export interface Settings {
   theme: string
@@ -21,6 +22,8 @@ export interface Settings {
   index?: string
   /** The screen recorder's switches (sound, microphone, safe zones). Absent: the defaults (shared/recorder.ts). */
   recorder?: RecPrefs
+  /** Where core's window was left (window-bounds.ts). Absent: it opens filling the screen. */
+  window?: Rect
 }
 
 const DEFAULTS: Settings = { theme: DEFAULT_THEME_ID, appearance: 'system', devTiles: [], mascot: null }
@@ -35,7 +38,8 @@ export function cleanSettings(raw: unknown, base: Settings = DEFAULTS): Settings
     mascot: r.mascot === null || (typeof r.mascot === 'string' && /^[a-z0-9][a-z0-9-]{0,39}$/.test(r.mascot)) ? (r.mascot as string | null) : base.mascot,
     ...column(r.column, base.column),
     ...indexOf(r.index, base.index),
-    ...(r.recorder !== undefined || base.recorder ? { recorder: cleanPrefs(r.recorder, base.recorder) } : {})
+    ...(r.recorder !== undefined || base.recorder ? { recorder: cleanPrefs(r.recorder, base.recorder) } : {}),
+    ...windowOf(r.window, base.window)
   }
 }
 
@@ -43,6 +47,12 @@ export function cleanSettings(raw: unknown, base: Settings = DEFAULTS): Settings
 function column(raw: unknown, base: ColumnState | undefined): { column?: ColumnState } {
   const c = cleanColumn(raw) ?? base
   return c ? { column: c } : {}
+}
+
+/** The window's place as saved, or the base's; left out until the window has been moved or sized. */
+function windowOf(raw: unknown, base: Rect | undefined): { window?: Rect } {
+  const w = cleanRect(raw) ?? base
+  return w ? { window: w } : {}
 }
 
 /** The index's address as saved; '' clears it. */

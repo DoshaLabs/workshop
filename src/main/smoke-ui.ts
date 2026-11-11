@@ -98,6 +98,25 @@ export async function uiSmoke(check: Check, o: { win: BrowserWindow; core: CoreS
   await js(`document.querySelector('.session-plus').click(); true`)
   await waitFor(async () => (await js(`document.querySelectorAll('.session-tile .chat-text').length`)) >= 2, 5000)
 
+  // ---- a long conversation does not take the bar: pinned to its latest, the rest of it lies above
+  // its tile, over the bar, and those boxes once made the bar above the left column no-drag.
+  const long = (await js(`(() => {
+    const chat = document.querySelector('.session-tile .chat')
+    const tall = document.createElement('div')
+    tall.style.height = '4000px'
+    tall.innerHTML = '<p>earlier</p>'.repeat(40)
+    chat.prepend(tall)
+    chat.scrollTop = chat.scrollHeight
+    const col = document.querySelector('.col.sessions').getBoundingClientRect()
+    const reaches = tall.getBoundingClientRect().top < 0
+    const region = ${REGION_AT}
+    const stuck = []
+    for (let x = col.left; x < col.right; x += 20) for (const y of [44, 80]) if (region(x, y) !== 'drag') stuck.push([Math.round(x), y, region(x, y)])
+    tall.remove()
+    return { reaches, stuck: stuck.slice(0, 6) }
+  })()`)) as { reaches: boolean; stuck: unknown[] }
+  check('window: a long conversation scrolled up under the bar leaves the bar above the left column a drag strip', long.reaches && long.stuck.length === 0, JSON.stringify(long))
+
   // ---- a session tile is one row of the tile column, and the two columns line up
   const rows = (await js(`(() => {
     const s = [...document.querySelectorAll('.session-tile')].map((t) => t.getBoundingClientRect())

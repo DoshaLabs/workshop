@@ -59,6 +59,14 @@ button {
 .app > * {
   -webkit-app-region: no-drag;
 }
+/* Only those boxes: what is inside them takes no part in the drag region. The region is built from
+   every element's box, scrolled out of sight or not, so a session tile's long conversation (pinned
+   to its latest, the rest scrolled up above the tile) laid no-drag boxes over the bar above the
+   left column, and the window would not drag there. Later rules (the bar's controls, the overlay's
+   ×) still set their own. */
+.app > * * {
+  -webkit-app-region: initial;
+}
 .col {
   min-height: 0;
   background: var(--ws-surface, var(--ws-panel));
