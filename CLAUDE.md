@@ -146,13 +146,14 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
 - Session tiles (phase 1, `docs/progress/2026-11-10-phase1.md`): the left column is a column of
   tiles, one per open session, each its live conversation (`ChatView.tsx`; prose as markdown in
   the serif face, parsed to a tree by `src/shared/markdown.ts`, never HTML), with ⌘n, the status
-  dot, Claude's title, model, context % and cost on its head and a prompt bar at its foot. Main
+  dot, Claude's title, model, context % and cost on its head; no prompt bar (Colin, 10 Nov 2026:
+  you type to a session in its terminal, a click away). Main
   tails each open session's transcript (`src/main/transcript.ts`, parser in
   `src/shared/transcript.ts`), finding `<session id>.jsonl` under the CLI's config folder by
   name. The focused session's terminal is in the center and its tile leaves the column, as in
   deck (the center's head has its ⌘ number and park ×); a conversation is pinned to the latest and
-  never scrolls itself (the wheel is the column's; its text a little greyer than the ink); files dropped on a session (`drop.ts`) are pasted as paths on the
-  terminal or a tile, and wait as a chip on a prompt bar; parked
+  never scrolls itself (the wheel is the column's; its text a little greyer than the ink); files
+  dropped on a session (`drop.ts`) are pasted as paths on the terminal or a tile; parked
   sessions are a Closed card at the foot. A render error stays in its piece (`Guard.tsx`).
 - Usage: the top bar's 5-hour and weekly meters are always there (a dash and a tooltip until a
   session reports); each session shows its context % and cost.
@@ -184,8 +185,8 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
 - Drag to reorder (`reorder.ts`, `src/shared/order.ts`): ⠿ on every head, both columns; orders in
   `settings.column` (`order`, `sessions`). A dragged session column keeps its order and ⌘1–9
   follow it; "most recent first" goes back. Tile pages let the pointer through during a drag.
-- Pictures in a prompt bar: paste or drop, a chip with a thumbnail, sent as a path
-  (`src/main/drops.ts`, `<profile>/drops/`).
+- A picture dropped with no file of its own (from a browser) is kept in `<profile>/drops/`
+  (`src/main/drops.ts`) and pasted as that path.
 - A session's project root (`src/main/project.ts`): resolved once through `git rev-parse
   --git-common-dir`, so worktrees of one repo share it; `workshop.sessions` gives it as `root`
   beside `project` (the start folder). A store that cannot be parsed is moved aside
@@ -789,8 +790,7 @@ already uses most of them:
 1. **Answer permission prompts from a tile.** Today they exist only in the terminal. The leash
    already holds every tool call at `/pretool`, so approve and deny buttons should be reachable
    the same way. This is the biggest gap. (Not yet verified end to end.)
-2. Image paste into a tile's prompt bar.
-3. A diff review pane (the git tile's Changes tab covers most of it).
+2. A diff review pane (the git tile's Changes tab covers most of it).
 
 ### Bring your own model
 

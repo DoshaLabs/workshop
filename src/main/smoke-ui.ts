@@ -1,6 +1,6 @@
 // Smoke checks for the UI fixes of 10 Nov 2026 (called from smoke.ts's sessions run, with `first`
 // open and focused): the window's drag strip, what can be selected, session tiles one row of the
-// tile column tall, and files dropped on a session (its tile, its prompt bar, its terminal).
+// tile column tall, and files dropped on a session (its tile, its terminal).
 //
 // The smoke window is hidden, so nothing here is a real pointer: a real drag of the window, a real
 // text selection and a real Finder drop still need a person. What is checked is what decides them:
@@ -118,11 +118,11 @@ export async function uiSmoke(check: Check, o: { win: BrowserWindow; core: CoreS
     const us = (q) => { const e = document.querySelector(q); return e ? getComputedStyle(e).userSelect : 'missing' }
     return {
       body: us('body'), bar: us('.topbar'), sessionHead: us('.session-tile .head'), tileHead: us('.tiles .tile .head'), launcher: us('.launcher'),
-      plus: us('.session-plus'), chat: us('.session-tile .chat'), chatText: us('.session-tile .chat-text'), prompt: us('.tile-prompt textarea'), field: us('.launcher textarea')
+      plus: us('.session-plus'), chat: us('.session-tile .chat'), chatText: us('.session-tile .chat-text'), field: us('.launcher textarea')
     }
   })()`)) as Record<string, string>
   check('selection: core\'s chrome is not selectable (the bar, heads, launcher, +)', ['body', 'bar', 'sessionHead', 'tileHead', 'launcher', 'plus'].every((k) => sel[k] === 'none'), JSON.stringify(sel))
-  check('selection: a conversation and the fields are', ['chat', 'chatText', 'prompt', 'field'].every((k) => sel[k] === 'text'), JSON.stringify(sel))
+  check('selection: a conversation and the fields are', ['chat', 'chatText', 'field'].every((k) => sel[k] === 'text'), JSON.stringify(sel))
   const held = (await js(`(() => {
     const [a, b] = document.querySelectorAll('.session-tile .chat')
     const r = a.getBoundingClientRect()
@@ -133,14 +133,8 @@ export async function uiSmoke(check: Check, o: { win: BrowserWindow; core: CoreS
   })()`)) as { during: string[]; after: string }
   check('selection: a drag started in one conversation cannot run on into another', held.during[0] === 'text' && held.during[1] === 'none' && held.after === 'text', JSON.stringify(held))
 
-  // ---- drops: the prompt bar keeps a chip; the tile pastes into its session and focuses it
+  // ---- drops: the tile pastes into its session and focuses it
   const tileOf = (id: string): string => `document.querySelector('.session-tile[data-session="${id}"]')`
-  const barClaimed = await js(DROP(`${tileOf(first)}.querySelector('.tile-prompt textarea')`, 'drop-bar.png'))
-  const chip = await waitFor(async () => String(await js(`${tileOf(first)}?.querySelector('.prompt-chip')?.title ?? ''`)).endsWith('drop-bar.png'), 3000)
-  check('drop: a picture dropped on a tile\'s prompt bar waits there as a chip, the launcher still in the center', barClaimed === true && chip && (await js(`!!document.querySelector('.launcher')`)) === true, `${barClaimed} ${chip}`)
-  await js(`${tileOf(first)}.querySelector('.tile-prompt-send').click(); true`)
-  check('drop: sent, the session gets its path', await waitFor(async () => (await screen(first)).includes('drop-bar.png'), 5000), (await screen(first)).slice(-200))
-
   const tileClaimed = await js(DROP(`${tileOf(two)}.querySelector('.chat')`, 'drop-tile.png'))
   const pasted = await waitFor(async () => (await screen(two)).includes('drop-tile.png'), 5000)
   check('drop: a picture dropped on a session tile\'s conversation is pasted into that session', tileClaimed === true && pasted, `${tileClaimed} ${(await screen(two)).slice(-200)}`)

@@ -3,10 +3,9 @@
 // a terminal hands one over: its path, shell-escaped, as a bracketed paste. main decides which path
 // that is (main/drops.ts): a Finder file's own, else a copy kept under the profile's drops/.
 //
-// Where a drop lands (as in deck, plus the prompt bar's chips from track E):
+// Where a drop lands (as in deck):
 //   - the focused session's terminal in the center: the paths are pasted into it;
-//   - a session tile's conversation or head: pasted into that session, which comes into focus;
-//   - a session tile's prompt bar: a chip in the bar, sent with the text on ⏎.
+//   - a session tile: pasted into that session, which comes into focus.
 // Anywhere else the window ignores a file drop (main.tsx), so it never navigates to the file.
 
 import { useRef, useState } from 'react'
@@ -81,7 +80,7 @@ export function useFileDrop(id: string, onDropped?: () => void, pass?: Partial<P
       depth.current = 0
       setOver(false)
       if (!hasFiles(e.dataTransfer)) return pass?.onDrop?.(e)
-      // Taken already by something inside (a tile's prompt bar makes it a chip).
+      // Taken already by something inside.
       if (e.defaultPrevented) return
       // Always claim a file drop, even one that cannot be used. The File objects are taken now:
       // the DataTransfer is readable only during the event.

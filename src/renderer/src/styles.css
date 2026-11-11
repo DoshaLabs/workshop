@@ -913,8 +913,6 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  --tile-prompt-gap: 6px;
-  --tile-prompt-height: 30px;
 }
 .guard-error {
   padding: 10px 12px;
@@ -929,7 +927,7 @@ button {
   min-height: 0;
   /* In a tile the wheel belongs to the column; the view stays pinned to the latest. */
   overflow: hidden;
-  padding: 8px 10px calc(var(--tile-prompt-height) + var(--tile-prompt-gap) * 2 + 4px);
+  padding: 8px 10px;
   font-size: 12px;
   line-height: 1.45;
   color: var(--ws-ink);
@@ -1146,62 +1144,6 @@ button {
     animation: none;
   }
 }
-/* The prompt bar along a session tile's foot; the conversation's bottom padding is its room. */
-.tile-prompt {
-  position: absolute;
-  left: var(--tile-prompt-gap);
-  right: var(--tile-prompt-gap);
-  bottom: var(--tile-prompt-gap);
-  z-index: 2;
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  padding: 2px 2px 2px 8px;
-  border-radius: 9px;
-  border: 1.5px solid var(--ws-line);
-  background: var(--ws-panel);
-  cursor: text;
-}
-.tile:hover .tile-prompt {
-  border-color: var(--ws-muted);
-}
-.tile-prompt:focus-within {
-  border-color: var(--ws-accent);
-}
-.tile-prompt textarea {
-  flex: 1;
-  min-width: 0;
-  max-height: 4.5em;
-  padding: 3px 0;
-  border: 0;
-  outline: 0;
-  resize: none;
-  background: transparent;
-  color: var(--ws-ink);
-  font: 12px/1.35 var(--ws-font);
-  field-sizing: content;
-}
-.tile-prompt textarea::placeholder {
-  color: var(--ws-muted);
-}
-.tile-prompt-send {
-  flex: none;
-  width: 22px;
-  height: 22px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--ws-muted);
-  cursor: pointer;
-}
-.tile-prompt-send:not(:disabled) {
-  color: var(--ws-accent);
-}
-.tile-prompt-send:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 /* ---- The status mark (CLAUDE.md §8): the Knot (Knot.tsx) by default, or an installed sprite
    pack's mascot (Mascot.tsx). Both sit where the status dot was, in the same box. ---- */
 .knot {
@@ -1862,69 +1804,10 @@ a.md-path:hover {
   font-size: 11px;
 }
 
-/* -- pictures waiting in a session's prompt bar, above it */
+/* -- a file dragged over a session tile */
 .tile.session-tile.file-over {
   border-color: var(--ws-accent);
 }
-.prompt-chips {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: calc(100% + 4px);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 4px;
-}
-.prompt-chip {
-  position: relative;
-  display: grid;
-  place-items: center;
-  height: 40px;
-  min-width: 40px;
-  max-width: 120px;
-  border: 1px solid var(--ws-line);
-  border-radius: 6px;
-  background: var(--ws-panel);
-  overflow: hidden;
-}
-.prompt-chip img {
-  display: block;
-  height: 100%;
-  max-width: 120px;
-  object-fit: cover;
-}
-.prompt-chip-name {
-  padding: 0 18px 0 6px;
-  font: 10px var(--ws-font-mono);
-  color: var(--ws-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.prompt-chip button {
-  position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--ws-bg) 75%, transparent);
-  color: var(--ws-ink);
-  font-size: 11px;
-  line-height: 16px;
-  cursor: pointer;
-}
-.prompt-problem {
-  padding: 2px 6px;
-  border-radius: 6px;
-  background: var(--ws-panel);
-  color: var(--ws-blocked);
-  font-size: 11px;
-}
-
 /* ── Track F: visual fixes ─────────────────────────────────────────────────── */
 
 /* The setup screen's pose rows: the row picker (the launcher's select, 7 px padding) stood taller

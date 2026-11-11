@@ -9,8 +9,8 @@
 // wolfpack or the leash.
 
 import { Mascot } from './Mascot'
-import { useEffect, useRef, useState, type MutableRefObject } from 'react'
-import { hasFiles, shellPath, useFileDrop } from './drop'
+import { useEffect, useState } from 'react'
+import { useFileDrop } from './drop'
 import { MODELS } from '@shared/models'
 import { columnOrder, shortcutOrder, type SessionView, type SessionsState } from '@shared/sessions'
 import { useReorder } from './reorder'
@@ -106,14 +106,13 @@ export function ParkButton({ id }: { id: string }) {
 }
 
 /**
- * A session's tile: its head, the live tail of its conversation and a prompt bar. A click opens its
- * terminal in the center. A file dropped on it is pasted into the session, which comes into focus
- * (deck's Tile); one dropped on the prompt bar waits there as a chip instead.
+ * A session's tile: its head and the live tail of its conversation. A click opens its terminal in
+ * the center, where you type to it. A file dropped on it is pasted into the session, which comes
+ * into focus (deck's Tile).
  */
 function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number; usage: Usage | null; onPick: () => void; drag: Drag }) {
   const t = useTranscript(s.id)
   const title = t?.title ?? s.title
-  const addFiles = useRef<((files: File[]) => void) | null>(null)
   const drop = useFileDrop(s.id, onPick, drag.target(s.id))
   return (
     <article
@@ -156,130 +155,8 @@ function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number
         <Guard what="This conversation" reset={t}>
           <ChatView id={s.id} status={s.status} attention={s.attention} cwd={s.cwd} />
         </Guard>
-        <TilePrompt id={s.id} addFiles={addFiles} />
       </div>
     </article>
-  )
-}
-
-/** A picture (or a dropped file) waiting in the prompt bar: the path the session will be sent. */
-interface Attached {
-  path: string
-  name: string
-  /** A data: URL to show it by, or '' for a file that is not a picture. */
-  thumb: string
-}
-
-/** A picture's thumbnail as a data: URL (the window's CSP allows data: images, not blob:). */
-const thumbOf = (f: File): Promise<string> =>
-  f.type.startsWith('image/')
-    ? new Promise((resolve) => {
-        const r = new FileReader()
-        r.onload = () => resolve(typeof r.result === 'string' ? r.result : '')
-        r.onerror = () => resolve('')
-        r.readAsDataURL(f)
-      })
-    : Promise.resolve('')
-
-
-/**
- * The prompt bar along a session tile's foot: type, ⏎, and the text goes into that session and is
- * sent, without bringing it into focus. ⇧⏎ is a new line; Esc empties it. From deck's TilePrompt.
- *
- * A picture pasted into it (or a file dropped anywhere on the tile) waits as a chip with its
- * thumbnail; × takes it off. On ⏎ each one goes in first as its own paste of its path, the way a
- * terminal hands over a dropped file, which the CLI turns into an attached image; then the text.
- * A pasted picture has no file of its own, so main keeps it in the profile's drops/ folder first.
- */
-function TilePrompt({ id, addFiles }: { id: string; addFiles: MutableRefObject<((files: File[]) => void) | null> }) {
-  const [text, setText] = useState('')
-  const [attached, setAttached] = useState<Attached[]>([])
-  const [problem, setProblem] = useState('')
-  const add = async (files: File[]): Promise<void> => {
-    setProblem('')
-    for (const f of files) {
-      try {
-        const path = await window.core.keepDrop(f)
-        const thumb = await thumbOf(f)
-        setAttached((a) => (a.some((x) => x.path === path) ? a : [...a, { path, name: f.name || path.split('/').pop() || 'image', thumb }]))
-      } catch (err) {
-        setProblem(String((err as Error).message).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
-      }
-    }
-  }
-  addFiles.current = (files) => void add(files)
-  const send = (): void => {
-    const t = text.trim()
-    if (!t && attached.length === 0) return
-    // Each path its own bracketed paste, a beat apart, then the text, then ⏎.
-    const pastes = [...attached.map((a) => shellPath(a.path) + ' '), ...(t ? [t] : [])]
-    pastes.forEach((p, i) => window.setTimeout(() => window.core.ptyInput(id, `\x1b[200~${p}\x1b[201~`), i * 40))
-    window.setTimeout(() => window.core.ptyInput(id, '\r'), pastes.length * 40)
-    setText('')
-    setAttached([])
-    setProblem('')
-  }
-  // Clicks in the bar must not reach the tile (which would open the terminal).
-  const stop = (e: React.SyntheticEvent): void => e.stopPropagation()
-  const ready = !!text.trim() || attached.length > 0
-  return (
-    <div
-      className={`tile-prompt ${text ? 'has-text' : ''}`}
-      onClick={stop}
-      onMouseDown={stop}
-      onDragOver={(e) => {
-        if (hasFiles(e.dataTransfer)) e.preventDefault()
-      }}
-      onDrop={(e) => {
-        // A file dropped on the bar is a chip here; the tile (which this bubbles to) sees it taken.
-        if (!hasFiles(e.dataTransfer)) return
-        e.preventDefault()
-        void add(Array.from(e.dataTransfer.files))
-      }}
-    >
-      {(attached.length > 0 || problem) && (
-        <div className="prompt-chips">
-          {attached.map((a) => (
-            <span key={a.path} className="prompt-chip" title={a.path}>
-              {a.thumb ? <img src={a.thumb} alt={a.name} /> : <span className="prompt-chip-name">{a.name}</span>}
-              <button type="button" title="Take it off" aria-label={`Remove ${a.name}`} onClick={() => setAttached((x) => x.filter((y) => y.path !== a.path))}>
-                ×
-              </button>
-            </span>
-          ))}
-          {problem && <span className="prompt-problem">{problem}</span>}
-        </div>
-      )}
-      <textarea
-        rows={1}
-        value={text}
-        spellCheck={false}
-        placeholder="Reply…"
-        aria-label="Prompt this session"
-        onChange={(e) => setText(e.target.value)}
-        onPaste={(e) => {
-          const pics = [...e.clipboardData.files].filter((f) => f.type.startsWith('image/'))
-          if (pics.length === 0) return
-          e.preventDefault()
-          void add(pics)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.metaKey) {
-            e.preventDefault()
-            send()
-          } else if (e.key === 'Escape') {
-            e.preventDefault()
-            if (text || attached.length) {
-              setText('')
-              setAttached([])
-            } else e.currentTarget.blur()
-          }
-        }}
-      />
-      <button type="button" className="tile-prompt-send" onClick={send} disabled={!ready} title="Send (⏎)">
-        ↵
-      </button>
-    </div>
   )
 }
 

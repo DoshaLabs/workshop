@@ -139,7 +139,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   })
   // The preview pane (track E): files read and written for the window, and a session's `doc open`.
   const preview = startPreview({ win: o.win, handle })
-  // An image pasted or dropped into a session tile's prompt bar, kept as a file the session can read.
+  // A picture dropped on a session (from a browser or another app, with no file of its own), kept as a file the session can read.
   handle(CH.dropKeep, (file: unknown) => keepImage(o.home, file))
   on(CH.ptyInput, (id: string, data: string) => typeof data === 'string' && sessions.input(String(id), data))
   on(CH.ptyResize, (id: string, cols: number, rows: number) => sessions.resize(String(id), Number(cols), Number(rows)))

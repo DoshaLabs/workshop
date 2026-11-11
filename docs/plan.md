@@ -103,7 +103,7 @@ sprite packs as a second category, the tile template as its own repo with `npm c
 | The leash: PreToolUse held at `/pretool` | M |
 | Permission prompts answered from a session's tile (verify the route first; the biggest gap against the Claude app) | M |
 | Drag to reorder tiles, both columns | S |
-| Image paste into a tile's prompt bar | S |
+| ~~Image paste into a tile's prompt bar~~ built, then removed with the prompt bar (10 Nov 2026) | S |
 | `workshop.sessions.transcript` and the `transcripts` permission, with its loud prompt | M |
 
 ## Track F: loose ends and things only half done (S each)

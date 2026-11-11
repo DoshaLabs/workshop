@@ -343,8 +343,8 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
     !!cover && cover.left === 0 && cover.right === cover.w && cover.bottom === cover.h && cover.top === cover.strip && cover.strip === 88 && cover.name === 'Wikipedia',
     JSON.stringify(cover)
   )
-  // Nothing core draws comes through it: the middle of every cell is the overlay's page. (A
-  // session's prompt bar is checked with the session tiles, which do not exist yet here.)
+  // Nothing core draws comes through it: the middle of every cell is the overlay's page. (Session
+  // tiles are checked with the session tiles, which do not exist yet here.)
   const through = (await js(`(() => {
     const over = document.querySelector('.tile-page.over')
     const seen = [...document.querySelectorAll('.tile')].map((el) => el.getBoundingClientRect()).filter((r) => r.width > 0 && r.top + r.height / 2 > 88 && r.top + r.height / 2 < innerHeight)
@@ -507,7 +507,7 @@ async function themes(check: (name: string, ok: boolean, detail?: string) => voi
 /**
  * Session tiles: the conversation, tailed by main from the transcript the stand-in writes the way
  * the CLI does, drawn in the column (prompts, markdown prose, tool lines; nothing meta or from a
- * subagent), the terminal only in the center, the prompt bar typing into the session, and parked
+ * subagent), the terminal only in the center, and parked
  * sessions at the foot. `id` is a session that has had one turn ("hello") and is focused.
  */
 async function sessionTiles(check: (name: string, ok: boolean, detail?: string) => void, { win, core, userData }: Ctx, id: string): Promise<void> {
@@ -550,34 +550,20 @@ async function sessionTiles(check: (name: string, ok: boolean, detail?: string) 
   check('session tiles: prose in the reading face, prompts and tools in the interface and mono faces', !!seen && seen.prose.includes('Source Serif 4') && seen.prompt.includes('Nunito') && seen.toolFont.includes('JetBrains Mono'), JSON.stringify(seen && [seen.prose, seen.prompt, seen.toolFont]))
   check('session tiles: no terminal mounted while no session is in the center', (await terminals()) === 0)
   // A tile page over the window (the overlay's class and box, set and undone in one task, so
-  // nothing repaints in between) covers a session's prompt bar: once it had a z-index of its own
-  // and came through the Wikipedia lightbox.
+  // nothing repaints in between) covers a session tile: a tile's insides once had a z-index of
+  // their own and came through the Wikipedia lightbox.
   const under = (await js(`(() => {
-    const bar = ${tile}?.querySelector('.tile-prompt'), page = document.querySelector('.tile-page')
-    if (!bar || !page) return { bar: !!bar, page: !!page }
-    const r = bar.getBoundingClientRect(), was = page.getAttribute('style')
+    const chat = ${tile}?.querySelector('.chat'), page = document.querySelector('.tile-page')
+    if (!chat || !page) return { chat: !!chat, page: !!page }
+    const r = chat.getBoundingClientRect(), was = page.getAttribute('style')
     page.classList.add('over')
     Object.assign(page.style, { visibility: 'visible', left: '0px', top: '88px', width: innerWidth + 'px', height: (innerHeight - 88) + 'px' })
-    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.bottom - 8)
     page.classList.remove('over')
     page.setAttribute('style', was)
-    return { bar: true, page: true, covered: page.contains(hit), hit: hit?.className }
-  })()`)) as { bar: boolean; page: boolean; covered?: boolean; hit?: string }
-  check('session tiles: the overlay covers a session\'s prompt bar', under.covered === true, JSON.stringify(under))
-
-  // The prompt bar types into the session without bringing it into focus.
-  await js(`(() => {
-    const ta = ${tile}.querySelector('.tile-prompt textarea')
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, 'from the tile')
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
-    return true
-  })()`)
-  await sleep(50)
-  await js(`${tile}.querySelector('.tile-prompt-send').click(); true`)
-  await waitFor('the turn from the prompt bar', async () => (await screen()).includes('DONE from the tile'), 5000).catch(() => undefined)
-  await waitFor('the tile to show it', async () => String(await js(`[...${tile}?.querySelectorAll('.chat-user') ?? []].map((x) => x.textContent).join('|')`)).includes('from the tile'), 3000).catch(() => undefined)
-  check('session tiles: the prompt bar sends a turn, and the tile shows it', (await screen()).includes('DONE from the tile') && String(await js(`[...${tile}.querySelectorAll('.chat-user')].map((x) => x.textContent).join('|')`)).includes('from the tile'))
-  check('session tiles: still no terminal after typing in a tile', (await terminals()) === 0 && (await js(`!!document.querySelector('.launcher')`)) === true)
+    return { chat: true, page: true, covered: page.contains(hit), hit: hit?.className }
+  })()`)) as { chat: boolean; page: boolean; covered?: boolean; hit?: string }
+  check('session tiles: the overlay covers a session tile', under.covered === true, JSON.stringify(under))
   // WORKSHOP_SHOT_TILES=<file.png>: the window with the session as a tile and the launcher in the center.
   if (process.env.WORKSHOP_SHOT_TILES) {
     await sleep(800)

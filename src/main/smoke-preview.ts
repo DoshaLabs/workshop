@@ -1,9 +1,9 @@
 // Smoke checks for track E's first half (called from smoke.ts's sessions run): the preview pane
 // opened by a session's `doc` CLI and by a click on a path in a conversation, a task box ticked on
 // disk, reload on a change and the unsaved-edits guard, ⌘S; a tile and a session dragged to a new
-// place (and ⌘1–9 following the session column's order); a picture pasted into a prompt bar.
+// place (and ⌘1–9 following the session column's order).
 //
-// Drags and the paste are dispatched as DOM events in core's window: the smoke window is hidden,
+// Drags are dispatched as DOM events in core's window: the smoke window is hidden,
 // and a real drag cannot be injected into it. What they exercise is the handlers and the order; that
 // a real pointer drag gets through a tile's webview is the `ws-dragging` style, checked here by its
 // computed value.
@@ -147,37 +147,6 @@ export async function previewSmoke(check: Check, o: { win: BrowserWindow; door: 
   check('preview: a tool line\'s file opens', (await shown()) === join(cwd, 'README.md'), String(await shown()))
   await js(`document.querySelector('.preview > .head .ghost').click(); true`)
 
-  // ---- a picture pasted into the prompt bar: a chip, removable, then sent as a path
-  const paste = (name: string): Promise<unknown> =>
-    js(`(() => {
-      const ta = ${tile}.querySelector('.tile-prompt textarea')
-      const dt = new DataTransfer()
-      // A 1×1 PNG.
-      const b = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))
-      dt.items.add(new File([b], ${JSON.stringify(name)}, { type: 'image/png' }))
-      ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-      return true
-    })()`)
-  await paste('image.png')
-  const chip = await waitFor(async () => (await js(`${tile}.querySelectorAll('.prompt-chip img').length`)) === 1, 3000)
-  const chipPath = (await js(`${tile}.querySelector('.prompt-chip')?.title ?? ''`)) as string
-  const kept = chipPath ? await readFile(chipPath).then((b) => b.length > 0, () => false) : false
-  check('image paste: a pasted picture shows as a chip with its thumbnail, kept in the profile', chip && kept && chipPath.endsWith('.png') && chipPath.includes('/drops/pasted-'), chipPath)
-  await js(`${tile}.querySelector('.prompt-chip button').click(); true`)
-  check('image paste: × takes it off', await waitFor(async () => (await js(`${tile}.querySelectorAll('.prompt-chip').length`)) === 0, 2000))
-  await paste('shot.png')
-  await waitFor(async () => (await js(`${tile}.querySelectorAll('.prompt-chip').length`)) === 1, 3000)
-  const sent = (await js(`${tile}.querySelector('.prompt-chip')?.title ?? ''`)) as string
-  await js(`(() => {
-    const ta = ${tile}.querySelector('.tile-prompt textarea')
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, 'what is this')
-    ta.dispatchEvent(new Event('input', { bubbles: true }))
-    return true
-  })()`)
-  await sleep(50)
-  await js(`${tile}.querySelector('.tile-prompt-send').click(); true`)
-  const landed = await waitFor(async () => (await screen()).replace(/\s+/g, '').includes(`DONE${sent}whatisthis`.replace(/\s+/g, '')), 5000)
-  check('image paste: on send the session gets the picture\'s path, then the text', landed && (await js(`${tile}.querySelectorAll('.prompt-chip').length`)) === 0, (await screen()).slice(-300))
 }
 
 /**
