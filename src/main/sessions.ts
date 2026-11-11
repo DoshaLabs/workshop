@@ -15,7 +15,7 @@ import * as pty from 'node-pty'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, hostname } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { cleanModel, cleanPermissionMode } from '@shared/models'
 import { cleanCodexMode, cliOf, codexServerArgs, codexTuiArgs } from '@shared/cli'
 import { makeWorktree } from './worktree'
@@ -506,7 +506,10 @@ export class SessionManager {
     const env = Object.entries({ ...(this.o.cliEnv?.() ?? {}), WORKSHOP_AUTH: this.authFile(rec), WORKSHOP_SESSION: rec.id }).map(([k, v]) => `${k}=${v}`)
     // A Codex worktree is always one core made (Codex refuses --worktree under --remote): trusted.
     const trusted = rec.worktree ? [rec.cwd] : []
-    const serverCmd = 'exec ' + ['env', ...env, 'codex', ...codexServerArgs(sock, trusted)].map(shq).join(' ')
+    // The door as MCP tools (bin/workshop-mcp.mjs, beside the door's CLI): tiles from a Codex session.
+    const tileCli = this.o.cliEnv?.().WORKSHOP_TILE
+    const mcp = tileCli ? join(dirname(tileCli), 'workshop-mcp.mjs') : undefined
+    const serverCmd = 'exec ' + ['env', ...env, 'codex', ...codexServerArgs(sock, trusted, mcp)].map(shq).join(' ')
     await this.o.tmux.newSession({ name: rec.tmuxName, cwd: rec.cwd, command: tuiCmd, cols: SPAWN_COLS, rows: SPAWN_ROWS })
     try {
       await this.o.tmux.newWindow({ session: rec.tmuxName, name: 'app-server', cwd: rec.cwd, command: serverCmd })

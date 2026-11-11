@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CODEX_MODES, cleanCodexMode, cliOf, codexServerArgs, codexThreadId, codexTuiArgs } from '@shared/cli'
+import { CODEX_MODES, cleanCodexMode, cliOf, codexMcpServer, codexServerArgs, codexThreadId, codexTuiArgs } from '@shared/cli'
 import { SessionManager } from '../src/main/sessions'
 import type { Tmux } from '../src/main/tmux'
 
@@ -35,6 +35,10 @@ describe('codexTuiArgs', () => {
   })
   it('a worktree core made is trusted for that server only, the folder in the value (a -c key splits on dots)', () => {
     expect(codexServerArgs(SOCK, ['/r/.workshop/worktrees/a.b'])).toEqual(['app-server', '--listen', `unix://${SOCK}`, '-c', 'projects={"/r/.workshop/worktrees/a.b"={trust_level="trusted"}}'])
+  })
+  it('the door as an MCP server: the script in the value, the session\'s env names passed through', () => {
+    expect(codexMcpServer('/A p.p/bin/workshop-mcp.mjs')).toBe('mcp_servers.workshop={command="node",args=["/A p.p/bin/workshop-mcp.mjs"],env_vars=["WORKSHOP_AUTH","WORKSHOP_HOME","WORKSHOP_SESSION"]}')
+    expect(codexServerArgs(SOCK, [], '/b/workshop-mcp.mjs').slice(3)).toEqual(['-c', codexMcpServer('/b/workshop-mcp.mjs')])
   })
   it('a folder with quotes, backslashes or control characters stays one TOML string', () => {
     const v = codexServerArgs(SOCK, ['/r/we"ird\\path\u007f'])[4]

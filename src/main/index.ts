@@ -41,6 +41,7 @@ import { Updater, bundleOf } from './updates'
 import { placeWindow } from './window-bounds'
 import { reapTmuxWhenGone } from './smoke-reaper'
 import { smokeNet } from './smoke-net'
+import { doorTilesOf } from './door-tools'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
 const RESTARTED = process.argv.includes('--smoke-restarted')
@@ -1018,6 +1019,7 @@ app.whenReady().then(async () => {
     appPath: coreFile(),
     // Core's own plugin (its skills: workshop:doc) first, then every tile's.
     pluginDirs: () => [coreFile('plugin'), ...[...registry.tiles.values()].map((t) => t.plugin).filter((p): p is string => !!p)],
+    doorTiles: () => doorTilesOf([...registry.tiles.values()]),
     dark: isDark(settings.get()),
     poll: !SMOKE,
     // The smoke run's stand-in CLIs: `claude`, and `codex` with its app-server.

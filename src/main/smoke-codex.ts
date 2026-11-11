@@ -8,12 +8,15 @@
 // shows on the session as Allow / Deny, is answered only on a click, and goes when the terminal
 // answers first; a permissions request and a question are never answered by core. No pause: Stop
 // (two clicks) interrupts the running turn. A commit a Codex command made is the session's. Its
-// subagents (child threads) show in a pack tile under it, with kill and no pause.
+// subagents (child threads) show in a pack tile under it, with kill and no pause. Tiles are MCP tools
+// on its app-server (the door, as that session).
 
 import type { BrowserWindow } from 'electron'
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
+import WebSocket from 'ws'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CoreSessions } from './core-sessions'
@@ -36,6 +39,28 @@ async function waitFor(what: string, cond: () => boolean | Promise<boolean>, ms 
 }
 
 const TID = '01a1cbf8-d80b-75f1-8e06-5c98aa3450ca'
+
+/** A client of a Codex session's app-server, as Codex's own clients are (requests only). */
+async function codexClient(sock: string): Promise<((method: string, params: unknown) => Promise<unknown>) & { close(): void }> {
+  const ws = new WebSocket(`ws+unix://${realpathSync(sock)}:/rpc`)
+  await new Promise<void>((r, f) => (ws.once('open', () => r()), ws.once('error', f)))
+  const waiting = new Map<number, (m: { result?: unknown; error?: { message?: string } }) => void>()
+  ws.on('message', (d) => {
+    const m = JSON.parse(String(d))
+    if (m.id !== undefined && !m.method) waiting.get(m.id)?.(m)
+  })
+  let n = 1
+  const rpc = ((method: string, params: unknown) =>
+    new Promise((ok, fail) => {
+      const id = n++
+      const t = setTimeout(() => fail(new Error(`${method}: no answer`)), 15_000)
+      waiting.set(id, (m) => (clearTimeout(t), m.error ? fail(new Error(m.error.message ?? 'error')) : ok(m.result)))
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }))
+    })) as ((method: string, params: unknown) => Promise<unknown>) & { close(): void }
+  rpc.close = () => ws.close()
+  await rpc('initialize', { clientInfo: { name: 'smoke', title: null, version: '1' }, capabilities: { experimentalApi: true } })
+  return rpc
+}
 
 export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Promise<void> {
   const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
@@ -77,7 +102,8 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   const w = windows(id)
   check('codex: one tmux session, the TUI attached and the app-server beside it', w.length === 2 && /^0:[^:]+:1$/.test(w[0]) && w[1].startsWith('1:app-server:0'), w.join(' '))
   const server = JSON.parse(await readFile(join(userData, `fake-codex-server-${id}.json`), 'utf8')) as { argv: string[]; cwd: string; env: Record<string, string> }
-  check('codex: the app-server runs in the session\'s folder (the session runs in the server\'s)', server.cwd === cwd && server.argv.join(' ') === `app-server --listen unix://${sock}`, `${server.cwd} ${server.argv.join(' ')}`)
+  const mcpArg = (): string => `mcp_servers.workshop={command="node",args=[${JSON.stringify(join(String(server.env.WORKSHOP_TILE ?? '').replace(/\/[^/]*$/, ''), 'workshop-mcp.mjs'))}],env_vars=["WORKSHOP_AUTH","WORKSHOP_HOME","WORKSHOP_SESSION"]}`
+  check('codex: the app-server runs in the session\'s folder (the session runs in the server\'s), with the door as its MCP server', server.cwd === cwd && server.argv.join(' ') === `app-server --listen unix://${sock} -c ${mcpArg()}`, `${server.cwd} ${server.argv.join(' ')}`)
   check('codex: the server has the session\'s door env (its tools run there), and no token in argv', server.env.WORKSHOP_SESSION === id && /auth\/[0-9a-f]{6}\.header$/.test(server.env.WORKSHOP_AUTH ?? '') && !!server.env.WORKSHOP_TILE && !server.argv.some((x) => /[0-9a-f]{48}/.test(x)), JSON.stringify(server.env))
   check('codex: a new session is never stuck starting', core.sessions.view(id)?.status !== 'starting', core.sessions.view(id)?.status)
 
@@ -172,9 +198,11 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   await waitFor('the interrupt', () => existsSync(`${sock}.interrupts.json`), 5000).catch(() => undefined)
   const ints = JSON.parse(await readFile(`${sock}.interrupts.json`, 'utf8').catch(() => '[]')) as { threadId?: string; turnId?: string }[]
   check('codex: the second click interrupts the running turn (its id from turn/started)', ints.length === 1 && ints[0].threadId === threadId && /^[0-9a-f-]{36}$/.test(ints[0].turnId ?? ''), JSON.stringify(ints))
-  await waitFor('idle after the stop', () => core.sessions.view(id)?.status === 'idle', 5000).catch(() => undefined)
+  // Idle in core first, then the window draws it: wait for both.
+  await waitFor('idle after the stop, and Stop gone', async () => core.sessions.view(id)?.status === 'idle' && (await stopBtn()) === 0, 5000).catch(() => undefined)
   const lastTool = [...(core.transcripts.get(id)?.blocks ?? [])].reverse().find((b) => b.kind === 'tool')
-  check('codex: stopped, the session is idle, its command marked failed, and Stop goes', core.sessions.view(id)?.status === 'idle' && lastTool?.kind === 'tool' && lastTool.label === 'sleep 600' && lastTool.error && (await stopBtn()) === 0, JSON.stringify(lastTool))
+  const stopped = { status: core.sessions.view(id)?.status, stop: await stopBtn() }
+  check('codex: stopped, the session is idle, its command marked failed, and Stop goes', stopped.status === 'idle' && lastTool?.kind === 'tool' && lastTool.label === 'sleep 600' && lastTool.error && stopped.stop === 0, JSON.stringify({ ...stopped, lastTool }))
 
   // Commits (item 3): a command that commits is recorded as this session's, as a Claude session's Bash call.
   const gc = (...args: string[]): string => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim()
@@ -217,6 +245,22 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   await waitFor('idle', () => core.sessions.view(id)?.status === 'idle', 5000).catch(() => undefined)
   for (const a of core.agentsState().agents.filter((x) => x.parent === id)) await js(`window.core.agents.dismiss(${JSON.stringify(a.id)})`)
   check('codex: × clears them', core.agentsState().agents.filter((x) => x.parent === id).length === 0)
+
+  // Tiles from a Codex session (item 5): the door as MCP tools on its app-server, called the way Codex calls them.
+  const rpc = await codexClient(sock)
+  const st = (await rpc('mcpServerStatus/list', {})) as { data?: { name: string; tools: Record<string, { description?: string; inputSchema?: { properties?: { op?: { enum?: string[] } } } }> }[] }
+  const ws0 = st.data?.find((x) => x.name === 'workshop')
+  check('codex: its app-server runs the door as an MCP server: a tool per tile with door ops (its skill as the words), and doc', !!ws0 && !!ws0.tools.reminders && !!ws0.tools.doc && (ws0.tools.reminders.inputSchema?.properties?.op?.enum ?? []).includes('list') && /Reminders/.test(ws0.tools.reminders.description ?? ''), JSON.stringify(ws0 && Object.keys(ws0.tools)))
+  const listed = (await rpc('mcpServer/tool/call', { threadId, server: 'workshop', tool: 'reminders', arguments: { op: 'list', args: [] } }).catch((e: Error) => ({ error: e.message }))) as { content?: { text?: string }[]; isError?: boolean; error?: string }
+  check('codex: a tile call from the Codex session goes through the door as that session and the tile answers', !!listed.content && !listed.isError, JSON.stringify(listed).slice(0, 300))
+  const bad = (await rpc('mcpServer/tool/call', { threadId, server: 'workshop', tool: 'reminders', arguments: { op: 'nuke', args: [] } }).catch((e: Error) => ({ error: e.message }))) as { content?: { text?: string }[]; isError?: boolean }
+  check('codex: an op the tile did not declare is refused by the door', bad.isError === true && /no "nuke" op/.test(bad.content?.[0]?.text ?? ''), JSON.stringify(bad).slice(0, 300))
+  await writeFile(join(cwd, 'plan.md'), '# Plan\n- [ ] one\n')
+  const opened = (await rpc('mcpServer/tool/call', { threadId, server: 'workshop', tool: 'doc', arguments: { path: 'plan.md' } }).catch((e: Error) => ({ error: e.message }))) as { isError?: boolean }
+  const shownDoc = (): Promise<string | null> => js(`document.querySelector('.preview')?.dataset.preview ?? null`)
+  await waitFor('the preview pane', async () => (await shownDoc()) === join(cwd, 'plan.md'), 5000).catch(() => undefined)
+  check('codex: doc opens a file (relative to the session\'s folder) in the preview pane', !opened.isError && (await shownDoc()) === join(cwd, 'plan.md'), `${JSON.stringify(opened).slice(0, 200)} ${await shownDoc()}`)
+  rpc.close()
 
   // Its tile in the column: the codex badge, and no pause (the leash is Claude Code's hooks).
   await js(`document.querySelector('.session-plus')?.click(); true`)
@@ -266,7 +310,7 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   const wtRec = core.sessions.find(wtId)
   check('codex: a worktree session starts in .workshop/worktrees/<name> on worktree-<name>, made by core', wtRec?.cwd === wtPath && wtRec.worktree && wtRec.name === 'codex-wt' && g('worktree', 'list').includes(wtPath) && execFileSync('git', ['-C', wtPath, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim() === 'worktree-codex-wt', JSON.stringify(wtRec && { cwd: wtRec.cwd, name: wtRec.name }))
   check('codex: its TUI and server both run in the worktree, and Codex never sees --worktree', wtArgv.join(' ').includes(`-C ${wtPath}`) && !wtArgv.includes('--worktree') && wtServer.cwd === wtPath, `${wtArgv.join(' ')} | ${wtServer.cwd}`)
-  check('codex: the worktree core made is trusted for its own server only (no "Trust this folder?")', (wtServer.argv ?? []).join(' ') === `app-server --listen unix://${wtSock} -c projects={${JSON.stringify(wtPath)}={trust_level="trusted"}}`, (wtServer.argv ?? []).join(' '))
+  check('codex: the worktree core made is trusted for its own server only (no "Trust this folder?")', (wtServer.argv ?? []).join(' ') === `app-server --listen unix://${wtSock} -c projects={${JSON.stringify(wtPath)}={trust_level="trusted"}} -c ${mcpArg()}`, (wtServer.argv ?? []).join(' '))
   check('codex: the main tree stays clean (.workshop/ is excluded, nothing tracked changed)', g('status', '--porcelain') === '', g('status', '--porcelain'))
   await core.sessions.kill(wtId)
 

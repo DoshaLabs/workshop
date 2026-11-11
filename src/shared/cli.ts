@@ -81,10 +81,24 @@ export function codexTuiArgs(o: CodexLaunch): string[] {
  * their own trusted folders stay trusted (seen with the real CLI). The server answers the TUI's
  * trust check (`config/read`), so the override goes on the server, not the TUI.
  */
-export function codexServerArgs(sock: string, trusted: string[] = []): string[] {
+export function codexServerArgs(sock: string, trusted: string[] = [], mcp?: string): string[] {
   const args = ['app-server', '--listen', `unix://${sock}`]
   if (trusted.length) args.push('-c', `projects={${trusted.map((p) => `${tomlString(p)}={trust_level="trusted"}`).join(',')}}`)
+  if (mcp) args.push('-c', codexMcpServer(mcp))
   return args
+}
+
+/** The names a session's MCP server needs from its env: Codex clears an MCP server's env to a few (seen on 0.167.1). */
+export const CODEX_MCP_ENV = ['WORKSHOP_AUTH', 'WORKSHOP_HOME', 'WORKSHOP_SESSION'] as const
+
+/**
+ * The door as an MCP server on the session's app-server (bin/workshop-mcp.mjs; phase 3 item 5):
+ * one `-c` whose key is `mcp_servers.workshop` (no folder in the key) and whose value names the
+ * script, so tiles are tools in a Codex session. Session flags merge into the user's own
+ * `mcp_servers`; nothing is written to their config.
+ */
+export function codexMcpServer(script: string): string {
+  return `mcp_servers.workshop={command="node",args=[${tomlString(script)}],env_vars=[${CODEX_MCP_ENV.map((k) => `"${k}"`).join(',')}]}`
 }
 
 /** A TOML basic string: JSON's escapes are all TOML's, except that TOML has no `\/` (JSON.stringify never writes one). */

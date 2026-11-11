@@ -21,6 +21,7 @@ import { startPreview } from './preview'
 import { keepImage } from './drops'
 import { CommitRecorder, CommitStore, codexShellCall, type CommitRecord } from './commits'
 import { codexKillLine } from '@shared/codex'
+import { doorTools, type DoorTile } from '@shared/door-tools'
 import { Leash } from './leash'
 import { CodexLink } from './codex-link'
 import { AgentTracker } from './agents'
@@ -76,6 +77,8 @@ export interface Options {
   onCommits?: (all: CommitRecord[]) => void
   /** A transcript changed (a session's, or `agent:<id>`): tiles with "transcripts" may hear of it. */
   onTranscript?: (t: Transcript) => void
+  /** The installed tiles with door ops, and their skills: a Codex session's MCP tools (`/core/tools`). */
+  doorTiles?: () => Promise<DoorTile[]>
 }
 
 export async function startSessions(o: Options): Promise<CoreSessions> {
@@ -402,6 +405,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
       const rec = sessions.byToken(token)
       if (!rec) throw new Error(helperList.byToken(token) ? 'a helper cannot do that; its session can' : 'only a session inside workshop can do that')
       if (name === 'helper') return helperList.call(rec, payload)
+      // A Codex session's MCP server (bin/workshop-mcp.mjs) lists the door as tools.
+      if (name === 'tools') return doorTools((await o.doorTiles?.()) ?? [])
       return preview.call(name, payload, { id: rec.id, cwd: rec.cwd })
     },
     stop() {

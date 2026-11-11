@@ -29,7 +29,10 @@
 //   child runs a command until its turn is interrupted, which the parent hears as `interrupted`.
 //   `spawnask`: the child asks to approve a command (sent to the child's and the parent's
 //   subscribers, as the TUI follows only the parent); `yes` resolves it. A child refuses
-//   thread/resume for its first 400 ms.
+//   thread/resume for its first 400 ms. An MCP server given as `-c mcp_servers.<name>={command=…,
+//   args=[…],env_vars=[…]}` is started as 0.167.1 starts one (stdio, in the server's folder, its env
+//   cleared to a few names plus `env_vars`); `mcpServerStatus/list` and `mcpServer/tool/call`
+//   reach it, as they do the real one's.
 //   `exit` ends the TUI cleanly (status 0), `crash` with status 3.
 
 const fs = require('node:fs')
@@ -128,6 +131,26 @@ function server() {
     }
   }
   const answers = []
+  // MCP servers from -c mcp_servers.<name>={…}: the value parsed just enough for workshop's.
+  const mcp = new Map()
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] !== '-c') continue
+    const m = /^mcp_servers\.([A-Za-z0-9_-]+)=\{command="([^"]+)",args=\[(.*?)\](?:,env_vars=\[(.*?)\])?\}$/.exec(argv[i + 1] || '')
+    if (!m) continue
+    const list = (x) => (x ? JSON.parse(`[${x}]`) : [])
+    const keep = ['HOME', 'LANG', 'LOGNAME', 'PATH', 'SHELL', 'TERM', 'TMPDIR', 'USER', ...list(m[4])]
+    const env = Object.fromEntries(keep.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]))
+    const child = require('node:child_process').spawn(m[2], list(m[3]), { cwd: process.cwd(), env, stdio: ['pipe', 'pipe', 'inherit'] })
+    const waiting = new Map()
+    let n = 1
+    require('node:readline').createInterface({ input: child.stdout }).on('line', (l) => {
+      try { const x = JSON.parse(l); waiting.get(x.id)?.(x); waiting.delete(x.id) } catch {}
+    })
+    const rpc = (method, params) => new Promise((ok) => { const id = n++; waiting.set(id, ok); child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n') })
+    const ready = rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'codex-mcp-client', version: '0.0.0-fake' } })
+    mcp.set(m[1], { rpc, ready, child })
+    process.on('exit', () => child.kill())
+  }
   const request = (th, method, params, fileItem, alsoTo) => {
     const r = { th, id: reqId++, fileItem }
     pending.push(r)
@@ -146,7 +169,7 @@ function server() {
     ws.on('close', () => {
       for (const th of threads.values()) th.subs.delete(ws)
     })
-    ws.on('message', (data) => {
+    ws.on('message', async (data) => {
       let m
       try { m = JSON.parse(String(data)) } catch { return }
       const reply = (result) => send(ws, { id: m.id, result })
@@ -174,6 +197,22 @@ function server() {
           if (th.born && Date.now() - th.born < 400) return send(ws, { id: m.id, error: { code: -32600, message: 'thread not loaded' } })
           th.subs.add(ws)
           return reply({ thread: th.thread, model: 'fake', cwd: th.thread.cwd })
+        }
+        case 'mcpServerStatus/list': {
+          const data = []
+          for (const [name, srv] of mcp) {
+            await srv.ready
+            const r = await srv.rpc('tools/list', {})
+            data.push({ name, tools: Object.fromEntries((r.result?.tools ?? []).map((t) => [t.name, t])), error: r.error ?? null })
+          }
+          return reply({ data, nextCursor: null })
+        }
+        case 'mcpServer/tool/call': {
+          const srv = mcp.get(p.server)
+          if (!srv) return send(ws, { id: m.id, error: { code: -32600, message: `no MCP server ${p.server}` } })
+          await srv.ready
+          const r = await srv.rpc('tools/call', { name: p.tool, arguments: p.arguments ?? {}, _meta: { threadId: p.threadId } })
+          return r.error ? send(ws, { id: m.id, error: r.error }) : reply(r.result)
         }
         case 'thread/unsubscribe': {
           const th = threads.get(p.threadId)

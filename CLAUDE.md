@@ -249,7 +249,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   `shared/column.ts` `placeFloat`), always inside the window. The tile layer rises to 12 while one
   is up, over the terminal; the box is 13. Main refuses the `float` view to a tile without the
   flag. Smoke's probe declares it (`floats` in `smoke.ts`; `WORKSHOP_SHOT_FLOAT=x.png`).
-- Codex sessions (`docs/progress/2026-11-11-codex.md`, phases 1, 2 and 3 in part): `src/shared/cli.ts` (`cli:
+- Codex sessions (`docs/progress/2026-11-11-codex.md`, phases 1, 2 and 3): `src/shared/cli.ts` (`cli:
   'claude' | 'codex'` on a session, absent = Claude Code; `cliSessionId` was `claudeSessionId`,
   renamed on load). A Codex session is one tmux session, two windows: the TUI (attached) waiting
   for the socket, then `codex --remote unix://<profile>/codex/<id>.sock -C <cwd>`, a clean exit
@@ -275,7 +275,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   turn read back at its end for items the server never sent live). The wolfpack: its subagents
   (child threads) followed by `src/main/codex-pack.ts` into the same pack tile, `agent:<thread
   id>` transcripts and asks; kill interrupts the child's turn and tells the parent in one typed
-  line (`codexKillLine`); no pause. Not yet: the door as MCP, both plans' windows in the top bar. Hook ids
+  line (`codexKillLine`); no pause. Tiles: Codex has no `--plugin-dir`, so each server starts `bin/workshop-mcp.mjs` (`-c mcp_servers.workshop`, `env_vars` passing the session's WORKSHOP_*), a relay listing core's `/core/tools` (a tool per tile with door ops, its skills as the description, and `doc`; `src/shared/door-tools.ts`) and calling the door's own `/tile/<id>`; Codex asks its own approval before each call, in the terminal only for now. Not yet: both plans' windows in the top bar. Hook ids
   match through `isSession` (never on ''). Smoke: `test/fixtures/fake-codex/codex` (speaks the
   app-server protocol), `smoke-codex.ts`.
 - `transcripts` (bridge 1.7): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed
