@@ -12,6 +12,8 @@ export interface FleetEntry {
   /** interactive sessions report `status`, background ones `state` */
   status?: string
   state?: string
+  /** With status "waiting": what for ("permission prompt" while the CLI shows its dialog; 2.1.322). */
+  waitingFor?: string
 }
 
 export class Fleet {

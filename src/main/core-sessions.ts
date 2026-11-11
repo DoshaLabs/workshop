@@ -20,6 +20,7 @@ import { UsageTracker } from './usage'
 import { startPreview } from './preview'
 import { keepImage } from './drops'
 import { CommitRecorder, CommitStore, type CommitRecord } from './commits'
+import { Leash } from './leash'
 
 export interface CoreSessions {
   sessions: SessionManager
@@ -33,6 +34,10 @@ export interface CoreSessions {
   hook(name: string, token: string, payload: unknown): void
   /** A /core/<name> call from a session (the preview pane's `doc`); answered. Sessions only. */
   call(name: string, token: string, payload: unknown): Promise<unknown>
+  /** An /ask/<name> hook, held on purpose: the leash (`pretool`) and permission prompts (`permission`). */
+  ask(name: string, token: string, payload: unknown, gone: (cb: () => void) => void): Promise<string | null>
+  /** The leash and permission prompts (main/leash.ts). */
+  leash: Leash
   stop(): void
 }
 
@@ -78,6 +83,10 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   const transcripts = new TranscriptWatcher(projects, (t) => send(CH.transcriptChanged, t))
   const watchOpen = (s: SessionsState): void => transcripts.sync(s.sessions.filter((x) => x.open).map((x) => ({ id: x.id, claudeSessionId: x.claudeSessionId })))
 
+  // The leash and permission prompts. Its view is part of each session's state; a change is drawn at once.
+  let sessionsRef: SessionManager | null = null
+  const leash = new Leash(settings.leashDir, () => sessionsRef?.changed())
+
   const sessions = new SessionManager({
     tmux,
     env,
@@ -87,6 +96,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     pluginDirs: o.pluginDirs,
     register: (t, who, session) => o.door.register(t, who, session),
     revoke: (t) => o.door.revoke(t),
+    leash: (id) => leash.view(id),
     events: {
       state: (s) => {
         watchOpen(s)
@@ -101,10 +111,18 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     send(CH.usageChanged, u)
     o.onUsage(u)
   })
+  sessionsRef = sessions
   await sessions.init()
+  // Pauses of sessions core still has stand (a session that outlived a restart stays paused); the rest go.
+  leash.prune(new Set(sessions.getState().sessions.map((x) => x.id)))
   const commits = new CommitRecorder(new CommitStore(join(o.home, 'commits.json')), (all) => o.onCommits?.(all))
 
-  const fleet = new Fleet(env, (entries) => sessions.onFleet(entries))
+  const fleet = new Fleet(env, (entries) => {
+    sessions.onFleet(entries)
+    // A permission prompt answered in the terminal: the poll leaves "waiting for permission prompt".
+    const byId = new Map(entries.map((e) => [e.sessionId, e]))
+    for (const v of sessions.getState().sessions) if (v.leash.asks.length) leash.onFleet(v.id, byId.get(v.claudeSessionId))
+  })
   if (o.poll) fleet.start()
 
   // ---- core's window only
@@ -124,7 +142,26 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   handle(CH.sessionNew, (opts: NewSessionOpts) => sessions.newSession(opts ?? { cwd: '' }))
   handle(CH.sessionResume, (id: string) => sessions.resume(String(id)))
   handle(CH.sessionPark, (id: string) => sessions.park(String(id)))
-  handle(CH.sessionKill, (id: string) => sessions.kill(String(id)))
+  handle(CH.sessionKill, async (id: string) => {
+    await sessions.kill(String(id))
+    leash.forget(String(id))
+  })
+  // The leash and permission prompts, from the session's tile or the center head. Core's window only:
+  // a tile page can never pause, release or approve anything.
+  handle(CH.sessionLeash, (id: string, action: string) => {
+    const s = sessions.find(String(id))
+    if (!s) return
+    if (action === 'pause') leash.pause(s.id)
+    else if (action === 'resume') leash.resume(s.id)
+    else if (action === 'refuse') leash.refuseHeld(s.id)
+  })
+  handle(CH.sessionPermission, (id: string, askId: string, allow: boolean) => {
+    const s = sessions.find(String(id))
+    if (!s || typeof askId !== 'string') return false
+    const done = leash.answer(s.id, askId, allow === true)
+    if (done) sessions.working(s.id)
+    return done
+  })
   handle(CH.sessionFocus, (id: string | null) => sessions.focus(id === null ? null : String(id)))
   handle(CH.usageGet, () => usage.get())
   handle(CH.transcriptGet, (id: string) => transcripts.get(String(id)))
@@ -163,9 +200,28 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
         if (p.session_id === rec.claudeSessionId) void commits.onTool({ id: rec.id, name: rec.name }, payload).catch((err) => console.warn('[workshop] commits:', err))
         return
       }
+      // A tool call finished while a permission prompt was open: the terminal answered the one that asked about it.
+      if (name === 'ran') {
+        if (p.session_id === rec.claudeSessionId) leash.settleCall(rec.id, payload as { tool_name?: unknown; tool_input?: unknown })
+        return
+      }
       const event = HOOK_ROUTES[name]
       // A session reports for itself only: the payload must name the session its token belongs to.
-      if (event && p.session_id === rec.claudeSessionId) sessions.onHook(event, p)
+      if (event && p.session_id === rec.claudeSessionId) {
+        // The turn ended, or a new prompt was typed: no permission prompt is open any more.
+        if (event === 'Stop' || event === 'UserPromptSubmit') leash.settle(rec.id)
+        sessions.onHook(event, p)
+      }
+    },
+    leash,
+    async ask(name, token, payload, gone) {
+      const rec = sessions.byToken(token)
+      const p = (payload ?? {}) as { session_id?: string; tool_name?: unknown; tool_input?: unknown }
+      // Only a session, and only about itself: anything else is answered with nothing, at once.
+      if (!rec || p.session_id !== rec.claudeSessionId) return null
+      if (name === 'pretool') return leash.hold(rec.id, p, gone)
+      if (name === 'permission') return leash.ask(rec.id, p, gone)
+      return null
     },
     async call(name, token, payload) {
       const rec = sessions.byToken(token)

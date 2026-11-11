@@ -37,6 +37,12 @@ export interface DoorHost {
    * session's token. Unlike a hook it is answered: the result, or the error it threw.
    */
   core?(name: string, token: string, payload: unknown): Promise<unknown>
+  /**
+   * POST /ask/<name>: a hook that WAITS on core, on purpose (the leash's held tool call, a
+   * permission prompt answered from a tile; main/leash.ts). Resolves to what the hook prints (its
+   * decision as JSON), or null for nothing (204). `gone` fires if the hook hangs up first.
+   */
+  ask?(name: string, token: string, payload: unknown, gone: (cb: () => void) => void): Promise<string | null>
 }
 
 type Reply = { ok: true; result: unknown } | { ok: false; error: string }
@@ -103,6 +109,8 @@ export class Door {
 
   stop(): void {
     this.server?.close()
+    // A held hook (/ask) is dropped, never answered: its script retries the next core.
+    this.server?.closeAllConnections()
     for (const p of this.pending.values()) clearTimeout(p.timer)
     this.pending.clear()
   }
@@ -149,6 +157,33 @@ export class Door {
         // a hook's malformed body is nobody's problem
       }
       return
+    }
+
+    const ask = /^\/ask\/([a-z-]{1,32})$/.exec(req.url ?? '')
+    if (ask) {
+      let payload: unknown
+      try {
+        payload = JSON.parse((await readBody(req, HOOK_BODY_MAX)) || '{}')
+      } catch {
+        res.writeHead(204)
+        return void res.end()
+      }
+      let body: string | null = null
+      try {
+        body = (await this.host.ask?.(ask[1], token, payload, (cb) => res.on('close', () => !res.writableFinished && cb()))) ?? null
+      } catch {
+        // Core is starting: the hook tries again in a second.
+        if (res.writableEnded || res.destroyed) return
+        res.writeHead(503)
+        return void res.end()
+      }
+      if (res.writableEnded || res.destroyed) return
+      if (body === null) {
+        res.writeHead(204)
+        return void res.end()
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      return void res.end(body)
     }
 
     const own = /^\/core\/([a-z-]{1,32})$/.exec(req.url ?? '')

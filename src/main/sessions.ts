@@ -18,6 +18,7 @@ import { cleanModel, cleanPermissionMode } from '@shared/models'
 import { worktreeName, type NewSessionOpts, type SessionRecord, type SessionStatus, type SessionView, type SessionsState } from '@shared/sessions'
 import type { FleetEntry } from './fleet'
 import type { HookEvent, HookPayload } from './hooks'
+import { NO_LEASH, type LeashView } from '@shared/leash'
 import { Tmux, shq } from './tmux'
 
 interface Stored extends SessionRecord {
@@ -61,6 +62,8 @@ export interface SessionManagerOptions {
   register(token: string, who: () => string, session: string): void
   revoke(token: string): void
   events: SessionEvents
+  /** The leash and the permission prompts of a session (main/leash.ts), drawn on its tile. */
+  leash?: (id: string) => LeashView
 }
 
 const SPAWN_COLS = 120
@@ -358,7 +361,10 @@ export class SessionManager {
   getState(): SessionsState {
     const views: SessionView[] = this.records.map(({ token: _token, ...rec }) => {
       const r = this.rt.get(rec.id)
-      return { ...rec, title: r?.title || null, status: r?.status ?? 'unknown', attention: r?.attention ?? false, attached: !!r?.pty, tmuxAlive: r?.tmuxAlive ?? false }
+      const leash = this.o.leash?.(rec.id) ?? NO_LEASH
+      // A permission prompt open in the terminal: the session needs you, whatever the poll last said.
+      const asking = leash.asks.length > 0
+      return { ...rec, title: r?.title || null, status: asking ? 'blocked' : (r?.status ?? 'unknown'), attention: asking || (r?.attention ?? false), attached: !!r?.pty, tmuxAlive: r?.tmuxAlive ?? false, leash }
     })
     const open = views.filter((v) => v.open).sort((a, b) => (b.activeAt ?? b.createdAt) - (a.activeAt ?? a.createdAt))
     const parked = views.filter((v) => !v.open).sort((a, b) => b.createdAt - a.createdAt)
@@ -482,6 +488,20 @@ export class SessionManager {
     } catch (err) {
       console.warn('[sessions] could not write sessions.json:', err)
     }
+  }
+
+  /** A permission prompt was answered from the tile: the call goes on, the session is working. */
+  working(id: string): void {
+    const r = this.rt.get(id)
+    if (!r) return
+    r.status = 'busy'
+    r.attention = false
+    this.broadcast()
+  }
+
+  /** Something drawn on a session changed outside the manager (the leash): tell the window. */
+  changed(): void {
+    this.broadcast()
   }
 
   private broadcast(): void {
