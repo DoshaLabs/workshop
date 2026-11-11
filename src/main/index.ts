@@ -814,8 +814,9 @@ function bridge(): void {
     win?.webContents.send(CH.mascotChanged, null)
   })
   ipcMain.handle(CH.setView, (e, key: string, view: TileView) => {
-    if (e.sender !== win?.webContents || (view !== 'tile' && view !== 'pane' && view !== 'overlay')) return
+    if (e.sender !== win?.webContents || (view !== 'tile' && view !== 'pane' && view !== 'overlay' && view !== 'float')) return
     if (view === 'overlay' && !registry.tiles.get(key.replace(/\.\d$/, ''))?.manifest.permissions.overlay) return
+    if (view === 'float' && !registry.tiles.get(key.replace(/\.\d$/, ''))?.manifest.float) return
     const was = views.get(key)
     views.set(key, view)
     if (view === 'overlay') overlayKey = key

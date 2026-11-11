@@ -2593,3 +2593,96 @@ textarea,
 .pack-line .ghost {
   flex: none;
 }
+
+/* ==== A tile popped out (Float.tsx, a manifest's "float": true; bridge 1.8). The box is core's: a
+   strip with the tile's icon, name, author and ×, the grip for dragging it, then a square the tile
+   layer lays the page over (data-float). Above the terminal (xterm's layers reach 11) and the top
+   bar (10), below an overlay (15, its strip 20) and the + menu (30). While a float is up the whole
+   tile layer rises to 12, under the box at 13: a fixed layer is its own stacking context, so the
+   page cannot rise alone (the overlay's rule). The face lets the pointer through to the page. ==== */
+.app.floating .tile-layer {
+  z-index: 12;
+}
+.float {
+  position: fixed;
+  z-index: 13;
+  display: flex;
+  flex-direction: column;
+  /* The edge is a shadow ring, not a border, so the page is exactly FLOAT_SIZE across. */
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--ws-line), 0 12px 36px color-mix(in srgb, #000 45%, transparent);
+  -webkit-app-region: no-drag;
+  pointer-events: none;
+}
+.float-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 9px;
+  border-radius: 14px 14px 0 0;
+  background: var(--ws-panel);
+  border-bottom: 1px solid var(--ws-line);
+  font-size: 12px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  pointer-events: auto;
+}
+.float-strip:active {
+  cursor: grabbing;
+}
+.float-strip .icon {
+  width: 14px;
+  height: 14px;
+}
+.float-strip .name {
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.float-strip .by {
+  flex: 1;
+  min-width: 0;
+  color: var(--ws-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.float-strip .name:last-of-type:not(:has(+ .by)) {
+  flex: 1;
+}
+.float-close {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ws-muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.float-close:hover {
+  color: var(--ws-ink);
+  background: color-mix(in srgb, var(--ws-ink) 12%, transparent);
+}
+.float-face {
+  border-radius: 0 0 14px 14px;
+  pointer-events: none;
+}
+/* The cell a popped-out tile left: one quiet line that puts it back. */
+.away.link {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.away.link:hover {
+  color: var(--ws-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

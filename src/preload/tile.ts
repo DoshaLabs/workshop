@@ -82,7 +82,10 @@ if (hello) {
   ipcRenderer.on(CH.storageChanged, (_e, key: string, value: unknown) => {
     for (const fn of storageSubs.get(key) ?? []) call(() => fn(value))
   })
+  /** Bumped by every change core sends, so a first answer that comes back after one is dropped. */
+  let sessionsEpoch = 0
   ipcRenderer.on(CH.tileSessionsChanged, (_e, list: unknown) => {
+    sessionsEpoch++
     for (const fn of sessionSubs) call(() => fn(list))
   })
   ipcRenderer.on(CH.tileTranscriptChanged, (_e, id: string, t: unknown) => {
@@ -293,9 +296,17 @@ if (hello) {
     sessions: {
       /** The sessions: [{ id, name, project (the start folder), root (its repo root), status, focused, open }]. Needs "sessions": "read", "launch" or "write". */
       list: (): Promise<unknown> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsList)),
+      /** Calls fn with the list at once, then whenever it changes. */
       watch: (fn: (list: unknown) => void): (() => void) => {
         needs('sessions')
-        return sub(sessionSubs, fn)
+        const off = sub(sessionSubs, fn)
+        // Changes alone left a page that had just loaded with no sessions until one started, stopped
+        // or changed status. A change that lands first already carries the newer list.
+        const at = sessionsEpoch
+        void ipcRenderer.invoke(CH.tileSessionsList).then((list: unknown) => {
+          if (at === sessionsEpoch && sessionSubs.has(fn)) call(() => fn(list))
+        }, () => undefined)
+        return off
       },
       /**
        * A session's conversation, as core parses it for a session tile: { id, title, found, blocks },

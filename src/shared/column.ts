@@ -20,7 +20,27 @@ export interface ColumnState {
    * follow it (shared/sessions.ts shortcutOrder).
    */
   sessions?: string[]
+  /** Instances popped out into a float (bridge 1.8), until put back. */
+  floating?: string[]
+  /**
+   * Where each float was dragged to: its top-right corner's offset from the anchor's top-right (the
+   * focused session's terminal, else the center column), so it follows the session as the window
+   * changes. None yet = the default, FLOAT_DEFAULT.
+   */
+  floatAt?: Record<string, FloatAt>
 }
+
+export interface FloatAt {
+  /** Pixels left of the anchor's right edge (positive = inside it). */
+  dx: number
+  /** Pixels below the anchor's top edge. */
+  dy: number
+}
+/** A float's page is this square, under core's strip (FLOAT_STRIP high). */
+export const FLOAT_SIZE = 200
+export const FLOAT_STRIP = 26
+/** Where a float starts: just inside the active session's top-right corner. */
+export const FLOAT_DEFAULT: FloatAt = { dx: 16, dy: 16 }
 
 export const EMPTY_COLUMN: ColumnState = { off: [], extra: [], spans: {} }
 /** The keys the window used to keep the column under. */
@@ -43,7 +63,16 @@ export function cleanColumn(raw: unknown): ColumnState | null {
   // The two orders are left out until first saved, so a column without them reads as before.
   const order = Array.isArray(r.order) ? { order: list(r.order, (x): x is string => typeof x === 'string' && isInstance(x)) } : {}
   const sessions = Array.isArray(r.sessions) ? { sessions: list(r.sessions, isSessionId) } : {}
-  return { off: list(r.off, isId), extra: list(r.extra, isExtra), spans, ...order, ...sessions }
+  const floating = Array.isArray(r.floating) ? { floating: list(r.floating, (x): x is string => typeof x === 'string' && isInstance(x)) } : {}
+  const at: Record<string, FloatAt> = {}
+  const near = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && Math.abs(n) <= 20_000
+  if (r.floatAt && typeof r.floatAt === 'object' && !Array.isArray(r.floatAt))
+    for (const [k, v] of Object.entries(r.floatAt as Record<string, unknown>).slice(0, LIMIT)) {
+      const o = v as Record<string, unknown> | null
+      if (isInstance(k) && o && typeof o === 'object' && near(o.dx) && near(o.dy)) at[k] = { dx: Math.round(o.dx), dy: Math.round(o.dy) }
+    }
+  const floatAt = r.floatAt !== undefined ? { floatAt: at } : {}
+  return { off: list(r.off, isId), extra: list(r.extra, isExtra), spans, ...order, ...sessions, ...floating, ...floatAt }
 }
 
 /**
@@ -72,4 +101,32 @@ export function legacyColumn(get: (key: string) => string | null): ColumnState {
     }
   }
   return cleanColumn({ off: read(LEGACY_KEYS.off), extra: read(LEGACY_KEYS.extra), spans: read(LEGACY_KEYS.spans) }) ?? EMPTY_COLUMN
+}
+
+export interface Rect {
+  left: number
+  top: number
+  right: number
+  bottom: number
+}
+
+/**
+ * Where a float's box (strip and page, FLOAT_SIZE wide, FLOAT_STRIP + FLOAT_SIZE high) goes: its
+ * top-right corner `at` from the anchor's top-right, kept wholly inside `bounds` (the window below
+ * the top bar), so a float dragged off an edge, or left there by a smaller window, comes back.
+ */
+export function placeFloat(anchor: Rect, at: FloatAt, bounds: Rect): { left: number; top: number } {
+  const w = FLOAT_SIZE
+  const h = FLOAT_STRIP + FLOAT_SIZE
+  const left = anchor.right - at.dx - w
+  const top = anchor.top + at.dy
+  return {
+    left: Math.round(Math.min(Math.max(left, bounds.left), Math.max(bounds.left, bounds.right - w))),
+    top: Math.round(Math.min(Math.max(top, bounds.top), Math.max(bounds.top, bounds.bottom - h)))
+  }
+}
+
+/** The offset to keep for a float whose box is at `left`, `top` (the inverse of placeFloat). */
+export function floatOffset(anchor: Rect, left: number, top: number): FloatAt {
+  return { dx: Math.round(anchor.right - left - FLOAT_SIZE), dy: Math.round(top - anchor.top) }
 }

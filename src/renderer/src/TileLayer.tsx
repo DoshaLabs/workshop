@@ -1,7 +1,7 @@
 // Every live tile's page, in one layer over the window. A webview that leaves the DOM loses its
 // page, so a tile's webview is mounted once and never moved in the tree: each frame it is laid
 // over wherever the tile is showing (its face in the column, clipped to the column as it
-// scrolls, the center pane, or the overlay's box over the whole window) and hidden with
+// scrolls, the center pane, the overlay's box over the whole window, or a float's box) and hidden with
 // `visibility` when it is nowhere. (deck's WebLayer.)
 
 import { useEffect, useRef } from 'react'
@@ -24,16 +24,16 @@ export function TileLayer({ instances, viewOf }: { instances: Instance[]; viewOf
   )
 }
 
-/** The radius inside a tile's border, where its page meets the tile's rounded bottom. */
+/** The radius inside a tile's (or a float's) border, where its page meets the rounded bottom. */
 function innerRadius(face: HTMLElement): number {
-  const tile = face.closest('.tile')
+  const tile = face.closest('.tile, .float')
   if (!tile) return 0
   const cs = getComputedStyle(tile)
   return Math.max(0, parseFloat(cs.borderBottomLeftRadius) - parseFloat(cs.borderBottomWidth))
 }
 
 /** The element a page is laid over in each view. */
-const TARGET: Record<TileView, string> = { tile: 'data-face', pane: 'data-pane', overlay: 'data-overlay' }
+const TARGET: Record<TileView, string> = { tile: 'data-face', pane: 'data-pane', overlay: 'data-overlay', float: 'data-float' }
 
 function TilePage({ inst, where }: { inst: Instance; where: TileView }) {
   const box = useRef<HTMLDivElement>(null)
@@ -59,7 +59,7 @@ function TilePage({ inst, where }: { inst: Instance; where: TileView }) {
         if (r.width > 0 && bottom > top) {
           // In the column the page is the tile's lower part, so its bottom corners are the tile's
           // (--tile-radius less the 1 px border), unless the column's edge cuts it there.
-          const round = where === 'tile' && r.bottom <= clip.bottom ? innerRadius(face) : 0
+          const round = (where === 'tile' && r.bottom <= clip.bottom) || where === 'float' ? innerRadius(face) : 0
           key = `${r.left} ${r.top} ${r.width} ${r.height} ${top} ${bottom} ${round}`
           style = {
             visibility: 'visible',

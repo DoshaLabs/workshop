@@ -236,6 +236,13 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   Helpers: `node "$WORKSHOP_HELPER" start "<prompt>"` (skill `workshop:helper`) runs `claude --bg`
   in the parent's folder with our settings, the parent's permission mode and a token of its own;
   kill is `claude stop <id>`. Smoke: the stand-in runs `agent <how>` and `--bg`.
+- Float (bridge 1.8, a manifest's top-level `"float": true`, a layout flag beside `pane`): ⧉ on the
+  tile's head pops its page into a 200 px square (`Float.tsx`) under a strip core draws (icon, name,
+  author, ×; the drag grip), at the active session's top-right corner (the focused terminal, else
+  the center), kept as an offset from it (`settings.column` `floating` / `floatAt`,
+  `shared/column.ts` `placeFloat`), always inside the window. The tile layer rises to 12 while one
+  is up, over the terminal; the box is 13. Main refuses the `float` view to a tile without the
+  flag. Smoke's probe declares it (`floats` in `smoke.ts`; `WORKSHOP_SHOT_FLOAT=x.png`).
 - `transcripts` (bridge 1.7): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed
   blocks a session tile draws, needs `sessions` too; a loud line in the menu and the install prompt;
   `tile check` prints `review` for transcripts with net.

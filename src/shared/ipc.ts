@@ -5,7 +5,7 @@ import type { Manifest } from './manifest'
 import type { TermPalette } from './themes'
 
 /** Where a tile's page is showing: its cell in the column, the center pane, or over the whole window. */
-export type TileView = 'tile' | 'pane' | 'overlay'
+export type TileView = 'tile' | 'pane' | 'overlay' | 'float'
 
 /** The theme as core's window paints it. */
 export interface ThemeState {

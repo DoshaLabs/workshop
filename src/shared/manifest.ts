@@ -6,8 +6,8 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). 1.7: `transcripts` (a session's conversation, parsed). */
-export const BRIDGE_VERSION = '1.7.0'
+/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). 1.7: `transcripts` (a session's conversation, parsed). 1.8: the `float` view (a tile with `"float": true` popped out into a small square the user drags anywhere), and `sessions.watch` fires at once with the list. */
+export const BRIDGE_VERSION = '1.8.0'
 
 /** The first bridge with `sessions: "launch"`: a tile asking for it must not claim to run on an older one. */
 export const LAUNCH_SINCE = '1.4.0'
@@ -110,6 +110,13 @@ export interface Manifest {
   icon?: string
   entry: string
   pane: boolean
+  /**
+   * The tile can be popped out (bridge 1.8): core draws ⧉ on its head, and a click lifts its page
+   * into a small square over the window, under a strip core draws, that the user drags anywhere.
+   * A layout flag like `pane`, not a permission: only the user's click on core's own button opens
+   * it, and an older core ignores the key (the tile simply never sees the `float` view).
+   */
+  float?: boolean
   multiple: boolean
   span: number
   permissions: Permissions
@@ -232,6 +239,7 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
     return v === true
   }
   const pane = bool('pane')
+  const float = bool('float')
   const multiple = bool('multiple')
   let span = 1
   if (raw.span !== undefined) {
@@ -307,7 +315,7 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
   }
 
   if (errors.length || !id || !name || !version || !range || !author || !entry) return { ok: false, errors: errors.length ? errors : ['incomplete manifest'] }
-  return { ok: true, manifest: { id, name, version, workshop: range, author, repo, hint, icon, entry, pane, multiple, span, permissions, ...(backend ? { backend } : {}) } }
+  return { ok: true, manifest: { id, name, version, workshop: range, author, repo, hint, icon, entry, pane, ...(float ? { float } : {}), multiple, span, permissions, ...(backend ? { backend } : {}) } }
 }
 
 /** Whether `host` (from a request URL, lowercase) is one the manifest's `net` list lets through. */

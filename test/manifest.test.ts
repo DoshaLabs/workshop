@@ -50,7 +50,16 @@ describe('checkManifest', () => {
   it('says which bridge an overlay tile needs', () => {
     expect(checkManifest({ ...base, workshop: '^1.1', permissions: { overlay: true } }).ok).toBe(true)
     expect(checkManifest({ ...base, workshop: '^1.2' }).ok).toBe(true)
-    expect(errs({ ...base, workshop: '^1.8' })[0]).toMatch(/does not accept/)
+    expect(errs({ ...base, workshop: '^1.9' })[0]).toMatch(/does not accept/)
+  })
+
+  it('takes "float" (bridge 1.8) as a layout flag beside "pane"', () => {
+    const r = checkManifest({ ...base, float: true })
+    expect(r.ok && r.manifest.float).toBe(true)
+    const none = checkManifest(base)
+    expect(none.ok && 'float' in none.manifest).toBe(false)
+    expect(errs({ ...base, float: 'yes' })[0]).toMatch(/float: must be true or false/)
+    expect(checkManifest({ ...base, workshop: '^1.8', float: true }).ok).toBe(true)
   })
 
   it('takes transcripts (bridge 1.7) only with sessions, and only from a tile built for 1.7', () => {

@@ -15,11 +15,12 @@ import { Guard } from './Guard'
 import { setPalette } from './terminals'
 import { shortcutOrder, type LaunchPrefill, type SessionsState } from '@shared/sessions'
 import { stepFrom } from '@shared/shortcuts'
-import { LEGACY_KEYS, firstColumn, legacyColumn, type ColumnState } from '@shared/column'
+import { LEGACY_KEYS, firstColumn, legacyColumn, type ColumnState, type FloatAt } from '@shared/column'
 import { MAX_SPAN } from '@shared/manifest'
 import type { Usage } from '@shared/usage'
 import { UsageMeter } from './UsageMeter'
 import { TileLayer, type Instance } from './TileLayer'
+import { Float } from './Float'
 import { TilePicker } from './TilePicker'
 import { MascotSetup } from './MascotSetup'
 import { RecordButton } from './RecordButton'
@@ -64,6 +65,9 @@ export function App() {
   const [pane, setPane] = useState<string | null>(null)
   /** The instance whose page is over the whole window (permissions.overlay), if any. */
   const [overlay, setOverlay] = useState<string | null>(null)
+  /** Instances popped out into a float (a manifest's "float": true), and where each was dragged. */
+  const [floating, setFloating] = useState<string[]>([])
+  const [floatAt, setFloatAt] = useState<Record<string, FloatAt>>({})
   const [heads, setHeads] = useState<Record<string, TileHead>>({})
   const [chips, setChips] = useState<Record<string, string>>({})
   const [theme, setTheme] = useState<ThemeState | null>(null)
@@ -100,6 +104,8 @@ export function App() {
       setSpans(c.spans)
       setOrder(c.order)
       setSessionOrder(c.sessions)
+      setFloating(c.floating ?? [])
+      setFloatAt(c.floatAt ?? {})
       setColumnReady(true)
     }
     window.core
@@ -130,8 +136,8 @@ export function App() {
     }
   }, [])
   useEffect(() => {
-    if (columnReady) window.core.setColumn({ off, extra, spans, ...(order ? { order } : {}), ...(sessionOrder ? { sessions: sessionOrder } : {}) }).catch((err) => console.error('[window] the tile column could not be saved:', err))
-  }, [columnReady, off, extra, spans, order, sessionOrder])
+    if (columnReady) window.core.setColumn({ off, extra, spans, ...(order ? { order } : {}), ...(sessionOrder ? { sessions: sessionOrder } : {}), floating, floatAt }).catch((err) => console.error('[window] the tile column could not be saved:', err))
+  }, [columnReady, off, extra, spans, order, sessionOrder, floating, floatAt])
   const spanOf = (i: Instance): number => {
     const n = spans[i.key] ?? i.tile.manifest.span
     return Number.isInteger(n) && n >= 1 ? Math.min(n, MAX_SPAN) : 1
@@ -247,7 +253,16 @@ export function App() {
     return out
   }, [tiles, off, extra, columnReady])
 
-  const viewOf = useCallback((key: string): TileView => (overlay === key ? 'overlay' : pane === key ? 'pane' : 'tile'), [overlay, pane])
+  /** Popped out and allowed to be: a tile that stops declaring "float" goes back to its cell. */
+  const floats = useMemo(() => instances.filter((i) => i.tile.manifest.float && floating.includes(i.key)), [instances, floating])
+  const viewOf = useCallback(
+    (key: string): TileView => (overlay === key ? 'overlay' : pane === key ? 'pane' : floats.some((i) => i.key === key) ? 'float' : 'tile'),
+    [overlay, pane, floats]
+  )
+  const popOut = (key: string, out: boolean): void => {
+    setFloating((f) => (out ? [...f.filter((k) => k !== key), key] : f.filter((k) => k !== key)))
+    if (out) setPane((p) => (p === key ? null : p))
+  }
   // An overlay whose instance went away (turned off, its tile unloaded) goes with it.
   useEffect(() => {
     if (overlay && !instances.some((i) => i.key === overlay)) setOverlay(null)
@@ -266,6 +281,7 @@ export function App() {
   const close = useCallback((key: string) => {
     setPane((p) => (p === key ? null : p))
     setOverlay((o) => (o === key ? null : o))
+    setFloating((f) => f.filter((k) => k !== key))
     if (instanceN(key) === 1) setOff((o) => [...o, key])
     else setExtra((x) => x.filter((k) => k !== key))
   }, [])
@@ -305,7 +321,7 @@ export function App() {
   const label = (i: Instance): string => heads[i.key]?.title || (i.n > 1 ? `${i.tile.manifest.name} ${i.n}` : i.tile.manifest.name)
 
   return (
-    <div className={`app ${overInst ? 'overlaid' : ''}`}>
+    <div className={['app', overInst && 'overlaid', floats.some((i) => viewOf(i.key) === 'float') && 'floating'].filter(Boolean).join(' ')}>
       <AppMark working={!!sessions?.sessions.some((s) => s.open && s.status === 'busy')} />
       <div className="topbar">
         <UsageMeter usage={usage} />
@@ -414,12 +430,27 @@ export function App() {
                       ⤢
                     </button>
                   )}
+                  {t.manifest.float && (
+                    <button className="ghost" title={floating.includes(i.key) ? 'Put it back in the column' : 'Pop out: a small square you can drag anywhere'} onClick={() => popOut(i.key, !floating.includes(i.key))}>
+                      ⧉
+                    </button>
+                  )}
                   <button className="ghost" title="Turn off" onClick={() => close(i.key)}>
                     ×
                   </button>
                 </header>
                 <div className="face" data-face={i.key}>
-                  {overlay === i.key ? <span className="away">open over the window</span> : pane === i.key && <span className="away">open in the center</span>}
+                  {overlay === i.key ? (
+                    <span className="away">open over the window</span>
+                  ) : pane === i.key ? (
+                    <span className="away">open in the center</span>
+                  ) : (
+                    viewOf(i.key) === 'float' && (
+                      <button className="away link" onClick={() => popOut(i.key, false)}>
+                        popped out · put it back
+                      </button>
+                    )
+                  )}
                 </div>
               </article>
             )
@@ -430,6 +461,22 @@ export function App() {
           </button>
         </div>
       </aside>
+
+      {/* Popped-out tiles: each a square core frames, its page laid over it by the tile layer below. */}
+      {floats
+        .filter((i) => viewOf(i.key) === 'float')
+        .map((i) => (
+          <Float
+            key={i.key}
+            id={i.key}
+            name={label(i)}
+            icon={<Icon tile={i.tile} />}
+            by={i.tile.source === 'core' ? undefined : i.tile.manifest.author}
+            at={floatAt[i.key]}
+            onMove={(at) => setFloatAt((f) => ({ ...f, [i.key]: at }))}
+            onClose={() => popOut(i.key, false)}
+          />
+        ))}
 
       <TileLayer instances={instances} viewOf={viewOf} />
 

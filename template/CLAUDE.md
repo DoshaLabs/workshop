@@ -37,6 +37,7 @@ nothing is ever built on the user's machine.
   "icon": "icon.svg",
   "entry": "dist/index.html",
   "pane": false,                true: the tile can open large in the center column
+  "float": false,               true: the tile can be popped out into a small square the user drags anywhere
   "multiple": false,            true: up to four instances at once
   "span": 1,                    height in the column, 1 or 2 (each about 190 px)
   "permissions": { }
@@ -70,7 +71,7 @@ Always there:
 
 ```js
 workshop.id, workshop.instance
-workshop.view                        // 'tile' | 'pane' | 'overlay'
+workshop.view                        // 'tile' | 'pane' | 'overlay' | 'float'
 workshop.onViewChange((view) => {})  // returns a function that stops listening
 workshop.theme.vars                  // { '--ws-bg': '#…', … }; already applied to :root as CSS variables
 workshop.theme.onChange((vars) => {})
@@ -78,6 +79,13 @@ await workshop.head.set({ title, badge })   // the tile's head is drawn by works
 await workshop.openPane(); await workshop.closePane()   // needs "pane": true
 await workshop.openExternal('https://…')    // the user's browser; one a second
 ```
+
+**Popped out** (`"float": true`, bridge 1.8; an older workshop ignores the key): workshop draws ⧉ on
+the tile's head, and a click lifts the same page into a 200 × 200 square over the window, under a
+strip workshop draws (the tile's name and a ×) that the user drags to move it. It starts at the top
+right of the session the user is working in. `workshop.view` is `'float'` meanwhile: draw something
+that reads at that size (one number, a picture), not the column's face squeezed. The page cannot
+pop itself out; only the user's click on ⧉ does. Every wheel stays in your page.
 
 The overlay (needs `"overlay": true`):
 
@@ -105,7 +113,7 @@ await workshop.sessions.list()              // [{ id, name, project, root, statu
                                             // root: the project it belongs to: its git repository's root
                                             //   (every worktree of one repo shares it), else the start folder.
                                             //   File things by root.
-workshop.sessions.watch((list) => {})
+workshop.sessions.watch((list) => {})    // fires at once with the list (bridge 1.8), then on every change
 await workshop.sessions.paste(id, text)     // "write" only: types into a session and submits
 await workshop.sessions.launch({ folder, worktree })  // "launch" or "write" (bridge 1.4); absent without it.
                                             // Opens core's new-session form with `folder` filled in and

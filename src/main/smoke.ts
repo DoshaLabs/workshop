@@ -212,6 +212,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     check('wikipedia door: today', today.status === 200 && typeof today.json.result?.title === 'string' && (await wjs(`document.body.classList.contains('wiki-picture')`)) === true, JSON.stringify(today.json).slice(0, 200))
 
     await overlays(check, ctx)
+    await floats(check, ctx)
     await devTiles(check, liveByTile, door.port, addDevTile)
     if (process.env.WORKSHOP_REAL_CLAUDE) {
       await realClaude(check, ctx)
@@ -423,6 +424,66 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
   await sleep(200)
   const probeView = (await liveByTile.get('probe')!.wc.executeJavaScript('workshop.view')) as string
   check('overlay: main refuses the view for a tile without the permission', probeView !== 'overlay', probeView)
+}
+
+/**
+ * The float view (bridge 1.8): ⧉ on the head of a tile that declares "float" pops its page out into
+ * a square under core's strip, at the active session's top-right corner (the center column here: no
+ * session yet). The page is exactly the square, above the center, and never over the strip; the
+ * strip drags it and core keeps where; × puts it back; main refuses the view to a tile without it.
+ */
+async function floats(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile }: Ctx): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const probe = liveByTile.get('probe')!.wc
+  const button = (key: string): string => `[...document.querySelectorAll('.tile[data-tile="${key}"] .head button')].find((b) => b.textContent.trim() === '⧉')`
+  check('float: ⧉ on a tile that declares it, and not on one that does not', (await js(`!!${button('probe')} && !${button('wikipedia')}`)) === true)
+  await js(`${button('probe')}.click(); true`)
+  const up = await waitFor('the float', async () => (await js(`!!document.querySelector('.float [data-float="probe"]')`)) === true && (await probe.executeJavaScript('workshop.view')) === 'float', 3000).then(() => true, () => false)
+  check('float: ⧉ pops it out, and the page hears view = float', up)
+  await sleep(300)
+  const at = (await js(`(() => {
+    const box = (s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r ? { left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) } : null }
+    const face = box('[data-float="probe"]'), strip = box('.float-strip'), center = box('.col.center'), float = box('.float')
+    const page = [...document.querySelectorAll('.tile-page')].find((p) => p.style.visibility === 'visible' && Math.round(p.getBoundingClientRect().left) === face.left && Math.round(p.getBoundingClientRect().top) === face.top)
+    const hit = (x, y) => document.elementFromPoint(x, y)
+    return { face, strip, center, float, overPage: !!page && page.contains(hit((face.left + face.right) / 2, (face.top + face.bottom) / 2)),
+      stripOwn: !!hit((strip.left + strip.right) / 2, (strip.top + strip.bottom) / 2)?.closest('.float-strip'), away: document.querySelector('.tile[data-tile="probe"] .away')?.textContent ?? '' }
+  })()`)) as { face: Record<string, number>; strip: Record<string, number>; center: Record<string, number>; float: Record<string, number>; overPage: boolean; stripOwn: boolean; away: string }
+  check('float: a 200 px square under a strip, at the active session\'s top-right corner', at.face.right - at.face.left === 200 && at.face.bottom - at.face.top === 200 && at.face.top === at.strip.bottom && Math.abs(at.float.right - (at.center.right - 16)) <= 1 && Math.abs(at.float.top - (at.center.top + 16)) <= 1, JSON.stringify(at))
+  check('float: the page is the square, over the center, and core\'s strip is never under it', at.overPage && at.stripOwn, JSON.stringify(at))
+  check('float: its cell in the column says so and can put it back', /popped out/.test(at.away), at.away)
+  if (process.env.WORKSHOP_SHOT_FLOAT) await writeFile(process.env.WORKSHOP_SHOT_FLOAT, (await win.webContents.capturePage()).toPNG())
+
+  // A real drag on the strip, through Chromium's input pipeline: 220 left, 140 down.
+  const from = { x: Math.round((at.strip.left + at.strip.right) / 2) - 40, y: Math.round((at.strip.top + at.strip.bottom) / 2) }
+  win.webContents.sendInputEvent({ type: 'mouseDown', ...from, button: 'left', clickCount: 1 })
+  for (let i = 1; i <= 10; i++) {
+    win.webContents.sendInputEvent({ type: 'mouseMove', x: from.x - 22 * i, y: from.y + 14 * i, button: 'left', modifiers: ['leftbuttondown'] })
+    await sleep(16)
+  }
+  win.webContents.sendInputEvent({ type: 'mouseUp', x: from.x - 220, y: from.y + 140, button: 'left', clickCount: 1 })
+  await sleep(400)
+  const moved = (await js(`(() => { const r = document.querySelector('.float').getBoundingClientRect(); return { left: Math.round(r.left), top: Math.round(r.top) } })()`)) as { left: number; top: number }
+  const saved = (await js(`window.core.column().then((c) => c.floatAt?.probe ?? null)`)) as { dx: number; dy: number } | null
+  check('float: the strip drags it, and core keeps where', moved.left === at.float.left - 220 && moved.top === at.float.top + 140 && saved?.dx === 16 + 220 && saved?.dy === 16 + 140, JSON.stringify({ moved, was: at.float, saved }))
+  const followed = (await js(`(() => { const p = [...document.querySelectorAll('.tile-page')].find((p) => p.style.visibility === 'visible' && p.contains(document.elementFromPoint(${moved.left + 100}, ${moved.top + 26 + 100}))); return !!p })()`)) as boolean
+  check('float: the page went with it', followed)
+  check('float: the drag left the pages taking the pointer again', (await js(`!document.documentElement.classList.contains('ws-dragging')`)) === true)
+
+  await js(`document.querySelector('.float-close').click(); true`)
+  const back = await waitFor('the float to go', async () => (await js(`!document.querySelector('.float')`)) === true && (await probe.executeJavaScript('workshop.view')) === 'tile', 3000).then(() => true, () => false)
+  check('float: × on core\'s strip puts it back in the column', back && ((await js(`window.core.column().then((c) => c.floating ?? [])`)) as string[]).length === 0)
+
+  await js(`window.core.setView('wikipedia', 'float')`)
+  await sleep(200)
+  const wikiView = (await liveByTile.get('wikipedia')!.wc.executeJavaScript('workshop.view')) as string
+  check('float: main refuses the view for a tile that did not declare it', wikiView !== 'float', wikiView)
+
+  // sessions.watch (bridge 1.8) answers at once with the list, not only at the next change: nothing
+  // about the sessions changes here.
+  await probe.executeJavaScript(`window.firstList = null; workshop.sessions.watch((l) => { window.firstList ??= l }); true`)
+  const first = await waitFor('the first list', async () => (await probe.executeJavaScript('Array.isArray(window.firstList)')) === true, 1000).then(() => true, () => false)
+  check('sessions.watch: fires at once with the list', first)
 }
 
 /** `multiple`: a second probe, its own page and web storage, the same workshop.storage, and the door. */
