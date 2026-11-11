@@ -6,8 +6,8 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). */
-export const BRIDGE_VERSION = '1.6.0'
+/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). 1.7: `transcripts` (a session's conversation, parsed). */
+export const BRIDGE_VERSION = '1.7.0'
 
 /** The first bridge with `sessions: "launch"`: a tile asking for it must not claim to run on an older one. */
 export const LAUNCH_SINCE = '1.4.0'
@@ -21,6 +21,9 @@ export const OAUTH_SINCE = '1.5.0'
  * older core refuses that tile instead of handing it a bridge without the method.
  */
 export const MUSIC_SHOW_SINCE = '1.6.0'
+
+/** The first bridge with `transcripts` (`workshop.sessions.transcript`). The key was accepted before and did nothing. */
+export const TRANSCRIPTS_SINCE = '1.7.0'
 
 /** A tile's own origin is tile://<id>/. */
 export const TILE_SCHEME = 'tile'
@@ -56,6 +59,11 @@ export interface Permissions {
    * `write` adds `paste` (typing into a session), and launch with it.
    */
   sessions?: 'read' | 'launch' | 'write'
+  /**
+   * `sessions.transcript(id)` and `watchTranscript`: a session's conversation as core parses it
+   * (bridge 1.5). Needs `sessions` too (the ids come from its list). Shown with a loud warning; a
+   * tile asking for it AND `net` gets a person's review before the index lists it.
+   */
   transcripts?: boolean
   usage?: boolean
   door?: DoorPermission
@@ -246,6 +254,13 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
       else if (p.sessions === 'launch' && range && semver.validRange(range) && semver.lt(semver.minVersion(range) ?? '0.0.0', LAUNCH_SINCE))
         errors.push(`permissions.sessions: "launch" is bridge ${LAUNCH_SINCE.replace(/\.0$/, '')}; set "workshop" to "^1.4" or later`)
       else permissions.sessions = p.sessions
+    }
+    if (permissions.transcripts) {
+      if (!p.sessions) errors.push('permissions.transcripts: also ask for "sessions" ("read" is enough): a transcript is asked for by the session\'s id')
+      else if (range && semver.validRange(range) && semver.lt(semver.minVersion(range) ?? '0.0.0', TRANSCRIPTS_SINCE)) {
+        errors.push(`permissions.transcripts is bridge ${TRANSCRIPTS_SINCE.replace(/\.0$/, '')}; set "workshop" to "^${TRANSCRIPTS_SINCE.replace(/\.0$/, '')}" or later`)
+        delete permissions.transcripts
+      }
     }
     if (p.door !== undefined) {
       const door = checkOps(p.door, 'permissions.door', [], { def: DOOR_TIMEOUT_DEFAULT, max: DOOR_TIMEOUT_MAX }, errors)

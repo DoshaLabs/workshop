@@ -12,7 +12,7 @@ import type { TileInfo } from '@shared/ipc'
 import type { Permissions } from '@shared/manifest'
 import type { IndexEntry } from '@shared/tile-index'
 import type { IndexState, InstallRecord, PendingInstall } from '@shared/tile-menu'
-import { FULL_ACCESS, permissionWords } from '@shared/permissions'
+import { FULL_ACCESS, TRANSCRIPTS_WARNING, TRANSCRIPTS_WORDS, permissionWords } from '@shared/permissions'
 
 type Tab = 'builtin' | 'yours' | 'market'
 const TABS: [Tab, string][] = [
@@ -120,8 +120,8 @@ export function TilePicker({
 
 /** One tile, the same on every tab. `children` are its buttons. */
 function TileRow({ icon, name, hint, permissions, badge, on, children }: { icon?: string; name: string; hint?: string; permissions: Permissions; badge?: string; on?: boolean; children?: ReactNode }) {
-  // Full access gets a line of its own, so it is never one more item in a list.
-  const words = permissionWords(permissions).filter((w) => w !== FULL_ACCESS)
+  // Full access, and reading the conversations, get a line of their own, so neither is one more item in a list.
+  const words = permissionWords(permissions).filter((w) => w !== FULL_ACCESS && w !== TRANSCRIPTS_WORDS)
   return (
     <div className="pick-row" data-on={on ? 'true' : 'false'}>
       {icon ? <img className="icon" src={icon} alt="" /> : <span className="icon letter">{name[0]}</span>}
@@ -133,7 +133,8 @@ function TileRow({ icon, name, hint, permissions, badge, on, children }: { icon?
         </div>
         {hint && <span className="pick-hint">{hint}</span>}
         {permissions.backend && <span className="pick-full">Full access to this Mac: it runs its own program beside its page. Only tiles that ship with workshop may.</span>}
-        <span className="pick-perms">{words.length ? `Can ${words.join(' · ')}` : permissions.backend ? 'Asks for nothing else' : 'Asks for nothing beyond its own page'}</span>
+        {permissions.transcripts && <span className="pick-full pick-transcripts">{TRANSCRIPTS_WARNING}</span>}
+        <span className="pick-perms">{words.length ? `Can ${words.join(' · ')}` : permissions.backend || permissions.transcripts ? 'Asks for nothing else' : 'Asks for nothing beyond its own page'}</span>
       </div>
       <div className="pick-acts">{children}</div>
     </div>
@@ -292,7 +293,10 @@ function Market({ tiles, row, onOn }: { tiles: TileInfo[]; row: RowFn; onOn: (id
   const useIndex = async (): Promise<void> => {
     setProblem('')
     try {
-      setIndex(await window.core.menu.setIndex(source))
+      const st = await window.core.menu.setIndex(source)
+      setIndex(st)
+      // Emptied: back to the default, whose address the field then shows.
+      if (!source.trim()) setSource(st.source ?? '')
     } catch (err) {
       setProblem(said(err))
     }
@@ -349,9 +353,11 @@ function Market({ tiles, row, onOn }: { tiles: TileInfo[]; row: RowFn; onOn: (id
       })}
 
       <h3>From the index</h3>
-      {!index?.source ? (
+      {!index ? (
+        <p className="picker-note">Reading the index…</p>
+      ) : !index.source ? (
         <p className="picker-note">
-          The marketplace will list tiles anyone can write and submit: each one pinned to a commit of its own git repo, with the permissions it asks for shown here before anything is downloaded. Install, update and remove from this tab. The index does not exist yet; if you have one, give its address below.
+          No index is set. An index lists tiles anyone can write and submit, each pinned to a commit of its own git repo, with what it asks for shown here before anything is downloaded. Give the address of one below.
         </p>
       ) : index.problem ? (
         <p className="picker-problem">{index.problem}</p>
@@ -375,7 +381,7 @@ function Market({ tiles, row, onOn }: { tiles: TileInfo[]; row: RowFn; onOn: (id
         <div className="pick-line">
           <input value={source} placeholder="https://…/tiles.json, or a file" onChange={(e) => setSource(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void useIndex()} />
           <button className="pick-act" onClick={() => void useIndex()}>
-            {source.trim() ? 'Read' : 'Clear'}
+            {source.trim() ? 'Read' : 'Default'}
           </button>
         </div>
       )}
@@ -419,6 +425,7 @@ function Prompt({ p, busy, onYes, onNo, problem }: { p: PendingInstall; busy: bo
         <code>{p.repo}</code> at <code>{short(p.commit)}</code>
       </p>
       {p.hint && <p className="pick-hint">{p.hint}</p>}
+      {p.permissions.transcripts && (!change || change.added.includes(TRANSCRIPTS_WORDS)) && <p className="pick-full pick-transcripts">{TRANSCRIPTS_WARNING}</p>}
       {change ? (
         <>
           <p>It now also asks to:</p>

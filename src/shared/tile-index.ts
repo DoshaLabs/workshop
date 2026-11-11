@@ -35,6 +35,19 @@ export interface CheckedIndex {
   errors: string[]
 }
 
+/** DoshaLabs/workshop-index's tiles.json on main: the index a new profile reads (settings.index and WORKSHOP_INDEX override it). */
+export const DEFAULT_INDEX = 'https://raw.githubusercontent.com/DoshaLabs/workshop-index/main/tiles.json'
+
+/**
+ * Where the Marketplace tab reads the index: WORKSHOP_INDEX (tests, a local index), else the
+ * address in settings, else DoshaLabs' own. A smoke run never falls back to the network.
+ */
+export function indexSource(o: { env?: string; setting?: string; smoke?: boolean }): { source: string | null; fromEnv: boolean } {
+  if (o.env) return { source: o.env, fromEnv: true }
+  if (o.setting) return { source: o.setting, fromEnv: false }
+  return { source: o.smoke ? null : DEFAULT_INDEX, fromEnv: false }
+}
+
 /** The most entries one index may hold. */
 export const INDEX_MAX = 2000
 /** The most bytes core reads of an index. */

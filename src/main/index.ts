@@ -17,7 +17,7 @@ import { SettingsStore, type Settings } from './settings'
 import { Door } from './door'
 import { TileGrants } from './files'
 import { TileStore } from './storage'
-import { MAX_INSTANCES, TILE_SCHEME, armSession, coreFile, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
+import { MAX_INSTANCES, TILE_SCHEME, armSession, setNetStandIn, coreFile, setGrants, instanceKey, instanceOfPartition, loadTiles, ownsUrl, readTile, sessionsFor, tileInfo, type Registry, type Tile } from './tiles'
 import { runRestarted, runSmoke } from './smoke'
 import { scaffoldTile } from './scaffold'
 import { startSessions, type CoreSessions } from './core-sessions'
@@ -35,10 +35,12 @@ import { Recorder } from './recorder'
 import { REC, REC_DEFAULTS } from '@shared/recorder'
 import { launchRequest, type LaunchPrefill, type SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
+import type { Transcript } from '@shared/transcript'
 import { parseBuildInfo } from '@shared/update'
 import { Updater, bundleOf } from './updates'
 import { placeWindow } from './window-bounds'
 import { reapTmuxWhenGone } from './smoke-reaper'
+import { smokeNet } from './smoke-net'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
 const RESTARTED = process.argv.includes('--smoke-restarted')
@@ -59,12 +61,30 @@ const DEV = !!process.env.ELECTRON_RENDERER_URL
  * before it is installed (docs/progress/2026-11-10-dist.md).
  */
 const NAMED = !SMOKE && /^[a-z0-9][a-z0-9-]{0,40}$/.test(process.env.WORKSHOP_PROFILE ?? '') ? process.env.WORKSHOP_PROFILE! : null
+/** How long a smoke run's core may take to start before the run fails (smoke only). */
+const SMOKE_START_S = 60
+/** Running until the smoke checks begin; then cleared. */
+let smokeStartDeadline: NodeJS.Timeout | null = null
+function smokeStartFailed(why: string): void {
+  console.log(`FAIL  core started  (${why.replace(/\s+/g, ' ').slice(0, 600)})`)
+  console.log('\n0 passed, 1 failed')
+  app.exit(1)
+}
 const PROFILE = RESTARTED ? process.env.WORKSHOP_SMOKE_PROFILE! : SMOKE ? `workshop-smoke-${process.pid}` : NAMED ?? (DEV ? 'workshop-dev' : 'workshop')
 if (SMOKE) {
   app.setPath('userData', RESTARTED ? process.env.WORKSHOP_SMOKE_HOME! : mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
   // However this run ends, its tmux server goes with it (the second cores share the first's socket).
   if (!RESTARTED) reapTmuxWhenGone(PROFILE, shellEnv())
+  // No smoke run depends on the internet: the Wikipedia tile's hosts are answered from canned data
+  // (smoke-net.ts). WORKSHOP_LIVE_NET=1 runs the same checks against the real services.
+  if (process.env.WORKSHOP_LIVE_NET !== '1') setNetStandIn(smokeNet)
+  // A core that cannot start must fail the run at once, not leave it waiting on a window that never
+  // comes: a startup error, or no checks begun within the deadline, ends the run with a FAIL line.
+  smokeStartDeadline = setTimeout(() => smokeStartFailed(`no checks began within ${SMOKE_START_S} s`), SMOKE_START_S * 1000)
+  process.on('unhandledRejection', (err) => {
+    if (smokeStartDeadline) smokeStartFailed(err instanceof Error ? (err.stack ?? err.message) : String(err))
+  })
 } else if (NAMED) app.setPath('userData', join(app.getPath('appData'), NAMED))
 else if (DEV) app.setPath('userData', `${app.getPath('userData')}-dev`)
 /**
@@ -202,7 +222,8 @@ const door = new Door({
     return g && pageOf(g)
   },
   hook: (name, token, payload) => core?.hook(name, token, payload),
-  core: (name, token, payload) => (core ? core.call(name, token, payload) : Promise.reject(new Error('workshop is starting')))
+  core: (name, token, payload) => (core ? core.call(name, token, payload) : Promise.reject(new Error('workshop is starting'))),
+  ask: (name, token, payload, gone) => (core ? core.ask(name, token, payload, gone) : Promise.reject(new Error('workshop is starting')))
 })
 
 /**
@@ -273,7 +294,7 @@ function guestOf(e: IpcMainEvent | IpcMainInvokeEvent): Guest | null {
 }
 const tileOf = (e: IpcMainEvent | IpcMainInvokeEvent): Tile | null => guestOf(e)?.tile ?? null
 
-function need(e: IpcMainInvokeEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage' | 'overlay'): Guest {
+function need(e: IpcMainInvokeEvent | IpcMainEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage' | 'overlay' | 'transcripts'): Guest {
   const g = guestOf(e)
   if (!g) throw new Error('not a tile')
   if (perm && !g.tile.manifest.permissions[perm]) throw new Error(`this tile did not ask for "${perm}" in tile.json`)
@@ -498,6 +519,20 @@ function pushSessions(s: SessionsState): void {
     for (const g of liveByTile.values()) if (g.tile.manifest.permissions.sessions) g.wc.send(CH.tileSessionsChanged, list)
   })()
 }
+/**
+ * "transcripts" (bridge 1.7): which sessions' conversations each tile page watches, by webContents
+ * id. A page hears only the sessions it asked for, and only while it has the permission.
+ */
+const transcriptWatch = new Map<number, { g: Guest; ids: Set<string> }>()
+/** A session's conversation as core parses it (what a session tile shows), for a tile; only a session's, never a subagent's. */
+function tileTranscript(id: unknown): Transcript | null {
+  const sid = String(id)
+  if (!/^[0-9a-f]{6}$/.test(sid) || !core?.sessions.find(sid)) throw new Error('sessions.transcript: no such session')
+  return core.transcripts.get(sid)
+}
+function pushTranscript(t: Transcript): void {
+  for (const { g, ids } of transcriptWatch.values()) if (ids.has(t.id) && g.tile.manifest.permissions.transcripts && !g.wc.isDestroyed()) g.wc.send(CH.tileTranscriptChanged, t.id, t)
+}
 function pushUsage(u: Usage): void {
   for (const g of liveByTile.values()) if (g.tile.manifest.permissions.usage) g.wc.send(CH.tileUsageChanged, u)
 }
@@ -540,6 +575,27 @@ function bridge(): void {
     const prefill: LaunchPrefill = { cwd: resolve(req.folder), worktree: req.worktree, ...(req.branch ? { branch: req.branch } : {}), nonce: Date.now() }
     if (SMOKE) smokeLaunches.push(prefill)
     win?.webContents.send(CH.sessionsLaunch, prefill)
+  })
+  ipcMain.handle(CH.tileTranscriptGet, (e, id: unknown) => {
+    need(e, 'transcripts')
+    return tileTranscript(id)
+  })
+  ipcMain.on(CH.tileTranscriptWatch, (e, id: unknown, on: unknown) => {
+    let g: Guest
+    try {
+      g = need(e, 'transcripts')
+      tileTranscript(id)
+    } catch {
+      return
+    }
+    let w = transcriptWatch.get(g.wc.id)
+    if (!w) {
+      const wcId = g.wc.id
+      transcriptWatch.set(wcId, (w = { g, ids: new Set() }))
+      g.wc.once('destroyed', () => transcriptWatch.delete(wcId))
+    }
+    if (on === true) w.ids.add(String(id))
+    else w.ids.delete(String(id))
   })
   ipcMain.handle(CH.tileUsageGet, (e) => {
     need(e, 'usage')
@@ -942,6 +998,7 @@ app.whenReady().then(async () => {
     claudeConfigDir: SMOKE && !process.env.WORKSHOP_REAL_CLAUDE ? join(app.getPath('userData'), 'claude-config') : undefined,
     onState: pushSessions,
     onUsage: pushUsage,
+    onTranscript: pushTranscript,
     // Which session made a commit (main/commits.ts): to the backends, whose History tab tags with it.
     onCommits: (all) => backends.setCommits(all)
   })
@@ -956,6 +1013,8 @@ app.whenReady().then(async () => {
 
   if (SMOKE) {
     const ctx = { win: win!, door, liveByTile, backends, music: music.host, recorder: recorder!, userData: app.getPath('userData'), opened: smokeOpened, launches: smokeLaunches, addDevTile, core: core!, profile: PROFILE }
+    if (smokeStartDeadline) clearTimeout(smokeStartDeadline)
+    smokeStartDeadline = null
     const code = RESTARTED ? await runRestarted(ctx) : await runSmoke(ctx)
     core?.stop()
     backends.stopAll()

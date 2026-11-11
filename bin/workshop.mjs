@@ -38,7 +38,7 @@ if (sub === 'check') {
   }
   const { checkTileFolder, formatCheck } = await import(pathToFileURL(built).href)
   const r = await checkTileFolder(dir, { dev: flags.has('--dev') })
-  if (flags.has('--json')) console.log(JSON.stringify({ ok: r.ok, folder: r.folder, id: r.manifest?.id ?? null, version: r.manifest?.version ?? null, permissions: r.manifest?.permissions ?? null, errors: r.errors, warnings: r.warnings }, null, 2))
+  if (flags.has('--json')) console.log(JSON.stringify({ ok: r.ok, folder: r.folder, id: r.manifest?.id ?? null, version: r.manifest?.version ?? null, permissions: r.manifest?.permissions ?? null, errors: r.errors, warnings: r.warnings, review: r.review ?? null }, null, 2))
   else console.log(formatCheck(r))
   process.exit(r.ok ? 0 : 1)
 }

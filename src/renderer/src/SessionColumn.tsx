@@ -5,8 +5,9 @@
 // (the only terminal mounted, so the only WebGL context any session holds), and its tile leaves the
 // column, as in deck: the center's head carries its ⌘ number, status and park button, and the
 // conversation would only repeat the terminal beside it. A + for a new session, then the parked
-// sessions as a card at the foot. deck's grid tile (components/Tile.tsx) without slots, the
-// wolfpack or the leash.
+// sessions as a card at the foot. deck's grid tile (components/Tile.tsx) without slots. A session's
+// subagents and helper sessions are one pack tile under it (PackTile.tsx). The leash (⏸ on the
+// head) and a permission prompt answered from the tile are Leash.tsx.
 
 import { Mascot } from './Mascot'
 import { useEffect, useState } from 'react'
@@ -19,6 +20,9 @@ import { ChatView } from './ChatView'
 import { Guard } from './Guard'
 import { useTranscript } from './transcripts'
 import { SessionUsage } from './UsageMeter'
+import { PauseButton, SessionAsks } from './Leash'
+import { useAgents } from './agents-store'
+import { PackTile } from './PackTile'
 
 const base = (p: string): string => p.replace(/\/+$/, '').split('/').pop() || p
 const tilde = (p: string): string => p.replace(/^\/Users\/[^/]+/, '~')
@@ -61,6 +65,7 @@ export function SessionColumn({
   const parked = sessions.filter((s) => !s.open)
   const keys = keysOf(state, order)
   const drag = useReorder('sessions', onMove)
+  const pack = useAgents()
   const pick = (s: SessionView): void => {
     onPick()
     void (s.open ? window.core.focusSession(s.id) : window.core.resume(s.id))
@@ -69,11 +74,14 @@ export function SessionColumn({
   return (
     <aside className="col sessions">
       <div className="session-scroll">
-        {open
-          .filter((s) => s.id !== center)
-          .map((s) => (
-            <SessionTile key={s.id} s={s} n={keys.get(s.id)} usage={usage} onPick={() => pick(s)} drag={drag} />
-          ))}
+        {open.flatMap((s) => {
+          // A session's wolfpack right under it, or where it would be while its terminal is in the center.
+          const agents = pack.agents.filter((a) => a.parent === s.id)
+          return [
+            s.id !== center && <SessionTile key={s.id} s={s} n={keys.get(s.id)} usage={usage} onPick={() => pick(s)} drag={drag} />,
+            agents.length > 0 && <PackTile key={`pack:${s.id}`} parent={s} agents={agents} leash={pack.leash} onPick={() => pick(s)} />
+          ]
+        })}
         <button className={`tile tile-plus session-plus ${drag.mark(null)}`} title="New session (⌘N)" onClick={onNew} {...drag.target(null)}>
           +
         </button>
@@ -149,11 +157,15 @@ function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number
           </span>
         )}
         <SessionUsage id={s.id} usage={usage} />
+        <PauseButton s={s} />
         <ParkButton id={s.id} />
       </header>
       <div className="session-body">
         <Guard what="This conversation" reset={t}>
           <ChatView id={s.id} status={s.status} attention={s.attention} />
+        </Guard>
+        <Guard what="This prompt" reset={s.leash}>
+          <SessionAsks s={s} where="tile" />
         </Guard>
       </div>
     </article>

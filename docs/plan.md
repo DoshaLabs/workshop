@@ -78,17 +78,23 @@ by time and worktree; decide while building).
 
 ## Track D: the marketplace, smallest version that works (L) · §6
 
-1. `workshop tile check <folder>`: the validator from the shell. Authors, the Claude building a
-   tile, and the index's CI all need it. (S)
-2. Install, update, remove: a tile cloned at a pinned commit into userData `tiles/`; the
-   permission prompt on install and again when permissions change; storage kept or deleted on
-   remove. (M)
-3. The index: a repo with `tiles.json` (id, repo, pinned commit, permissions, category, author)
-   and CI that runs `tile check`, confirms nothing is built on install, flags permissions, and
-   routes transcripts-plus-network to a person. Core reads it over https. (M)
-4. The Marketplace tab reads the index and installs from it. (S, on track A)
-5. Seed it with one tile of ours built outside core (a focus timer made with "make one with
-   Claude" is the obvious first), so the whole path has been walked once.
+Built (10 and 11 Nov 2026; `docs/progress/2026-11-10-track-a.md`, `docs/progress/2026-11-11-index.md`):
+
+1. `workshop tile check <folder>`: the validator from the shell.
+2. Install, update, remove: one pinned commit into userData `tiles/`, asked on install and again
+   when an update asks for more, storage kept or deleted on remove.
+3. The index, DoshaLabs/workshop-index: `tiles.json` and a check on every pull request that uses
+   core's own code (bundled from workshop's main), fetches each pin as install does, runs
+   `tile check`, confirms nothing is built on install, lists permissions in words, and fails
+   transcripts-plus-network until a maintainer labels it `reviewed`. Core reads it over https by
+   default.
+4. The Marketplace tab reads it and installs, updates and removes from it.
+5. Seeded with Pomodoro and Spotify, each in its own public repo. The whole path (read the real
+   index, install Pomodoro from GitHub, run it, update, remove) has been walked once, by
+   `WORKSHOP_REAL_INDEX=1` smoke.
+
+Still open: Spotify installs only once bridge 1.5 (`oauth`) is on main; CODEOWNERS on the
+index's `ci/` and `.github/`; no `workshop tile install` command.
 
 Later, only when strangers are submitting: the static site, the install counter and rankings,
 profiles (optional sign-up, never required; to decide: what one holds, GitHub sign-in or not),
@@ -99,12 +105,12 @@ sprite packs as a second category, the tile template as its own repo with `npm c
 | Piece | Size |
 |---|---|
 | Preview pane: read, tick boxes, edit a file a session points at; file paths in a conversation become clickable | M |
-| Subagent and helper-session tiles with pause and kill (wolfpack); the worker coat finally drawn | L |
-| The leash: PreToolUse held at `/pretool` | M |
-| Permission prompts answered from a session's tile (verify the route first; the biggest gap against the Claude app) | M |
+| ~~Subagent and helper-session tiles with pause and kill (wolfpack); the worker coat finally drawn~~ built 11 Nov 2026 (`docs/progress/2026-11-11-wolfpack.md`); pause rides the leash | L |
+| ~~The leash: PreToolUse held while paused~~ built (11 Nov 2026), `/ask/pretool` | M |
+| ~~Permission prompts answered from a session's tile~~ built (11 Nov 2026) on PermissionRequest, verified on 2.1.322; a real session in the app not yet | M |
 | Drag to reorder tiles, both columns | S |
 | ~~Image paste into a tile's prompt bar~~ built, then removed with the prompt bar (10 Nov 2026) | S |
-| `workshop.sessions.transcript` and the `transcripts` permission, with its loud prompt | M |
+| ~~`workshop.sessions.transcript` and the `transcripts` permission, with its loud prompt~~ built 11 Nov 2026 (bridge 1.5) | M |
 
 ## Track F: loose ends and things only half done (S each)
 

@@ -16,7 +16,7 @@ const errs = (m: unknown): string[] => {
 }
 
 describe('sessions: "launch"', () => {
-  it('is in this bridge (1.4 or later)', () => {
+  it('came with bridge 1.4 (this core is later)', () => {
     expect(semver.gte(BRIDGE_VERSION, '1.4.0')).toBe(true)
   })
 

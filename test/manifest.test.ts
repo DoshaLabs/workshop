@@ -50,7 +50,16 @@ describe('checkManifest', () => {
   it('says which bridge an overlay tile needs', () => {
     expect(checkManifest({ ...base, workshop: '^1.1', permissions: { overlay: true } }).ok).toBe(true)
     expect(checkManifest({ ...base, workshop: '^1.2' }).ok).toBe(true)
-    expect(errs({ ...base, workshop: '^1.7' })[0]).toMatch(/does not accept/)
+    expect(errs({ ...base, workshop: '^1.8' })[0]).toMatch(/does not accept/)
+  })
+
+  it('takes transcripts (bridge 1.7) only with sessions, and only from a tile built for 1.7', () => {
+    const r = checkManifest({ ...base, workshop: '^1.7', permissions: { sessions: 'read', transcripts: true } })
+    expect(r.ok && r.manifest.permissions.transcripts).toBe(true)
+    expect(errs({ ...base, workshop: '^1', permissions: { sessions: 'read', transcripts: true } })[0]).toMatch(/transcripts is bridge 1.7; set "workshop" to "\^1.7"/)
+    expect(errs({ ...base, workshop: '^1.7', permissions: { transcripts: true } })[0]).toMatch(/also ask for "sessions"/)
+    const off = checkManifest({ ...base, permissions: { transcripts: false } })
+    expect(off.ok && off.manifest.permissions.transcripts).toBeUndefined()
   })
 
   it('takes music as a permission (bridge 1.3): true or false, never a typo of it', () => {

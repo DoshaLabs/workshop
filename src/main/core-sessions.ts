@@ -12,7 +12,7 @@ import type { Usage } from '@shared/usage'
 import type { Door } from './door'
 import { shellEnv } from './env'
 import { Fleet } from './fleet'
-import { HOOK_ROUTES, SessionSettings } from './hooks'
+import { HOOK_ROUTES, SessionSettings, type HookPayload } from './hooks'
 import { SessionManager } from './sessions'
 import { Tmux } from './tmux'
 import { TranscriptWatcher } from './transcript'
@@ -20,6 +20,11 @@ import { UsageTracker } from './usage'
 import { startPreview } from './preview'
 import { keepImage } from './drops'
 import { CommitRecorder, CommitStore, type CommitRecord } from './commits'
+import { Leash } from './leash'
+import { AgentTracker } from './agents'
+import { Helpers } from './helpers'
+import type { AgentsState } from '@shared/agents'
+import type { Transcript } from '@shared/transcript'
 
 export interface CoreSessions {
   sessions: SessionManager
@@ -27,12 +32,22 @@ export interface CoreSessions {
   tmux: Tmux
   settings: SessionSettings
   transcripts: TranscriptWatcher
+  /** The wolfpack's subagents (main/agents.ts). */
+  agents: AgentTracker
+  /** The wolfpack's helper sessions (main/helpers.ts). */
+  helpers: Helpers
+  /** Every open session's subagents and helpers, as the window shows them. */
+  agentsState(): AgentsState
   /** Which session made which commit, as far as core saw (main/commits.ts). */
   commits: CommitRecorder
   /** Route a /hook/<name> call (the door's server hands them here). */
   hook(name: string, token: string, payload: unknown): void
   /** A /core/<name> call from a session (the preview pane's `doc`); answered. Sessions only. */
   call(name: string, token: string, payload: unknown): Promise<unknown>
+  /** An /ask/<name> hook, held on purpose: the leash (`pretool`) and permission prompts (`permission`). */
+  ask(name: string, token: string, payload: unknown, gone: (cb: () => void) => void): Promise<string | null>
+  /** The leash and permission prompts (main/leash.ts). */
+  leash: Leash
   stop(): void
 }
 
@@ -57,6 +72,8 @@ export interface Options {
   onUsage: (u: Usage) => void
   /** Core recorded a commit a session made: the whole list of records. */
   onCommits?: (all: CommitRecord[]) => void
+  /** A transcript changed (a session's, or `agent:<id>`): tiles with "transcripts" may hear of it. */
+  onTranscript?: (t: Transcript) => void
 }
 
 export async function startSessions(o: Options): Promise<CoreSessions> {
@@ -75,8 +92,23 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
 
   // Where the CLI the sessions run writes its transcripts: its config folder, as the sessions see it.
   const projects = join(env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'projects')
-  const transcripts = new TranscriptWatcher(projects, (t) => send(CH.transcriptChanged, t))
-  const watchOpen = (s: SessionsState): void => transcripts.sync(s.sessions.filter((x) => x.open).map((x) => ({ id: x.id, claudeSessionId: x.claudeSessionId })))
+  let agents: AgentTracker | null = null
+  let helpers: Helpers | null = null
+  const transcripts = new TranscriptWatcher(projects, (t) => {
+    send(CH.transcriptChanged, t)
+    agents?.onTranscript(t)
+    o.onTranscript?.(t)
+  })
+  const watchOpen = (s: SessionsState): void => {
+    const open = s.sessions.filter((x) => x.open)
+    transcripts.sync(open.map((x) => ({ id: x.id, claudeSessionId: x.claudeSessionId })))
+    agents?.keepParents(new Set(open.map((x) => x.id)))
+    helpers?.keepParents(new Set(s.sessions.map((x) => x.id)))
+  }
+
+  // The leash and permission prompts. Its view is part of each session's state; a change is drawn at once.
+  let sessionsRef: SessionManager | null = null
+  const leash = new Leash(settings.leashDir, () => sessionsRef?.changed())
 
   const sessions = new SessionManager({
     tmux,
@@ -87,6 +119,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     pluginDirs: o.pluginDirs,
     register: (t, who, session) => o.door.register(t, who, session),
     revoke: (t) => o.door.revoke(t),
+    leash: (id) => leash.view(id),
     events: {
       state: (s) => {
         watchOpen(s)
@@ -101,10 +134,56 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     send(CH.usageChanged, u)
     o.onUsage(u)
   })
+  sessionsRef = sessions
+  const agentsState = (): AgentsState => ({ agents: [...tracker.list(), ...helperList.list()], leash: tracker.hasLeash() })
+  // The wolfpack's tails: the subagents' files once seen, and the helpers' by session id.
+  let subagentTails: { id: string; path: string | null }[] = []
+  const syncTails = (): void => transcripts.syncAgents([...subagentTails, ...helperList.tails()])
+  const tracker = new AgentTracker(
+    { open: (id) => !!sessions.find(id)?.open, paste: (id, text) => sessions.paste(id, text) },
+    projects,
+    (list) => {
+      subagentTails = list
+      syncTails()
+    },
+    () => {
+      // A subagent paused or killed: its session's tool calls go to core (leash.sh), the rest stay quiet.
+      leash.markAgents(tracker.leashed())
+      send(CH.agentsState, agentsState())
+    }
+  )
+  agents = tracker
+  const helperList = new Helpers(
+    {
+      env,
+      home: o.home,
+      settingsPath: settings.path,
+      pluginDirs: o.pluginDirs,
+      register: (t, who, session) => o.door.register(t, who, session),
+      revoke: (t) => o.door.revoke(t),
+      find: (id) => sessions.find(id)
+    },
+    () => {
+      syncTails()
+      send(CH.agentsState, agentsState())
+    }
+  )
+  helpers = helperList
+  // The leash's PreToolUse hook is in the settings file and reaches tracker.preTool: subagents can be
+  // paused. After the helpers exist: setLeash reports the whole pack, helpers included.
+  tracker.setLeash(true)
   await sessions.init()
+  // Pauses of sessions core still has stand (a session that outlived a restart stays paused); the rest go.
+  leash.prune(new Set(sessions.getState().sessions.map((x) => x.id)))
   const commits = new CommitRecorder(new CommitStore(join(o.home, 'commits.json')), (all) => o.onCommits?.(all))
 
-  const fleet = new Fleet(env, (entries) => sessions.onFleet(entries))
+  const fleet = new Fleet(env, (entries) => {
+    sessions.onFleet(entries)
+    // A permission prompt answered in the terminal: the poll leaves "waiting for permission prompt".
+    const byId = new Map(entries.map((e) => [e.sessionId, e]))
+    for (const v of sessions.getState().sessions) if (v.leash.asks.length) leash.onFleet(v.id, byId.get(v.claudeSessionId))
+    helperList.onFleet(entries)
+  })
   if (o.poll) fleet.start()
 
   // ---- core's window only
@@ -124,10 +203,38 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   handle(CH.sessionNew, (opts: NewSessionOpts) => sessions.newSession(opts ?? { cwd: '' }))
   handle(CH.sessionResume, (id: string) => sessions.resume(String(id)))
   handle(CH.sessionPark, (id: string) => sessions.park(String(id)))
-  handle(CH.sessionKill, (id: string) => sessions.kill(String(id)))
+  handle(CH.sessionKill, async (id: string) => {
+    await sessions.kill(String(id))
+    leash.forget(String(id))
+  })
+  // The leash and permission prompts, from the session's tile or the center head. Core's window only:
+  // a tile page can never pause, release or approve anything.
+  handle(CH.sessionLeash, (id: string, action: string) => {
+    const s = sessions.find(String(id))
+    if (!s) return
+    if (action === 'pause') leash.pause(s.id)
+    else if (action === 'resume') leash.resume(s.id)
+    else if (action === 'refuse') leash.refuseHeld(s.id)
+  })
+  handle(CH.sessionPermission, (id: string, askId: string, allow: boolean) => {
+    const s = sessions.find(String(id))
+    if (!s || typeof askId !== 'string') return false
+    const done = leash.answer(s.id, askId, allow === true)
+    if (done) sessions.working(s.id)
+    return done
+  })
   handle(CH.sessionFocus, (id: string | null) => sessions.focus(id === null ? null : String(id)))
   handle(CH.usageGet, () => usage.get())
   handle(CH.transcriptGet, (id: string) => transcripts.get(String(id)))
+  handle(CH.agentsGet, () => agentsState())
+  const helperPause = (): never => {
+    throw new Error('a helper is a background session of its own: stop it, or open it with claude attach')
+  }
+  handle(CH.agentPause, (id: string) => (helperList.has(String(id)) ? helperPause() : tracker.pause(String(id))))
+  handle(CH.agentResume, (id: string) => (helperList.has(String(id)) ? helperPause() : tracker.resume(String(id))))
+  // A helper is stopped with the CLI's own `claude stop` (kill, or clearing a finished one); a subagent as tracker.kill says.
+  handle(CH.agentKill, (id: string) => (helperList.has(String(id)) ? helperList.stop(String(id)) : tracker.kill(String(id))))
+  handle(CH.agentDismiss, (id: string) => (helperList.has(String(id)) ? helperList.stop(String(id)) : tracker.dismiss(String(id))))
   handle(CH.openExternal, (url: string) => {
     if (typeof url === 'string' && /^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
@@ -152,28 +259,65 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     tmux,
     settings,
     transcripts,
+    agents: tracker,
+    helpers: helperList,
+    agentsState,
     commits,
     hook(name, token, payload) {
       const rec = sessions.byToken(token)
-      if (!rec) return // a call from outside any session: hooks are only for sessions
+      if (!rec) {
+        // A helper session's hooks come with its own token (main/helpers.ts); anything else is from outside any session.
+        const event = HOOK_ROUTES[name]
+        if (event && helperList.byToken(token)) helperList.onHook(token, event, (payload ?? {}) as HookPayload)
+        return
+      }
       if (name === 'status') return usage.onStatus(rec.id, payload)
-      const p = (payload ?? {}) as { session_id?: string }
+      const p = (payload ?? {}) as HookPayload
       // A Bash call ended (PostToolUse): if it made commits, they are recorded as this session's.
       if (name === 'tool') {
         if (p.session_id === rec.claudeSessionId) void commits.onTool({ id: rec.id, name: rec.name }, payload).catch((err) => console.warn('[workshop] commits:', err))
         return
       }
+      // A tool call finished while a permission prompt was open: the terminal answered the one that asked about it.
+      if (name === 'ran') {
+        if (p.session_id === rec.claudeSessionId) leash.settleCall(rec.id, payload as { tool_name?: unknown; tool_input?: unknown })
+        return
+      }
       const event = HOOK_ROUTES[name]
       // A session reports for itself only: the payload must name the session its token belongs to.
-      if (event && p.session_id === rec.claudeSessionId) sessions.onHook(event, p)
+      if (!event || p.session_id !== rec.claudeSessionId) return
+      // The turn ended, or a new prompt was typed: no permission prompt is open any more.
+      if (event === 'Stop' || event === 'UserPromptSubmit') leash.settle(rec.id)
+      sessions.onHook(event, p)
+      // A subagent's hooks carry its PARENT's session id (and its own agent_id): they are the parent's.
+      tracker.onHook(rec, event, p)
+    },
+    leash,
+    async ask(name, token, payload, gone) {
+      const rec = sessions.byToken(token)
+      const p = (payload ?? {}) as HookPayload
+      // Only a session, and only about itself: anything else is answered with nothing, at once.
+      if (!rec || p.session_id !== rec.claudeSessionId) return null
+      if (name === 'pretool') {
+        // A subagent's call (it carries agent_id): its own pause or kill first, then its session's.
+        if (p.agent_id) {
+          const d = await tracker.preTool(rec, p, gone)
+          if (d) return JSON.stringify(d)
+        }
+        return leash.hold(rec.id, p, gone)
+      }
+      if (name === 'permission') return leash.ask(rec.id, p, gone)
+      return null
     },
     async call(name, token, payload) {
       const rec = sessions.byToken(token)
-      if (!rec) throw new Error('only a session inside workshop can do that')
+      if (!rec) throw new Error(helperList.byToken(token) ? 'a helper cannot do that; its session can' : 'only a session inside workshop can do that')
+      if (name === 'helper') return helperList.call(rec, payload)
       return preview.call(name, payload, { id: rec.id, cwd: rec.cwd })
     },
     stop() {
       fleet.stop()
+      tracker.stop()
       transcripts.stop()
       preview.stop()
       sessions.detachAll()

@@ -17,6 +17,7 @@ if (hello) {
   const themeSubs = new Set<(v: Record<string, string>) => void>()
   const storageSubs = new Map<string, Set<(v: unknown) => void>>()
   const sessionSubs = new Set<(list: unknown) => void>()
+  const transcriptSubs = new Map<string, Set<(t: unknown) => void>>()
   const usageSubs = new Set<(u: unknown) => void>()
   const backendSubs = new Set<(s: unknown) => void>()
   const backendEventSubs = new Set<(e: unknown) => void>()
@@ -83,6 +84,9 @@ if (hello) {
   })
   ipcRenderer.on(CH.tileSessionsChanged, (_e, list: unknown) => {
     for (const fn of sessionSubs) call(() => fn(list))
+  })
+  ipcRenderer.on(CH.tileTranscriptChanged, (_e, id: string, t: unknown) => {
+    for (const fn of transcriptSubs.get(id) ?? []) call(() => fn(t))
   })
   ipcRenderer.on(CH.tileUsageChanged, (_e, u: unknown) => {
     for (const fn of usageSubs) call(() => fn(u))
@@ -291,6 +295,29 @@ if (hello) {
       watch: (fn: (list: unknown) => void): (() => void) => {
         needs('sessions')
         return sub(sessionSubs, fn)
+      },
+      /**
+       * A session's conversation, as core parses it for a session tile: { id, title, found, blocks },
+       * each block { kind: 'user' | 'text' | 'tool', … } (the last 80), or null for a closed session.
+       * Needs "transcripts" (bridge 1.7).
+       */
+      transcript: (id: string): Promise<unknown> => gate('transcripts', () => ipcRenderer.invoke(CH.tileTranscriptGet, id)),
+      /** `fn(transcript)` whenever that session's conversation changes. Returns a function that stops it. Needs "transcripts". */
+      watchTranscript: (id: string, fn: (t: unknown) => void): (() => void) => {
+        needs('transcripts')
+        if (typeof fn !== 'function') throw new TypeError('expected a function')
+        const key = String(id)
+        let set = transcriptSubs.get(key)
+        if (!set) {
+          transcriptSubs.set(key, (set = new Set()))
+          ipcRenderer.send(CH.tileTranscriptWatch, key, true)
+        }
+        set.add(fn)
+        return () => {
+          if (!set!.delete(fn) || set!.size > 0) return
+          transcriptSubs.delete(key)
+          ipcRenderer.send(CH.tileTranscriptWatch, key, false)
+        }
       },
       /** Types `text` into an open session and submits it. Needs "sessions": "write". */
       paste: (id: string, text: string): Promise<void> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsPaste, id, text)),

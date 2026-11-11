@@ -51,6 +51,7 @@ user is shown the list.
 | `"storage": true` | `workshop.storage` |
 | `"net": ["api.example.com", "*.example.org"]` | https / wss to exactly these hosts. No IPs, no `localhost`, no bare `*`. `*.x.com` does not include `x.com`. |
 | `"sessions": "read"`, `"launch"` or `"write"` | `workshop.sessions`. Each takes the one before: `launch` adds `launch` (core's new-session form, filled in; needs `"workshop": "^1.4"`), `write` adds `paste` |
+| `"transcripts": true` | `workshop.sessions.transcript(id)` and `watchTranscript`: what you typed into a session and what it answered. Needs `"sessions"` too and `"workshop": "^1.5"`. The user is warned loudly at install. With `net` as well, the index lists the tile only after a person has read its code. |
 | `"usage": true` | `workshop.usage` |
 | `"notify": true` | `workshop.notify` |
 | `"door": { "ops": ["add", "list"], "timeoutMs": 10000 }` | `workshop.door`: Claude sessions can call these ops |
@@ -112,6 +113,11 @@ await workshop.sessions.launch({ folder, worktree })  // "launch" or "write" (br
                                             // that name, whose branch the CLI calls worktree-fix-auth) ticked.
                                             // The user presses Start: a tile never starts a session or
                                             // writes its first prompt. Only from a click or key in the tile.
+await workshop.sessions.transcript(id)      // "transcripts" (bridge 1.7): { id, title, found, blocks }, the last 80
+                                            // blocks as a session tile draws them: { kind: 'user', text, ts },
+                                            // { kind: 'text', text (markdown), ts }, { kind: 'tool', name, label,
+                                            // done, error, ts, path? }. null for a closed session. Not the raw file.
+workshop.sessions.watchTranscript(id, (t) => {})   // the same, on every change; returns a function that stops it
 
 await workshop.usage.get(); workshop.usage.watch((u) => {})   // rate-limit windows, per-session cost and context %
 

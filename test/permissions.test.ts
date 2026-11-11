@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { needsAsking, permissionChange, permissionKeys, permissionWords } from '@shared/permissions'
+import { needsReview } from '@shared/permissions'
 
 describe('permissions in words', () => {
   it('says what a tile can do, what can leave the machine first', () => {
@@ -40,5 +41,13 @@ describe('permissions in words', () => {
       added: ['reach b.com', 'use the camera'],
       removed: ['send you notifications']
     })
+  })
+})
+
+describe('transcripts with net', () => {
+  it('is the one pairing routed to a person', () => {
+    expect(needsReview({ transcripts: true, sessions: 'read' })).toBeNull()
+    expect(needsReview({ net: ['api.example.com'] })).toBeNull()
+    expect(needsReview({ transcripts: true, sessions: 'read', net: ['api.example.com'] })).toMatch(/"transcripts" and "net" \(api.example.com\).*a person/)
   })
 })

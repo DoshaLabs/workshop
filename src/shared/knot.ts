@@ -189,13 +189,36 @@ export interface KnotPalette {
   pulse: string[]
 }
 
+/** The worker coat's gold, as a hue in degrees (a sprite pack's default worker tint is the same: mascot.ts GOLD_HUE). */
+export const WORKER_HUE = 44
+
+/** What a Knot wears: a session's own colours, or the worker coat (a subagent or helper: the theme's accent turned gold). */
+export type KnotCoat = 'own' | 'worker'
+
+/** `c` at the gold hue, keeping its lightness: the theme's own accent, in the worker coat. */
+export function goldOf(c: RGB): RGB {
+  const [r, g, b] = c.map((v) => v / 255)
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const l = Math.min(0.72, Math.max(0.38, (max + min) / 2))
+  const s = 0.78
+  const k = (n: number): number => (n + WORKER_HUE / 30) % 12
+  const a = s * Math.min(l, 1 - l)
+  const f = (n: number): number => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+  return [f(0), f(8), f(4)].map((v) => Math.round(v * 255)) as RGB
+}
+
 /**
  * The colours one mode draws with on a theme, each checked against the surfaces the Knot sits on:
  * the panel (session heads) and the window's background (the top bar). A colour that falls short
- * is moved toward the ink until it does not.
+ * is moved toward the ink until it does not. In the worker coat the accent is gold, so a
+ * subagent's knot never passes for its session's.
  */
-export function knotPalette(theme: KnotTheme, mode: KnotMode): KnotPalette {
-  const get = (k: keyof KnotTheme): RGB => parseColor(theme[k]) ?? [128, 128, 128]
+export function knotPalette(theme: KnotTheme, mode: KnotMode, coat: KnotCoat = 'own'): KnotPalette {
+  const get = (k: keyof KnotTheme): RGB => {
+    const c = parseColor(theme[k]) ?? [128, 128, 128]
+    return coat === 'worker' && (k === 'accent' || k === 'starting') ? goldOf(c) : c
+  }
   const surfaces = [get('panel'), get('bg')]
   const ink = get('ink')
   const panel = get('panel')

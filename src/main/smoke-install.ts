@@ -10,6 +10,8 @@ import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, session } from 'electron'
 import { tileRepo } from './tile-repo-fixture'
+import { IndexReader } from './index-read'
+import { DEFAULT_INDEX } from '../shared/tile-index'
 
 type Check = (name: string, ok: boolean, detail?: string) => void
 interface Ctx {
@@ -162,6 +164,118 @@ export async function installs(check: Check, { win, liveByTile, userData }: Ctx)
   await sleep(200)
   check('remove: the folder and its data are gone, and the column with it', !(await exists(join(userData, 'tiles', 'hello-repo'))) && !(await exists(join(userData, 'tile-data', 'hello-repo'))) && !(await has('.tiles [data-face="hello-repo"]')))
   check('remove: it is offered from the index again', await has('.picker [data-install="hello-repo"]'))
+
+  await click('.picker .head .ghost')
+  delete process.env.WORKSHOP_INDEX
+}
+
+/** Pomodoro's first published commit, before the one the index pins: what "update" moves from. */
+const POMODORO_REPO = 'https://github.com/DoshaLabs/workshop-pomodoro'
+const POMODORO_OLD = { commit: 'bab8d2045eccb5916bffc785887708d9e1f88aa0', version: '0.1.0' }
+
+/**
+ * WORKSHOP_REAL_INDEX=1: the whole path against the real index on GitHub, over the network (the
+ * offline smoke never does this). Reads DoshaLabs/workshop-index's tiles.json over https, installs
+ * Pomodoro from its GitHub repo at the pinned commit, runs it, removes it keeping its data,
+ * installs the commit before (a local index naming the same https repo, the pin moved back),
+ * updates it from the real index, and removes it with its data.
+ */
+export async function realIndex(check: Check, { win, liveByTile, userData }: Ctx): Promise<void> {
+  const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
+  const text = (sel: string): Promise<string> => js(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? ''`)
+  const click = (sel: string): Promise<unknown> => js(`document.querySelector(${JSON.stringify(sel)}).click(); true`)
+  const has = (sel: string): Promise<boolean> => js(`!!document.querySelector(${JSON.stringify(sel)})`)
+  const reopen = async (): Promise<void> => {
+    await click('.picker [data-tab="yours"]')
+    await click('.picker [data-tab="market"]')
+  }
+  const page = (): WebContents => liveByTile.get('pomodoro')!.wc
+  const inPage = (code: string): Promise<any> => page().executeJavaScript(code).catch(() => null)
+  const dir = join(userData, 'tiles', 'pomodoro')
+  const data = join(userData, 'tile-data', 'pomodoro', 'store.json')
+  const version = async (): Promise<string> => JSON.parse(await readFile(join(dir, 'tile.json'), 'utf8')).version
+  const timer = (): Promise<void> => waitFor('its timer', async () => /^\d\d:\d\d$/.test(String(await inPage(`document.querySelector('.time')?.textContent ?? ''`))), 15_000).catch(() => undefined)
+
+  // What the index says, read the way main reads it.
+  const real = await new IndexReader().read(DEFAULT_INDEX)
+  const pin = real.entries.find((e) => e.id === 'pomodoro')
+  check('real index: tiles.json on GitHub reads and lists Pomodoro', !real.problem && !!pin && pin.repo === POMODORO_REPO, real.problem ?? JSON.stringify(real.entries.map((e) => [e.id, e.commit])))
+  if (!pin) return
+
+  process.env.WORKSHOP_INDEX = DEFAULT_INDEX
+  await click('.tiles .tile-plus')
+  await waitFor('the + menu', () => has('.picker .pick-tabs'))
+  await click('.picker [data-tab="market"]')
+  await waitFor('the real index in the tab', async () => (await has('.picker [data-install="pomodoro"]')) || (await text('.picker-body')).includes('could not read'), 30_000)
+  const market = await text('.picker-body')
+  check('real index: the Marketplace tab lists Pomodoro with what it asks for, before anything is fetched', market.includes('Pomodoro') && market.includes('send you notifications') && market.includes('keep its own data'), market.slice(0, 400))
+  for (const e of real.errors) check(`real index: an entry this core cannot read is skipped, and said so (${e.slice(0, 70)})`, market.includes('skipped'), e)
+  if (process.env.WORKSHOP_SHOT_REAL) {
+    await sleep(400)
+    await writeFile(process.env.WORKSHOP_SHOT_REAL, (await win.webContents.capturePage()).toPNG())
+  }
+
+  // Install from GitHub at the pinned commit.
+  await click('.picker [data-install="pomodoro"]')
+  await waitFor('the prompt (a fetch from GitHub)', async () => (await has('.picker .pick-prompt')) || (await text('.picker .picker-problem')).length > 0, 120_000)
+  const prompt = await text('.picker .pick-prompt')
+  check('real install: fetched from GitHub, and asked first', prompt.includes('Install Pomodoro?') && prompt.includes('send you notifications'), prompt || (await text('.picker .picker-problem')))
+  await click('.picker [data-confirm]')
+  await waitFor('Pomodoro to load', () => liveByTile.has('pomodoro'), 30_000)
+  await timer()
+  const record = JSON.parse(await readFile(join(dir, '.workshop-install.json'), 'utf8')) as { commit: string; repo: string }
+  check('real install: the pinned commit is in userData tiles/pomodoro, without its history', record.commit === pin.commit && record.repo === POMODORO_REPO && !(await exists(join(dir, '.' + 'git'))) && (await version()) === pin.version, JSON.stringify(record))
+  const before = String(await inPage(`document.querySelector('.time')?.textContent`))
+  await inPage(`document.querySelector('.controls .primary').click(); true`)
+  await sleep(1600)
+  const after = String(await inPage(`document.querySelector('.time')?.textContent`))
+  const running = await inPage(`!!document.querySelector('.timer.running')`)
+  check('real install: Pomodoro runs (Start counts down)', running === true && before !== after && /^\d\d:\d\d$/.test(after), `${before} → ${after}`)
+  const stored = (): Promise<boolean> => readFile(data, 'utf8').then((t) => JSON.parse(t).state?.running === true, () => false)
+  await waitFor('its state in storage', stored, 5_000).catch(() => undefined)
+  check('real install: its state is in workshop.storage', await stored())
+  check('real install: armed like any tile (no net declared: everything to the dead proxy)', (await session.fromPartition('persist:tile-pomodoro').resolveProxy('https://example.com/')).includes('127.0.0.1:9'))
+
+  // Remove, keeping what it stored.
+  await click('.picker [data-remove="pomodoro"]')
+  await waitFor('the remove confirm', () => has('.picker [data-remove-confirm]'))
+  await click('.picker [data-remove-confirm]')
+  await waitFor('Pomodoro to go', () => !liveByTile.has('pomodoro'))
+  await sleep(200)
+  check('real remove: the folder goes, what it stored stays', !(await exists(dir)) && (await exists(data)))
+
+  // The pin moved back (a local index naming the same https repo), then the real index's update.
+  const oldIndex = join(userData, 'real-old-index.json')
+  await writeFile(oldIndex, JSON.stringify([{ ...pin, commit: POMODORO_OLD.commit, version: POMODORO_OLD.version }]))
+  process.env.WORKSHOP_INDEX = oldIndex
+  await reopen()
+  await waitFor('the old pin listed', () => has('.picker [data-install="pomodoro"]'))
+  await click('.picker [data-install="pomodoro"]')
+  await waitFor('the prompt', () => has('.picker .pick-prompt'), 120_000)
+  await click('.picker [data-confirm]')
+  await waitFor('the old version to load', () => liveByTile.has('pomodoro'), 30_000)
+  await timer()
+  check('real install: the earlier commit installs, and finds what the last one stored (still running)', (await version()) === POMODORO_OLD.version && (await inPage(`!!document.querySelector('.timer.running')`)) === true)
+  const oldPage = page().id
+
+  process.env.WORKSHOP_INDEX = DEFAULT_INDEX
+  await reopen()
+  await waitFor('the update button', () => has('.picker [data-update="pomodoro"]'), 30_000)
+  const label = await text('.picker [data-update="pomodoro"]')
+  await click('.picker [data-update="pomodoro"]')
+  await waitFor('the update (a fetch from GitHub)', async () => (await text('.picker-body')).includes(`updated to ${pin.version}`) || (await has('.picker .pick-prompt')) || (await text('.picker .picker-problem')).length > 0, 120_000)
+  const quiet = !(await has('.picker .pick-prompt'))
+  await waitFor('the new page', () => liveByTile.has('pomodoro') && page().id !== oldPage, 30_000).catch(() => undefined)
+  check('real update: from the real index, asking nothing (no new permission), the new commit in place and its page fresh', label === `Update to ${pin.version}` && quiet && (await version()) === pin.version && page().id !== oldPage, `${label}; ${(await text('.picker-body')).slice(0, 200)}`)
+
+  // Remove with its data.
+  await click('.picker [data-remove="pomodoro"]')
+  await waitFor('the remove confirm', () => has('.picker [data-remove-confirm]'))
+  await click('.picker .pick-confirm input[type=checkbox]')
+  await click('.picker [data-remove-confirm]')
+  await waitFor('Pomodoro to go', () => !liveByTile.has('pomodoro'))
+  await sleep(200)
+  check('real remove: with "also delete what it stored", the folder and its data go', !(await exists(dir)) && !(await exists(join(userData, 'tile-data', 'pomodoro'))))
 
   await click('.picker .head .ghost')
   delete process.env.WORKSHOP_INDEX

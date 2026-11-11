@@ -21,9 +21,9 @@ const LABEL: Record<SessionStatus, string> = {
   unknown: 'unknown'
 }
 
-export function Mascot({ id, status, attention = false, coat }: { id?: string; status: SessionStatus; attention?: boolean; /** The worker coat, for a subagent (not drawn anywhere yet). */ coat?: 'worker' }) {
+export function Mascot({ id, status, attention = false, coat }: { id?: string; status: SessionStatus; attention?: boolean; /** The worker coat: a subagent's or a helper session's (the wolfpack). */ coat?: 'worker' }) {
   const m = useActiveMascot()
-  if (!m) return <SessionKnot id={id} status={status} attention={attention} />
+  if (!m) return <SessionKnot id={id} status={status} attention={attention} coat={coat === 'worker' ? 'worker' : 'own'} />
   const pose = poseFor(status, attention)
   const needs = pose === 'look' && status !== 'blocked' ? ' (needs you)' : ''
   return (
@@ -32,7 +32,7 @@ export function Mascot({ id, status, attention = false, coat }: { id?: string; s
       sheet={coat === 'worker' ? 'var(--mascot-sheet-worker)' : 'var(--mascot-sheet)'}
       state={pose}
       attentionOf={id}
-      className={`mascot ${status}`}
+      className={`mascot ${status}${coat === 'worker' ? ' worker' : ''}`}
       title={`${m.pack.name}: ${LABEL[status]}${needs}`}
     />
   )

@@ -4,8 +4,8 @@ A desktop app for people who use Claude Code: several Claude Code sessions in on
 column of small apps ("tiles") beside them that anyone can write, share and install. Open source,
 in the DoshaLabs GitHub org. macOS and Claude Code first.
 
-**Status (10 Nov 2026): the tile host (roadmap step 1), sessions, the status mark (section 8), the three-tab
-`+` menu with install, the preview pane and the trusted tier are built; the rest of this
+**Status (11 Nov 2026): the tile host (roadmap step 1), sessions, the status mark (section 8), the three-tab
+`+` menu with install, the preview pane, the trusted tier, the leash and permission prompts, the wolfpack and `transcripts` are built; the rest of this
 file is still the plan.** Every section says what was decided and why, so that whoever starts building, person or
 Claude session, does not have to re-derive it. When code lands, rewrite the matching section to
 describe what exists and delete the plan wording.
@@ -16,6 +16,9 @@ drives the door, and ends by restarting core on the same profile, so sessions ar
 and a reboot; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture of the window).
 Smoke sessions run a stand-in `claude` (`test/fixtures/fake-claude/claude`) that runs our hooks the
 way the CLI does; `WORKSHOP_REAL_CLAUDE=1 npx electron . --smoke` runs one real Haiku turn instead.
+Smoke needs no network: the Wikipedia tile's hosts are answered from canned data inside its own
+session, behind its request filter (`src/main/smoke-net.ts`; `WORKSHOP_LIVE_NET=1` uses the real
+services). A core that fails to start ends the run at once with `FAIL core started`.
 The first build session's notes, open issues and second-pass list: `docs/progress/2026-11-10.md`.
 
 `npm run dist` builds `dist/mac-arm64/workshop.app` (electron-builder, signed with the keychain's
@@ -74,7 +77,11 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   hooks, submodules, LFS and symlinks off, `.git` deleted, checked as an outside tile (no backend,
   no built-in id, nothing the index did not list), into userData `tiles/<id>` after the prompt in
   the menu card. An update asks again only if it asks for more. The index format is
-  `src/shared/tile-index.ts`; its address is `settings.index` (or `WORKSHOP_INDEX`).
+  `src/shared/tile-index.ts`; its address is `WORKSHOP_INDEX`, else `settings.index`, else
+  `DEFAULT_INDEX`, DoshaLabs/workshop-index's `tiles.json` on main (never in a smoke run). Main
+  reads it (`src/main/index-read.ts`: 10 s, 2 MB counted as it streams, kept a minute). Git runs
+  without the user's own config. `WORKSHOP_REAL_INDEX=1 npx electron . --smoke` walks the real
+  index on GitHub: install, run, update and remove Pomodoro (`docs/progress/2026-11-11-index.md`).
 - `workshop tile check <folder> [--json]` (`src/main/tile-check.ts`, built into
   `out/check/tile-check.mjs` by `vite.check.config.ts`): core's own manifest, plugin and folder
   checks from the shell. Exit 0 if the tile would load.
@@ -205,8 +212,32 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   --git-common-dir`, so worktrees of one repo share it; `workshop.sessions` gives it as `root`
   beside `project` (the start folder). A store that cannot be parsed is moved aside
   (`store.json.broken-<time>`), never written over. Long transcripts are read from the end.
-- Not yet: `transcripts` for tiles, subagent tiles and the wolfpack, the leash
-  and permission prompts in a tile.
+- The leash and permission prompts (`src/main/leash.ts`, `src/shared/leash.ts`, `Leash.tsx`;
+  `docs/progress/2026-11-11-leash.md`): ⏸ on a session's heads writes `<profile>/leash/<id>.paused`;
+  its PreToolUse hook (`leash.sh`) exits at once without it and otherwise holds the call on
+  `/ask/pretool` (Resume, or Refuse and stay paused). A PermissionRequest hook (`ask.sh`) holds
+  `/ask/permission` while the CLI shows its dialog: the tile, or the center head, shows the tool
+  and its input as text with Allow and Deny, the mark goes to needs you, and the terminal can
+  still answer (core sees it through the hook hanging up, the poll's `waitingFor`, PostToolUse,
+  Stop). Both scripts retry a core that is restarting; a pause is a file and outlives core.
+  Core's window only: tiles see none of it.
+- The wolfpack (`docs/progress/2026-11-11-wolfpack.md`): a session's subagents (`src/main/agents.ts`)
+  and helper sessions (`src/main/helpers.ts`) as one pack tile under it (`PackTile.tsx`): a chip per
+  agent, the chosen one's conversation (ChatView), its mark in the worker coat (the Knot gold:
+  `knot.ts` `goldOf`, `--ws-worker`). Subagents from the SubagentStart / Stop hooks; transcripts
+  found by looking under `<session id>/subagents/` (never guessed; the stop hook's path wins);
+  finished by the stop hook or by the sidecar's `"finished": true` once quiet 10 s; no tile for a
+  fork with no transcript; × as the last resort. Kill (■, two clicks): the tile goes, the parent is
+  told in one typed line, and its held and later calls are refused. Pause holds one subagent's
+  calls through the leash: a session with a subagent paused or killed in the last 10 minutes has
+  `<profile>/leash/<id>.agents`, so `leash.sh` calls core for its calls, and `/ask/pretool` asks
+  `AgentTracker.preTool` before the session's own pause. Every other session still makes no request.
+  Helpers: `node "$WORKSHOP_HELPER" start "<prompt>"` (skill `workshop:helper`) runs `claude --bg`
+  in the parent's folder with our settings, the parent's permission mode and a token of its own;
+  kill is `claude stop <id>`. Smoke: the stand-in runs `agent <how>` and `--bg`.
+- `transcripts` (bridge 1.7): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed
+  blocks a session tile draws, needs `sessions` too; a loud line in the menu and the install prompt;
+  `tile check` prints `review` for transcripts with net.
 
 Terms used throughout:
 
@@ -295,7 +326,7 @@ are actually building tiles.
 | Layout | Left column: sessions. Center: what you are on now. Right column: tiles |
 | Launcher | The empty center pane: start a session (folder, worktree, model, permission mode) |
 | Preview pane | Read, tick task boxes in, and edit a file a session points at |
-| Wolfpack | A session's subagents and helper sessions as live tiles, with pause and kill |
+| Wolfpack | A session's subagents and helper sessions as one pack tile under it; kill built, pause waits on the leash |
 | All themes | Deep Space is the default |
 | Wikipedia + weather + clock tile | Asks for your city on first run (deck defaults to Portland, Maine) |
 | Git tile | One tile, four tabs (section 4); Changes built |
@@ -489,7 +520,7 @@ Behind a permission:
 ```ts
 workshop.storage.get/set/watch     // "storage": one JSON store per tile, written atomically by main
 workshop.sessions.list/watch       // "sessions": "read"  → name, start folder (project), repo root (root), status, focused
-workshop.sessions.transcript(id)   // "transcripts"       → the conversation (see the safeguard)
+workshop.sessions.transcript(id) / watchTranscript(id, fn)  // "transcripts" (+ "sessions", bridge ^1.7) → the conversation, parsed (see the safeguard)
 workshop.sessions.launch({ folder, worktree })  // "sessions": "launch" → the new-session form filled in; the user presses Start
 workshop.sessions.paste(id, text)  // "sessions": "write" → type into a session
 workshop.usage.get/watch           // "usage"             → costs and rate-limit windows, computed by core
@@ -509,9 +540,13 @@ from v1 and returns with the reader, with a per-tile daily cap the user sets.
 
 ### Transcripts and the one manual check
 
-Sandboxed tiles may ask for `transcripts`, with a loud install prompt. A tile that asks for BOTH
-`transcripts` and `net` gets a manual review before it is listed, because that pairing is the
-only way a conversation can leave the machine. Everything else in the index stays automated.
+Sandboxed tiles may ask for `transcripts` (built, bridge 1.7): the blocks a session tile draws
+(prompts, prose, a line per tool call, the last 80), never the raw file, for a session's id only,
+never a subagent's. It needs `sessions` too. The menu row and the install prompt give it a loud
+line of its own (`TRANSCRIPTS_WARNING`). A tile that asks for BOTH `transcripts` and `net` gets a
+manual review before it is listed, because that pairing is the only way a conversation can leave
+the machine: `needsReview` in `src/shared/permissions.ts`, printed by `tile check` as `review` and
+in `--json`. Everything else in the index stays automated.
 
 The Spend tile does not need transcripts: core computes costs and exposes them as `usage`.
 
@@ -592,6 +627,22 @@ How it works:
   GitHub and submit it to the index without one. Not designed yet (what a profile holds, and
   whether sign-in is GitHub's).
 
+**Built (11 Nov 2026).** https://github.com/DoshaLabs/workshop-index holds `tiles.json`, a README
+on how to submit, and a check (`.github/workflows/check.yml`) that runs on every pull request, on
+main and weekly. It checks out workshop's main and bundles core's own code with esbuild
+(`ci/core.ts`: `checkEntry`, `fetchCommit`, `checkTileFolder`, `permissionWords`), so the index
+is checked by the code that reads and installs it, with nothing copied. Per entry: the entry's
+rules, the pinned commit fetched as install fetches it, `tile check` as an outside tile, id,
+version and permissions exactly tile.json's, every file the page names committed (nothing is
+built on install). The summary lists each tile's permissions in words and, for an update, what
+it now also asks for. `transcripts` with `net` fails until a maintainer adds the `reviewed`
+label. A tile whose `workshop` range starts above core main's bridge is "waiting", not failed, if
+its only errors are ones a newer core answers. Listed: Pomodoro
+(https://github.com/DoshaLabs/workshop-pomodoro) and Spotify
+(https://github.com/DoshaLabs/workshop-spotify, waiting for bridge 1.5; pull request 1 until
+merged). Not built: the site,
+the counter, CODEOWNERS.
+
 There is no hosted backend at launch beyond the counter and a static site. A WoW-style hosted
 marketplace is step 6 of the roadmap and happens only if strangers are building tiles.
 
@@ -621,8 +672,9 @@ the working version.
   / UserPromptSubmit hooks make it instant. After a Stop, the poll's "busy" is not believed until
   the next prompt (a background shell outliving the turn reads as busy). (`fleet.ts`, `hooks.ts`)
 - **A local hooks server** (127.0.0.1 only) receives the hooks and is the door for tiles. Hook
-  commands never block Claude (`curl -m 2 …; exit 0`), with one deliberate exception: PreToolUse
-  → `/pretool`, which holds a tool call while the user has that agent paused (the leash).
+  commands never block Claude (`curl -m 2 …; exit 0`), with two deliberate exceptions on
+  `/ask/*`: PreToolUse, held only while the user has that session paused (the leash; unpaused it
+  costs no request), and PermissionRequest, held until the tile or the terminal answers.
 - **`--settings` merges** with the user's own settings, so their hooks keep firing. `statusLine`
   is a single object and would replace theirs, so ours posts the status JSON to core and then
   runs the user's own command on the same input.
@@ -728,8 +780,8 @@ once), `sleep` (resting; a dead session sleeps, dimmed). One is required; the re
 nearest (`FALLBACK`). Unknown fields and states are refused. **There is no "alert, tail up" pose:
 Colin's rule, it reads badly. Do not add one.** `box` crops each frame's empty margins; the art
 is fitted into 22 × 18 at whole-number scales, `image-rendering: pixelated`. `worker` is the
-subagent coat: its own sheet, or colours to swap, else `tintCoat`'s gold (built and tested, not
-drawn yet: there are no subagent tiles). Calls for attention: a tile's `notify({ attention: true })` goes to the
+subagent coat: its own sheet, or colours to swap, else `tintCoat`'s gold; with no pack, the Knot
+wears it as a gold strand (`knotPalette(theme, mode, 'worker')`). Drawn on every pack tile. Calls for attention: a tile's `notify({ attention: true })` goes to the
 session that last called that tile through the door (10 minutes), else the focused one; a session
 also calls the moment it starts needing you or finishes a turn.
 
@@ -793,7 +845,7 @@ already uses most of them:
 | Extension point | What workshop uses it for |
 |---|---|
 | `--settings <file>` | Our hooks, env vars, status line and theme, merged over the user's own |
-| Hooks | Status (Notification, Stop, UserPromptSubmit), which session made a commit (PostToolUse on Bash), subagent tiles (SubagentStart / Stop), the leash (PreToolUse), session context (SessionStart) |
+| Hooks | Status (Notification, Stop, UserPromptSubmit), which session made a commit (PostToolUse on Bash), subagent tiles (SubagentStart / Stop), the leash (PreToolUse), permission prompts (PermissionRequest), session context (SessionStart) |
 | `--plugin-dir` (repeatable) | Core's own skills, and each installed tile's `plugin/` folder |
 | `statusLine` | The account's rate-limit windows and each session's context percentage |
 | `--session-id` | Our own UUID, which is how hooks and poll rows are matched to a tile |
@@ -802,9 +854,10 @@ already uses most of them:
 
 **What to build that the Claude app has and deck lacks:**
 
-1. **Answer permission prompts from a tile.** Today they exist only in the terminal. The leash
-   already holds every tool call at `/pretool`, so approve and deny buttons should be reachable
-   the same way. This is the biggest gap. (Not yet verified end to end.)
+1. **Answer permission prompts from a tile.** Built (11 Nov 2026) on the `PermissionRequest`
+   hook, not PreToolUse: on 2.1.322 it runs while the CLI shows its dialog, and whichever answers
+   first wins (`decision.behavior` allow / deny). Verified by hand on the real CLI; not yet with a
+   real session in the app (`docs/progress/2026-11-11-leash.md`).
 2. A diff review pane (the git tile's Changes tab covers most of it).
 
 ### Bring your own model
@@ -852,7 +905,8 @@ screen points at Foxtrot's download for anyone who wants the fox (section 8).
 - **The worker swap's two coat colours** in `FOXTROT` are read off Elthen's sheet (deck had them).
   Two hex values are not his art, but Colin should confirm; without them the default gold tint applies.
 - **Does the tile index work as a Claude Code plugin marketplace** as is?
-- **Permission prompts in a tile**: confirm the PreToolUse route can carry an approve / deny.
+- **The leash's two choices**: a pause outlives core (quit with a session paused and its next
+  call waits up to an hour), and Refuse keeps the session paused. Both are Colin's to confirm.
 - **When to open the trusted tier** to outside authors, and what its review looks like.
 - **The reader**: what "handles any language" means concretely (which books, which translator).
 

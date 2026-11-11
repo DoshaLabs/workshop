@@ -133,6 +133,10 @@ export const CH = {
   sessionPark: 'ws:core:session-park',
   sessionKill: 'ws:core:session-kill',
   sessionFocus: 'ws:core:session-focus',
+  /** The leash: (id, 'pause' | 'resume' | 'refuse'). Core's window only (main/leash.ts). */
+  sessionLeash: 'ws:core:session-leash',
+  /** A permission prompt answered from a session's tile: (id, askId, allow) → whether it was still open. */
+  sessionPermission: 'ws:core:session-permission',
   pickFolder: 'ws:core:pick-folder',
   ptyInput: 'ws:core:pty-input', // send
   ptyResize: 'ws:core:pty-resize', // send
@@ -153,6 +157,17 @@ export const CH = {
   // session tiles: the conversation, tailed by main (main/transcript.ts)
   transcriptGet: 'ws:core:transcript-get',
   transcriptChanged: 'ws:core:transcript', // main → window
+  // the wolfpack: a session's subagents and helper sessions (main/agents.ts, main/helpers.ts)
+  agentsGet: 'ws:core:agents-get',
+  agentsState: 'ws:core:agents', // main → window
+  agentPause: 'ws:core:agent-pause',
+  agentResume: 'ws:core:agent-resume',
+  agentKill: 'ws:core:agent-kill',
+  agentDismiss: 'ws:core:agent-dismiss',
+  // transcripts for tiles ("transcripts", bridge 1.7)
+  tileTranscriptGet: 'ws:tile:transcript-get',
+  tileTranscriptWatch: 'ws:tile:transcript-watch', // send: (session id, true to start, false to stop)
+  tileTranscriptChanged: 'ws:tile:transcript-changed', // main → tile
   // ⌘1–9, ⌘[ ⌘], ⌘N, caught by main wherever the focus is (shared/shortcuts.ts)
   shortcut: 'ws:core:shortcut', // main → window
   // the tile column's state (off, extra instances, heights), kept in core's settings

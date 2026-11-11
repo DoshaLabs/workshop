@@ -218,6 +218,12 @@ export function instanceOfPartition(tiles: Map<string, Tile>, partition: string)
 
 const armed = new WeakSet<Session>()
 
+/** A smoke run's stand-in for the internet (smoke-net.ts): set once by index.ts, never in the app. */
+let netStandIn: ((tile: Tile, ses: Session) => void) | null = null
+export function setNetStandIn(fn: (tile: Tile, ses: Session) => void): void {
+  netStandIn = fn
+}
+
 /** Arms every instance's session. Safe to call again (a dev tile reloaded): every handler is replaced. */
 export async function armSession(tile: Tile): Promise<void> {
   await Promise.all(tile.sessions.map((ses) => armOne(tile, ses)))
@@ -274,6 +280,8 @@ async function armOne(tile: Tile, ses: Session): Promise<void> {
   })
 
   ses.webRequest.onBeforeRequest((details, cb) => cb({ cancel: !requestAllowed(tile, details.url) }))
+  // Smoke only: the hosts a tile declared answered from canned data, behind the same filter.
+  netStandIn?.(tile, ses)
 
   await ses.setProxy({
     proxyRules: '127.0.0.1:9',

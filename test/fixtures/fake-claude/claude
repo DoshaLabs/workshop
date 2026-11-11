@@ -8,37 +8,122 @@
 // claims another session's id; `bash <command>` runs a shell command in its folder as the Bash tool
 // would, then fires PostToolUse with the payload Claude Code 2.1.322 sends (matchers honoured, and
 // `tool_response.gitOperation` when the output reads like git commit's). It writes what it was started with to $WORKSHOP_HOME/fake-<id>.json.
+// Every tool call fires PreToolUse first and waits on it (the leash holds it there); a deny skips
+// the tool and prints `DENIED <reason>`. `perm <command>` is a Bash call that needs permission, as
+// 2.1.322 runs one (seen 11 Nov 2026): PreToolUse, then the PermissionRequest hooks started WHILE its
+// dialog shows (`PERMISSION? <command>`); whichever answers first wins. A hook's decision allows or
+// denies; a typed `y` (Yes) runs the tool and leaves the hook running, as the real CLI does; a typed
+// `n` (No) kills the hook and interrupts the turn (no Stop hook). A hook's late answer is ignored.
 // Like the real CLI it appends each turn to $CLAUDE_CONFIG_DIR/projects/<its folder>/<session id>.jsonl
 // (the file appears at the first prompt): the prompt, prose with markdown, a tool call and its
 // result, a subagent's line and a meta line (which a tile must not show), and a title.
-const { execSync } = require('node:child_process')
+// `agent <how>` runs a subagent the way Claude Code 2.1.322 does (seen with a real Haiku run,
+// docs/progress/2026-11-11-wolfpack.md): SubagentStart with the parent's session id, the agent's own
+// transcript at <parent's folder>/<session id>/subagents/agent-<id>.jsonl (every line isSidechain)
+// with an agent-<id>.meta.json sidecar, then SubagentStop naming the file. <how>: `stop` (that, with
+// a beat between start and stop), `nostop` (no stop hook, the sidecar says finished and the file is
+// old: the web-fetch agent's way), `hold` (it never ends), `fork` (a stop for an agent that wrote no
+// transcript: the CLI's internal forks), `workflow` (under workflows/wf_<run>/, its stop naming no
+// file). The agent's id goes to $WORKSHOP_HOME/fake-agent-<how>.txt.
+// `--bg` (a helper session, main/helpers.ts) is the CLI's background session as 2.1.322 starts it:
+// it ignores --session-id, prints `backgrounded · <8 hex> · <name>` and goes on in a process of
+// its own, which runs its prompt as one turn (hooks with its own session id, a transcript by that
+// id) and stops; a prompt with "hold" in it never finishes until `claude stop <8 hex>`. `stop` and
+// `rm` leave $CLAUDE_CONFIG_DIR/fake-<stop|rm>-<id> behind.
+const { execSync, spawn } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
 
 const args = process.argv.slice(2)
+if (args[0] === 'stop' || args[0] === 'rm') {
+  if (process.env.CLAUDE_CONFIG_DIR) fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, `fake-${args[0]}-${args[1]}`), '')
+  console.log(`${args[0] === 'stop' ? 'stopped' : 'removed'} ${args[1]}`)
+  process.exit(0)
+}
 const after = (flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined)
-const sid = after('--session-id') || after('--resume')
+const bgSid = after('--fake-bg-sid')
+const sid = bgSid || after('--session-id') || after('--resume')
 const settings = JSON.parse(fs.readFileSync(after('--settings'), 'utf8'))
 Object.assign(process.env, settings.env || {})
-fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-${process.env.WORKSHOP_SESSION}.json`), JSON.stringify({ args, auth: process.env.WORKSHOP_AUTH, session: process.env.WORKSHOP_SESSION }))
+if (args.includes('--bg')) {
+  const id = require('node:crypto').randomUUID()
+  if (after('--session-id')) console.error('warning: --bg manages the session id; ignoring --session-id')
+  fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-helper-${id.slice(0, 8)}.json`), JSON.stringify({ args, auth: process.env.WORKSHOP_AUTH, session: process.env.WORKSHOP_SESSION }))
+  require('node:child_process').spawn(process.execPath, [__filename, ...args.filter((a) => a !== '--bg'), '--fake-bg-sid', id], { detached: true, stdio: 'ignore', env: process.env, cwd: process.cwd() }).unref()
+  console.log(`Starting background service…\nbackgrounded · ${id.slice(0, 8)} · ${after('--name') || 'session'}`)
+  process.exit(0)
+}
+if (!bgSid) fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-${process.env.WORKSHOP_SESSION}.json`), JSON.stringify({ args, auth: process.env.WORKSHOP_AUTH, session: process.env.WORKSHOP_SESSION }))
 
-const run = (cmd, input) => {
+const run = (cmd, input, timeoutS = 10) => {
   try {
-    return execSync(cmd, { input: JSON.stringify(input), shell: '/bin/sh', env: process.env, encoding: 'utf8', timeout: 10000 })
+    return execSync(cmd, { input: JSON.stringify(input), shell: '/bin/sh', env: process.env, encoding: 'utf8', timeout: timeoutS * 1000 })
   } catch (err) {
     return String(err.stdout || err.message)
   }
 }
+const groups = (event, tool) =>
+  // A matcher is a tool name or a regular expression over it; none (or "*") matches every tool.
+  (settings.hooks[event] || []).filter((group) => !(tool && group.matcher && group.matcher !== '*' && !new RegExp(`^(?:${group.matcher})$`).test(tool)))
 const hook = (event, extra = {}, tool) => {
-  for (const group of settings.hooks[event] || []) {
-    // A matcher is a tool name or a regular expression over it; none (or "*") matches every tool.
-    if (tool && group.matcher && group.matcher !== '*' && !new RegExp(`^(?:${group.matcher})$`).test(tool)) continue
-    for (const h of group.hooks) run(h.command, { session_id: sid, hook_event_name: event, ...extra })
+  let out = ''
+  for (const group of groups(event, tool)) for (const h of group.hooks) out += run(h.command, { session_id: sid, hook_event_name: event, ...extra }, h.timeout || 600)
+  return out
+}
+const decision = (out) => {
+  try {
+    return JSON.parse(out.trim()).hookSpecificOutput || null
+  } catch {
+    return null
   }
 }
 
+// PreToolUse: waits on every hook (the leash holds the call here). The deny's reason, or null to go on.
+const preTool = (name, input, id) => {
+  const d = decision(hook('PreToolUse', { transcript_path: transcript, cwd: process.cwd(), permission_mode: 'default', tool_name: name, tool_input: input, tool_use_id: id }, name))
+  return d && d.permissionDecision === 'deny' ? d.permissionDecisionReason || 'denied' : null
+}
+
+// PermissionRequest: its hooks run while the dialog shows. Resolves to 'allow' | 'deny:<message>' |
+// 'yes' | 'no', whichever comes first; a hook still running after a Yes is left running.
+let answerTyped = null
+const permission = (name, input) =>
+  new Promise((resolve) => {
+    let settled = false
+    const kids = []
+    const settle = (v) => {
+      if (settled) return
+      settled = true
+      answerTyped = null
+      // A No (or Esc) kills the hooks; a Yes or a hook's answer leaves the rest running.
+      if (v === 'no') for (const k of kids) k.kill('SIGTERM')
+      resolve(v)
+    }
+    const payload = JSON.stringify({ session_id: sid, transcript_path: transcript, cwd: process.cwd(), permission_mode: 'default', hook_event_name: 'PermissionRequest', tool_name: name, tool_input: input, permission_suggestions: [] })
+    for (const group of groups('PermissionRequest', name))
+      for (const h of group.hooks) {
+        const k = spawn('/bin/sh', ['-c', h.command], { env: process.env, stdio: ['pipe', 'pipe', 'ignore'] })
+        kids.push(k)
+        let out = ''
+        k.stdout.on('data', (c) => (out += c))
+        k.on('exit', () => {
+          const d = decision(out)
+          if (d && d.decision && d.decision.behavior === 'allow') settle('allow')
+          else if (d && d.decision && d.decision.behavior === 'deny') settle(`deny:${d.decision.message || ''}`)
+        })
+        k.stdin.end(payload)
+      }
+    answerTyped = (line) => settle(line === 'y' ? 'yes' : 'no')
+  })
+
 // The Bash tool: the command in this folder, then PostToolUse as the real CLI sends it.
+let tools = 0
 const bash = (command) => {
+  const denied = preTool('Bash', { command, description: 'Run a command' }, `toolu_pre_${++tools}`)
+  if (denied) return `DENIED ${denied}`
+  return runBash(command)
+}
+const runBash = (command) => {
   const t0 = Date.now()
   let stdout = ''
   let stderr = ''
@@ -66,6 +151,39 @@ const write = (o) => {
   fs.mkdirSync(path.dirname(transcript), { recursive: true })
   fs.appendFileSync(transcript, JSON.stringify({ sessionId: sid, timestamp: new Date().toISOString(), isSidechain: false, ...o }) + '\n')
 }
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+const agent = (how) => {
+  const aid = 'a' + require('node:crypto').randomBytes(8).toString('hex')
+  fs.writeFileSync(path.join(process.env.WORKSHOP_HOME, `fake-agent-${how}.txt`), aid)
+  const base = path.join(path.dirname(transcript), sid, 'subagents')
+  const dir = how === 'workflow' ? path.join(base, 'workflows', 'wf_run1') : base
+  const file = path.join(dir, `agent-${aid}.jsonl`)
+  const meta = (finished) => ({ agentType: how === 'workflow' ? 'workflow-subagent' : 'general-purpose', isBuiltIn: true, description: `smoke ${how}`, ...(how === 'workflow' ? { workflowPhase: 'Build' } : {}), spawnDepth: 1, requestShape: 'background', pickedEffortModel: 'claude-haiku-5-5', finished })
+  const type = how === 'workflow' ? 'workflow-subagent' : 'general-purpose'
+  if (how === 'fork') {
+    hook('SubagentStop', { transcript_path: transcript, cwd: process.cwd(), agent_id: aid, agent_type: type, agent_transcript_path: file, last_assistant_message: 'fork' })
+    return
+  }
+  hook('SubagentStart', { transcript_path: transcript, cwd: process.cwd(), agent_id: aid, agent_type: type })
+  fs.mkdirSync(dir, { recursive: true })
+  const line = (o) => fs.appendFileSync(file, JSON.stringify({ isSidechain: true, agentId: aid, sessionId: sid, timestamp: new Date().toISOString(), ...o }) + '\n')
+  line({ type: 'user', message: { role: 'user', content: `Brief for the ${how} agent: read the README.` } })
+  line({ type: 'attachment', attachment: { type: 'deferred_tools_delta' } })
+  line({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: `toolu_${aid}`, name: 'Read', input: { file_path: path.join(process.cwd(), 'README.md') } }] } })
+  line({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_${aid}`, content: 'ok' }] } })
+  line({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `The ${how} agent read it.` }] } })
+  fs.writeFileSync(file.replace(/\.jsonl$/, '.meta.json'), JSON.stringify(meta(how === 'nostop')))
+  if (how === 'nostop') {
+    const old = new Date(Date.now() - 60_000)
+    fs.utimesSync(file, old, old)
+    return
+  }
+  if (how === 'hold') return
+  sleep(1500)
+  fs.writeFileSync(file.replace(/\.jsonl$/, '.meta.json'), JSON.stringify(meta(true)))
+  hook('SubagentStop', { transcript_path: transcript, cwd: process.cwd(), agent_id: aid, agent_type: type, ...(how === 'workflow' ? {} : { agent_transcript_path: file }), last_assistant_message: `The ${how} agent read it.` })
+}
+
 let calls = 0
 const turn = (line) => {
   write({ type: 'user', origin: { kind: 'human' }, promptSource: 'typed', message: { role: 'user', content: line } })
@@ -82,8 +200,26 @@ const turn = (line) => {
   }
 }
 
+// A helper (a --bg session): its prompt as one turn, then it stops, unless it was told to hold.
+if (bgSid) {
+  const prompt = args[args.indexOf('--fake-bg-sid') - 1]
+  turn(prompt)
+  hook('UserPromptSubmit', { prompt })
+  sleep(1500)
+  const stopped = () => process.env.CLAUDE_CONFIG_DIR && fs.existsSync(path.join(process.env.CLAUDE_CONFIG_DIR, `fake-stop-${bgSid.slice(0, 8)}`))
+  if (/hold/.test(prompt)) {
+    for (let i = 0; i < 600 && !stopped(); i++) sleep(100)
+    process.exit(0)
+  }
+  write({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `Helper finished: ${prompt}` }] } })
+  hook('Stop', { last_assistant_message: `Helper finished: ${prompt}` })
+  process.exit(0)
+}
+
 console.log('FAKE CLAUDE READY')
 let buf = ''
+const lines = []
+let working = false
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk) => {
   buf += chunk.replace(/\x1b\[20[01]~/g, '')
@@ -92,16 +228,58 @@ process.stdin.on('data', (chunk) => {
     const line = buf.slice(0, i).trim()
     buf = buf.slice(i + 1)
     if (!line) continue
+    // The answer to a permission dialog on screen, typed in the terminal.
+    if (answerTyped && (line === 'y' || line === 'n')) answerTyped(line)
+    else lines.push(line)
+  }
+  void work()
+})
+
+async function work() {
+  if (working) return
+  working = true
+  while (lines.length) await handle(lines.shift())
+  working = false
+}
+
+async function handle(line) {
+  {
     turn(line)
     hook('UserPromptSubmit', { prompt: line })
     if (line === 'door') console.log(run(`node "$WORKSHOP_TILE" probe echo from-session`, {}).replace(/\s+/g, ' '))
     if (line.startsWith('tile ')) console.log(run(`node "$WORKSHOP_TILE" ${line.slice(5)} 2>&1`, {}).replace(/\s+/g, ' '))
     if (line.startsWith('doc ')) console.log(run(`node "$WORKSHOP_DOC" ${line.slice(4)} 2>&1`, {}).replace(/\s+/g, ' '))
     if (line.startsWith('bash ')) console.log(`BASH ${bash(line.slice(5)).replace(/\s+/g, ' ')}`)
+    if (line.startsWith('perm ')) {
+      const command = line.slice(5)
+      const input = { command, description: 'Run a command' }
+      const denied = preTool('Bash', input, `toolu_pre_${++tools}`)
+      if (denied) console.log(`DENIED ${denied}`)
+      else {
+        console.log(`PERMISSION? ${command}`)
+        const got = await permission('Bash', input)
+        if (got === 'no') {
+          // The real CLI interrupts the turn: no status line, no Stop hook.
+          console.log('REJECTED')
+          console.log(`DONE ${line}`)
+          return
+        }
+        if (got.startsWith('deny:')) console.log(`DENIED ${got.slice(5)}`)
+        else console.log(`BASH ${runBash(command).replace(/\s+/g, ' ')} (${got})`)
+      }
+    }
+    if (line.startsWith('agent ')) agent(line.slice(6).trim())
+    if (line.startsWith('subtool ')) {
+      // A tool call by the subagent `agent <how>` started: its PreToolUse carries its agent_id (as 2.1.322's do).
+      const how = line.slice(8).trim()
+      const aid = fs.readFileSync(path.join(process.env.WORKSHOP_HOME, `fake-agent-${how}.txt`), 'utf8').trim()
+      const d = decision(hook('PreToolUse', { transcript_path: transcript, cwd: process.cwd(), permission_mode: 'default', agent_id: aid, agent_type: 'general-purpose', tool_name: 'Read', tool_input: { file_path: 'README.md' }, tool_use_id: `toolu_sub_${++tools}` }, 'Read'))
+      console.log(d && d.permissionDecision === 'deny' ? `SUBTOOL denied ${(d.permissionDecisionReason || '').split('\n')[0]}` : 'SUBTOOL ran')
+    }
     run(settings.statusLine.command, { session_id: sid, rate_limits: { five_hour: { used_percentage: 42, resets_at: Math.floor(Date.now() / 1000) + 3600 } }, cost: { total_cost_usd: 1.23 }, context_window: { used_percentage: 17 } })
     if (line === 'spoof') {
       for (const group of settings.hooks.Stop || []) for (const h of group.hooks) run(h.command, { session_id: '00000000-0000-0000-0000-000000000000', hook_event_name: 'Stop' })
     } else hook('Stop')
     console.log(`DONE ${line}`)
   }
-})
+}

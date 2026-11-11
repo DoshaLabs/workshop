@@ -2362,3 +2362,201 @@ textarea,
   outline-offset: -1.5px;
   border-radius: 10px;
 }
+
+/* The leash and permission prompts (Leash.tsx). On a session tile the card sits over the foot of
+   the conversation; in the center it is a band between the head and the terminal. */
+.leash-toggle.is-paused {
+  color: var(--ws-bg);
+  background: var(--ws-accent);
+  font-size: 11px;
+}
+.leash-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px 7px;
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-accent);
+  border-radius: 8px;
+  cursor: default;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.leash-card.is-ask {
+  border-color: var(--ws-blocked);
+}
+.leash-card.leash-tile {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  max-height: calc(100% - 12px);
+  overflow: hidden;
+  box-shadow: 0 -6px 14px color-mix(in srgb, var(--ws-bg) 70%, transparent);
+}
+.leash-card.leash-center {
+  margin: 6px 8px 0;
+  max-height: 40%;
+  overflow: auto;
+}
+.leash-head {
+  display: flex;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ws-muted);
+}
+.leash-call {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+  font-size: 12px;
+}
+.leash-tool {
+  font-family: var(--ws-font-mono);
+  font-weight: 600;
+  color: var(--ws-ink);
+  flex: none;
+}
+.leash-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ws-muted);
+}
+.leash-body {
+  margin: 0;
+  padding: 4px 6px;
+  max-height: 6.5em;
+  overflow: auto;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ws-line) 45%, transparent);
+  color: var(--ws-ink);
+  font-family: var(--ws-font-mono);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.leash-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.leash-btn {
+  padding: 2px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--ws-line);
+  background: transparent;
+  color: var(--ws-ink);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.leash-btn.is-allow {
+  border-color: var(--ws-green);
+  color: var(--ws-green);
+}
+.leash-btn.is-deny {
+  border-color: var(--ws-red);
+  color: var(--ws-red);
+}
+.leash-btn:hover:not(:disabled) {
+  background: var(--ws-line);
+}
+.leash-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.leash-note {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--ws-muted);
+}
+
+/* ---- the wolfpack (PackTile.tsx): a session's subagents and helper sessions, one tile under it,
+   in the worker coat: the theme's accent turned gold (--ws-worker, set with the theme in App.tsx). */
+.tile.pack-tile {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--ws-worker, var(--ws-accent)) 55%, var(--ws-line));
+}
+.pack-parent {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ws-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pack-parent:hover {
+  text-decoration: underline;
+}
+.pack-roster {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--ws-line);
+}
+.pack-chip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  height: 24px;
+  padding: 0 7px 0 3px;
+  border: 1px solid var(--ws-line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ws-muted);
+  font: 11px var(--ws-font);
+  cursor: pointer;
+}
+.pack-chip.is-on {
+  color: var(--ws-ink);
+  border-color: var(--ws-worker, var(--ws-accent));
+}
+.pack-chip.is-done {
+  opacity: 0.75;
+}
+.pack-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pack-line {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px 0 10px;
+  color: var(--ws-muted);
+  font-size: 11px;
+}
+.pack-kind {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pack-state {
+  flex: none;
+  font: 10px var(--ws-font-mono);
+}
+.pack-line .ghost {
+  flex: none;
+}

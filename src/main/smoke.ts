@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CH } from '@shared/ipc'
 import type { Door } from './door'
-import { installs } from './smoke-install'
+import { installs, realIndex } from './smoke-install'
 import { gitSmoke } from './smoke-git'
 import { worktreesSmoke } from './smoke-worktrees'
 import { historySmoke } from './smoke-history'
@@ -22,6 +22,8 @@ import { musicSmoke } from './smoke-music'
 import { oauthSmoke } from './smoke-oauth'
 import type { MusicHost } from './music'
 import { recorderSmoke } from './smoke-recorder'
+import { leashSmoke } from './smoke-leash'
+import { agentsSmoke, transcriptsSmoke } from './smoke-agents'
 import type { Recorder } from './recorder'
 
 interface Ctx {
@@ -114,7 +116,10 @@ async function post(port: number, path: string, body: unknown, headers: Record<s
 export async function runSmoke(ctx: Ctx): Promise<number> {
   const { win, door, liveByTile, userData, opened, addDevTile } = ctx
   const results: [string, boolean, string?][] = []
-  const check = (name: string, ok: boolean, detail?: string): void => void results.push([name, ok, detail])
+  const check = (name: string, ok: boolean, detail?: string): void => {
+    results.push([name, ok, detail])
+    checkedAt.push(Date.now())
+  }
   try {
     await waitFor('the probe tile to load', async () => {
       const g = liveByTile.get('probe')
@@ -195,7 +200,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await sleep(200)
     const wikiStore = JSON.parse(await readFile(join(userData, 'tile-data', 'wikipedia', 'store.json'), 'utf8')) as { places?: { name: string }[] }
     check('wikipedia page: the place is kept in workshop.storage', wikiStore.places?.[0]?.name === 'Lisbon', JSON.stringify(wikiStore))
-    await waitFor('the picture of the day', async () => (await wjs(`!!document.querySelector('.wiki-text .wiki-title')`)) === true)
+    await waitFor('the picture of the day', async () => (await wjs(`!!document.querySelector('.wiki-text .wiki-caption')`)) === true)
     const show = await post(door.port, '/tile/wikipedia', { op: 'show', args: ['Red fox'] }, auth)
     check('wikipedia door: show opens the article in the tile', (await wjs(`document.querySelector('.wiki-article .wiki-title')?.textContent ?? ''`)).includes('Red fox'))
     const found = await post(door.port, '/tile/wikipedia', { op: 'search', args: ['red', 'fox'] }, auth)
@@ -212,7 +217,12 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
       await realClaude(check, ctx)
       return finish(results, ctx)
     }
+    if (process.env.WORKSHOP_REAL_INDEX) {
+      await realIndex(check, ctx)
+      return finish(results, ctx)
+    }
     await sessions(check, ctx)
+    await leashSmoke(check, ctx)
     await files(check, ctx)
     await themes(check, ctx)
     await mascot(check, ctx)
@@ -236,6 +246,10 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
   return finish(results, ctx)
 }
 
+/** When each check was made, beside `results`: WORKSHOP_SMOKE_TIMES=1 prints where the run's time goes. */
+const checkedAt: number[] = []
+const runStart = Date.now()
+
 async function finish(results: [string, boolean, string?][], { win }: Ctx): Promise<number> {
   // WORKSHOP_SHOT=<file.png>: a picture of the window as the smoke left it, to eyeball the layout.
   if (process.env.WORKSHOP_SHOT) {
@@ -246,6 +260,21 @@ async function finish(results: [string, boolean, string?][], { win }: Ctx): Prom
   for (const [name, ok, detail] of results) {
     if (!ok) failed++
     console.log(`${ok ? 'ok  ' : 'FAIL'}  ${name}${ok || !detail ? '' : `  (${detail})`}`)
+  }
+  if (process.env.WORKSHOP_SMOKE_TIMES === '1') {
+    // The time before each check: what the run spent getting to it (its waits and the work before it).
+    const spans = checkedAt.map((at, i) => ({ ms: at - (i ? checkedAt[i - 1] : runStart), name: results[i][0] }))
+    console.log(`\nwhere the time went (${((Date.now() - runStart) / 1000).toFixed(1)} s in all), the slowest 25:`)
+    for (const x of [...spans].sort((a, b) => b.ms - a.ms).slice(0, 25)) console.log(`${(x.ms / 1000).toFixed(2).padStart(7)} s  ${x.name}`)
+    // By area: the name's prefix ("sessions:", "wolfpack:" …).
+    const areas = new Map<string, { ms: number; n: number }>()
+    for (const x of spans) {
+      const k = /^([^:]+):/.exec(x.name)?.[1] ?? x.name
+      const a = areas.get(k) ?? { ms: 0, n: 0 }
+      areas.set(k, { ms: a.ms + x.ms, n: a.n + 1 })
+    }
+    console.log('\nby area:')
+    for (const [k, a] of [...areas].sort((x, y) => y[1].ms - x[1].ms).slice(0, 25)) console.log(`${(a.ms / 1000).toFixed(1).padStart(7)} s  ${String(a.n).padStart(3)} checks  ${k}`)
   }
   console.log(`\n${results.length - failed} passed, ${failed} failed`)
   return failed ? 1 : 0
@@ -323,7 +352,7 @@ async function overlays(check: (name: string, ok: boolean, detail?: string) => v
     wiki.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
     wiki.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
   }
-  await waitFor('the picture to be up', async () => (await wjs(`document.body.classList.contains('wiki-picture') && !!document.querySelector('.wiki-text .wiki-title')`)) === true)
+  await waitFor('the picture to be up', async () => (await wjs(`document.body.classList.contains('wiki-picture') && !!document.querySelector('.wiki-text .wiki-caption')`)) === true)
 
   const bare = (await wjs(`workshop.openOverlay().then(() => 'opened', (e) => e.message)`)) as string
   check('overlay: refused without a click in the page', /click or key/.test(bare), bare)
@@ -783,11 +812,15 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   if (builder) await js(`window.core.kill(${JSON.stringify(builder.id)})`)
   await js(`window.core.focusSession(${JSON.stringify(id)})`)
   await sleep(200)
+  await agentsSmoke(check, ctx, id)
+  await transcriptsSmoke(check, ctx, id)
 
   if (process.env.WORKSHOP_SHOT_SESSION) {
     await sleep(800)
     await writeFile(process.env.WORKSHOP_SHOT_SESSION, (await win.webContents.capturePage()).toPNG())
   }
+  // What the terminal last showed: resume must show it again (older lines may have scrolled off).
+  const lastLine = (await screen(id)).trim().split('\n').filter((l) => l.trim()).at(-1)?.trim() ?? ''
   await js(`window.core.park(${JSON.stringify(id)})`)
   await waitFor('the session to park', async () => state().sessions.find((s) => s.id === id)?.open === false)
   check('sessions: park keeps tmux', await core.tmux.hasSession(`ws-${id}`))
@@ -796,7 +829,7 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   check('session tiles: a parked session is no longer tailed', core.transcripts.get(id) === null)
   await js(`window.core.resume(${JSON.stringify(id)})`)
   await sleep(300)
-  check('sessions: resume reattaches', state().sessions.find((s) => s.id === id)?.attached === true && (await screen(id)).includes('DONE pasted by a tile'))
+  check('sessions: resume reattaches, its screen as it was', state().sessions.find((s) => s.id === id)?.attached === true && !!lastLine && (await screen(id)).includes(lastLine), lastLine)
   await js(`window.core.kill(${JSON.stringify(id)})`)
   await sleep(300)
   const gone = await stat(started.auth).then(() => false, () => true)
@@ -837,6 +870,37 @@ async function realClaude(check: (name: string, ok: boolean, detail?: string) =>
     JSON.stringify(t?.blocks.map((b) => b.kind)) + ' ' + (core.transcripts.pathOf(made.id) ?? 'no file')
   )
   await core.sessions.kill(made.id)
+
+  // A real subagent (the wolfpack): the hooks with the parent's id, its own transcript found by
+  // looking, its sidecar read, its end by its stop hook; its conversation tailed.
+  const sub = (await win.webContents.executeJavaScript(
+    `window.core.newSession({ cwd: ${JSON.stringify(cwd)}, model: 'haiku', name: 'real-agent', prompt: 'Use the Agent tool exactly once: subagent_type general-purpose, description "read package", prompt "Read package.json with the Read tool and reply with its name field only." Then reply with what it said.' })`
+  )) as { id: string }
+  const seenAgent: string[] = []
+  await waitFor(
+    'the real subagent to finish',
+    () => {
+      const a = core.agentsState().agents.find((x) => x.parent === sub.id)
+      if (a) seenAgent.push(`${a.found ? 'found' : 'unfound'}/${a.endedAt === null ? 'running' : 'ended'}`)
+      return !!a && a.found && a.endedAt !== null
+    },
+    180_000
+  ).catch(() => undefined)
+  const ra = core.agentsState().agents.find((x) => x.parent === sub.id)
+  check('real CLI: a subagent is tracked under its session, found, and finished', !!ra && ra.found && ra.endedAt !== null && ra.type === 'general-purpose' && ra.description === 'read package', `${JSON.stringify(ra)} ${[...new Set(seenAgent)].join(' → ')}`)
+  const rt = ra ? core.transcripts.get(`agent:${ra.id}`) : null
+  check('real CLI: its own conversation is tailed (its brief, its Read)', !!rt && rt.blocks[0]?.kind === 'user' && rt.blocks.some((b) => b.kind === 'tool' && b.name === 'Read'), JSON.stringify(rt?.blocks.map((b) => `${b.kind}:${b.kind === 'tool' ? b.name : ''}`)))
+
+  // A real helper: `claude --bg` started by core for that session, its hooks back by its own token.
+  const rec = core.sessions.find(sub.id)!
+  const helper = (await core.helpers.call(rec, { op: 'start', prompt: 'Reply with exactly: OK', name: 'real-helper', model: 'haiku' }).catch((e: Error) => ({ error: e.message }))) as { id?: string; error?: string }
+  await waitFor('the real helper to finish', () => !!core.agentsState().agents.find((a) => a.id === helper.id && a.found && a.endedAt !== null), 120_000).catch(() => undefined)
+  const rh = core.agentsState().agents.find((a) => a.id === helper.id)
+  check('real CLI: a helper (claude --bg) starts, reports by its own token, and finishes', !!rh && rh.found && rh.endedAt !== null && /\bOK\b/.test(rh.lastText ?? ''), JSON.stringify(rh ?? helper))
+  const rht = helper.id ? core.transcripts.get(`agent:${helper.id}`) : null
+  check('real CLI: the helper\'s conversation is found by its session id and tailed', !!rht && rht.found && rht.blocks.some((b) => b.kind === 'text' && /\bOK\b/.test(b.text)), JSON.stringify(rht?.blocks))
+  if (helper.id) await core.helpers.stop(helper.id)
+  await core.sessions.kill(sub.id)
 }
 
 /**
@@ -1175,6 +1239,11 @@ async function restart(check: (name: string, ok: boolean, detail?: string) => vo
   await js(`window.core.ptyInput(${JSON.stringify(id)}, 'before the restart\\r'); true`)
   await waitFor('its turn', async () => (await screen(id)).includes('DONE before the restart'))
   await waitFor('its transcript', () => (core.transcripts.get(id)?.blocks.length ?? 0) > 0)
+  // The leash across the restart: paused, a tool call held when this core goes (main/leash.ts).
+  await js(`window.core.leash(${JSON.stringify(id)}, 'pause')`)
+  await js(`window.core.ptyInput(${JSON.stringify(id)}, 'bash echo across-the-restart\\r'); true`)
+  const heldBefore = await waitFor('the held call', () => (core.sessions.view(id)?.leash.held.length ?? 0) === 1, 8000).then(() => true, () => false)
+  check('restart: a paused session’s call is held before core goes', heldBefore)
 
   core.stop()
   door.stop()
@@ -1206,7 +1275,10 @@ async function restart(check: (name: string, ok: boolean, detail?: string) => vo
 export async function runRestarted(ctx: Ctx): Promise<number> {
   const { win, core } = ctx
   const results: [string, boolean, string?][] = []
-  const check = (name: string, ok: boolean, detail?: string): void => void results.push([name, ok, detail])
+  const check = (name: string, ok: boolean, detail?: string): void => {
+    results.push([name, ok, detail])
+    checkedAt.push(Date.now())
+  }
   const js = (code: string): Promise<any> => win.webContents.executeJavaScript(code)
   const screen = async (id: string): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
   const id = process.env.WORKSHOP_SMOKE_SURVIVOR ?? ''
@@ -1220,6 +1292,14 @@ export async function runRestarted(ctx: Ctx): Promise<number> {
       check('it is reattached', await waitFor('the pty', () => !!view()?.attached, 5000).then(() => true, () => false))
       check('its conversation is read again', await waitFor('the transcript', () => userTexts().includes('before the restart'), 5000).then(() => true, () => false), JSON.stringify(userTexts()))
       check('its tile is drawn', await waitFor('the tile', async () => (await js(`!!document.querySelector('[data-session="${id}"]')`)) === true, 5000).then(() => true, () => false))
+      // The leash: the pause stood, the held call found this core and is held again; resume runs it.
+      check('it is still paused', view()?.leash.paused === true)
+      const heldAgain = await waitFor('the held call to come back', () => (view()?.leash.held.length ?? 0) === 1, 8000).then(() => true, () => false)
+      const before = (await screen(id)).includes('BASH across-the-restart')
+      check('the call held when core went is held by this one, not run', heldAgain && !before, JSON.stringify(view()?.leash))
+      await js(`window.core.leash(${JSON.stringify(id)}, 'resume')`)
+      check('resume runs it', await waitFor('the held call to run', async () => (await screen(id)).includes('BASH across-the-restart'), 8000).then(() => true, () => false))
+      await waitFor('its turn', async () => (await screen(id)).includes('DONE bash echo across-the-restart'), 5000).catch(() => undefined)
       await js(`window.core.ptyInput(${JSON.stringify(id)}, 'after the restart\\r'); true`)
       const typed = await waitFor('the turn', async () => (await screen(id)).includes('DONE after the restart'), 10_000).then(() => true, () => false)
       // The hooks find the new core through <profile>/port, with the token kept on disk.

@@ -8,14 +8,14 @@
 // draws one still frame per change. 2D canvases only: terminals need the WebGL contexts.
 
 import { useEffect, useRef, useState } from 'react'
-import { BOX, FLARE_MS, MODES, TAU, drawKnot, knotMode, knotPalette, wrapClock, type KnotMode, type KnotPalette, type KnotTheme } from '@shared/knot'
+import { BOX, FLARE_MS, MODES, TAU, drawKnot, knotMode, knotPalette, wrapClock, type KnotCoat, type KnotMode, type KnotPalette, type KnotTheme } from '@shared/knot'
 import type { SessionStatus } from '@shared/sessions'
 import { useAttentionCalls } from './mascot-store'
 
 // ── Theme colours ────────────────────────────────────────────────────────────
 
 const KEYS: (keyof KnotTheme)[] = ['bg', 'panel', 'ink', 'muted', 'accent', 'busy', 'idle', 'blocked', 'starting', 'dead']
-let palettes = new Map<KnotMode, KnotPalette>()
+let palettes = new Map<string, KnotPalette>()
 let theme: KnotTheme | null = null
 let themeKey = ''
 
@@ -31,10 +31,10 @@ function readTheme(): void {
   for (const k of knots) k.dirty = true
   wake()
 }
-const paletteFor = (m: KnotMode): KnotPalette | null => {
+const paletteFor = (m: KnotMode, coat: KnotCoat): KnotPalette | null => {
   if (!theme) return null
-  let p = palettes.get(m)
-  if (!p) palettes.set(m, (p = knotPalette(theme, m)))
+  let p = palettes.get(`${m}:${coat}`)
+  if (!p) palettes.set(`${m}:${coat}`, (p = knotPalette(theme, m, coat)))
   return p
 }
 // The window applies a theme by setting variables on <html> (App.tsx applyTheme), at start and on every change.
@@ -47,6 +47,7 @@ interface Live {
   ctx: CanvasRenderingContext2D
   S: number
   mode: KnotMode
+  coat: KnotCoat
   /** In loops, wrapped at P loops (where the knot closes). */
   clock: number
   size: number
@@ -118,7 +119,7 @@ function draw(k: Live, now: number): void {
   k.size = still ? target : k.size + (target - k.size) * (1 - Math.exp(-dt / 0.12))
   if (Math.abs(k.size - target) < 0.004) k.size = target
   k.dirty = false
-  const palette = paletteFor(k.mode)
+  const palette = paletteFor(k.mode, k.coat)
   if (!palette) return
   const dpr = Math.min(2, window.devicePixelRatio || 1)
   const px = Math.round(k.S * dpr)
@@ -154,7 +155,7 @@ reduced.addEventListener('change', () => {
  * One Knot in a square box of `size` CSS pixels. `attentionOf`: flare when that session calls for attention; `'*'`
  * flares on any call (the app's mark). Without a 2D canvas it falls back to the status dot.
  */
-export function KnotCanvas({ mode, size, attentionOf, status, className = '', title }: { mode: KnotMode; size: number; attentionOf?: string; status?: SessionStatus; className?: string; title?: string }) {
+export function KnotCanvas({ mode, size, attentionOf, status, coat = 'own', className = '', title }: { mode: KnotMode; size: number; attentionOf?: string; status?: SessionStatus; coat?: KnotCoat; className?: string; title?: string }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const live = useRef<Live | null>(null)
   const [noCanvas, setNoCanvas] = useState(false)
@@ -166,7 +167,7 @@ export function KnotCanvas({ mode, size, attentionOf, status, className = '', ti
       setNoCanvas(true)
       return
     }
-    const k: Live = { canvas, ctx, S: size, mode, clock: Math.random() * 3, size: MODES[mode].size, flareAt: -Infinity, visible: true, dirty: true, last: 0 }
+    const k: Live = { canvas, ctx, S: size, mode, coat, clock: Math.random() * 3, size: MODES[mode].size, flareAt: -Infinity, visible: true, dirty: true, last: 0 }
     live.current = k
     knots.add(k)
     io.observe(canvas)
@@ -186,9 +187,10 @@ export function KnotCanvas({ mode, size, attentionOf, status, className = '', ti
     if (!k) return
     k.mode = mode
     k.S = size
+    k.coat = coat
     k.dirty = true
     wake()
-  }, [mode, size])
+  }, [mode, size, coat])
 
   useAttentionCalls((id) => {
     const k = live.current
@@ -199,7 +201,7 @@ export function KnotCanvas({ mode, size, attentionOf, status, className = '', ti
   })
 
   if (noCanvas) return <span className={`dot ${status ?? 'idle'}`} />
-  return <canvas ref={ref} className={`knot ${mode} ${className}`} data-mode={mode} style={{ width: size, height: size }} role="img" aria-label={title} title={title} />
+  return <canvas ref={ref} className={`knot ${mode} ${className}`} data-mode={mode} data-coat={coat} style={{ width: size, height: size }} role="img" aria-label={title} title={title} />
 }
 
 const LABEL: Record<KnotMode, string> = {
@@ -211,9 +213,9 @@ const LABEL: Record<KnotMode, string> = {
 }
 
 /** A session's status as a Knot. */
-export function SessionKnot({ id, status, attention }: { id?: string; status: SessionStatus; attention: boolean }) {
+export function SessionKnot({ id, status, attention, coat }: { id?: string; status: SessionStatus; attention: boolean; coat?: KnotCoat }) {
   const mode = knotMode(status, attention)
-  return <KnotCanvas mode={mode} size={BOX.head} attentionOf={id} status={status} className={`session-knot ${status}`} title={LABEL[mode]} />
+  return <KnotCanvas mode={mode} size={BOX.head} attentionOf={id} status={status} coat={coat} className={`session-knot ${status}`} title={LABEL[mode]} />
 }
 
 /** The app's mark, top left beside the window's buttons, the top bar's full height: full size and fast while any session works. */

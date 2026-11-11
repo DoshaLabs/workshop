@@ -2,7 +2,7 @@
   "id": "probe",
   "name": "Probe",
   "version": "0.0.1",
-  "workshop": "^1",
+  "workshop": "^1.7",
   "author": "workshop smoke test",
   "hint": "Tries to get out of the sandbox; loaded only by npm run smoke",
   "entry": "dist/index.html",
@@ -19,7 +19,8 @@
     },
     "files": true,
     "sessions": "write",
-    "usage": true
+    "usage": true,
+    "transcripts": true
   },
   "multiple": true
 }

@@ -5,11 +5,11 @@
 import { dialog, ipcMain, session, type BrowserWindow } from 'electron'
 import { readFile, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { CH } from '@shared/ipc'
 import { MENU, type IndexState, type InstallRequest } from '@shared/tile-menu'
-import { INDEX_MAX_BYTES, checkIndex } from '@shared/tile-index'
+import { indexSource } from '@shared/tile-index'
 import { Installer } from './install'
+import { IndexReader, isLocalIndex } from './index-read'
 import { MAX_INSTANCES, armSession, coreFile, partitionOf, readTile, sessionsFor, type Registry, type Tile } from './tiles'
 import type { SettingsStore } from './settings'
 
@@ -25,36 +25,9 @@ export interface MenuDeps {
   smoke: boolean
 }
 
-/** The index's address: WORKSHOP_INDEX (tests, a local index) wins over settings. */
-function indexSource(deps: MenuDeps): { source: string | null; fromEnv: boolean } {
-  if (process.env.WORKSHOP_INDEX) return { source: process.env.WORKSHOP_INDEX, fromEnv: true }
-  return { source: deps.settings().get().index ?? null, fromEnv: false }
-}
-
-const isLocal = (src: string | null): boolean => !!src && (src.startsWith('/') || src.startsWith('file:'))
-
-/** Reads and checks the index. Never throws: a problem is part of the answer, for the tab to show. */
-export async function readIndex(source: string | null, fromEnv = false): Promise<IndexState> {
-  const state: IndexState = { source, fromEnv, entries: [], errors: [], problem: null }
-  if (!source) return state
-  let text: string
-  try {
-    if (source.startsWith('https://')) {
-      const res = await fetch(source, { signal: AbortSignal.timeout(10_000), redirect: 'follow' })
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
-      if (Number(res.headers.get('content-length') ?? 0) > INDEX_MAX_BYTES) throw new Error('larger than an index may be')
-      text = await res.text()
-    } else if (isLocal(source)) {
-      text = await readFile(source.startsWith('file:') ? fileURLToPath(source) : source, 'utf8')
-    } else throw new Error('an index is an https URL or a file on this Mac')
-    if (text.length > INDEX_MAX_BYTES) throw new Error('larger than an index may be')
-    const checked = checkIndex(JSON.parse(text), { local: isLocal(source) })
-    state.entries = checked.entries
-    state.errors = checked.errors
-  } catch (err) {
-    state.problem = `could not read the index: ${(err as Error).message}`
-  }
-  return state
+/** The index's address: WORKSHOP_INDEX (tests, a local index), then settings, then DoshaLabs' own (never in a smoke run). */
+function sourceOf(deps: MenuDeps): { source: string | null; fromEnv: boolean } {
+  return indexSource({ env: process.env.WORKSHOP_INDEX, setting: deps.settings().get().index, smoke: deps.smoke })
 }
 
 /** The ids of the tiles that ship with workshop, read from tiles/ itself: no installed tile may take one, even one that failed to load. */
@@ -75,6 +48,7 @@ async function builtinIds(): Promise<Set<string>> {
 
 export async function startTileMenu(deps: MenuDeps): Promise<{ installer: Installer }> {
   const builtin = await builtinIds()
+  const reader = new IndexReader()
   const stagingDir = join(deps.userData, 'tile-staging')
   // Clones left waiting when core last quit: nobody will answer for them now.
   await rm(stagingDir, { recursive: true, force: true })
@@ -82,7 +56,7 @@ export async function startTileMenu(deps: MenuDeps): Promise<{ installer: Instal
     tilesDir: join(deps.userData, 'tiles'),
     stagingDir,
     takenBy: (id) => (builtin.has(id) ? 'core' : deps.registry().tiles.get(id)?.source === 'dev' ? 'dev' : null),
-    local: () => deps.smoke || isLocal(indexSource(deps).source)
+    local: () => deps.smoke || isLocalIndex(sourceOf(deps).source)
   })
   const changed = (): void => deps.win()?.webContents.send(CH.tilesChanged)
   const coreOnly = (e: Electron.IpcMainInvokeEvent): void => {
@@ -106,14 +80,15 @@ export async function startTileMenu(deps: MenuDeps): Promise<{ installer: Instal
 
   ipcMain.handle(MENU.state, async (e) => {
     coreOnly(e)
-    const src = indexSource(deps)
-    return { installed: await installer.list(), index: await readIndex(src.source, src.fromEnv) }
+    const src = sourceOf(deps)
+    const [installed, index] = await Promise.all([installer.list(), reader.read(src.source, src.fromEnv)])
+    return { installed, index }
   })
   ipcMain.handle(MENU.setIndex, async (e, source: unknown) => {
     coreOnly(e)
     await deps.settings().patch({ index: typeof source === 'string' ? source.trim() : '' })
-    const src = indexSource(deps)
-    return readIndex(src.source, src.fromEnv)
+    const src = sourceOf(deps)
+    return reader.read(src.source, src.fromEnv, true)
   })
   ipcMain.handle(MENU.prepare, (e, req: InstallRequest) => {
     coreOnly(e)
