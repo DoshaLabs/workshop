@@ -85,6 +85,8 @@ const core = {
   readDoc: (path: string, cwd?: string): Promise<PreviewDoc> => ipcRenderer.invoke(CH.previewRead, path, cwd),
   writeDoc: (path: string, text: string, mtime: number): Promise<PreviewWrite> => ipcRenderer.invoke(CH.previewWrite, path, text, mtime),
   tickTask: (path: string, line: number, checked: boolean, mtime: number): Promise<PreviewWrite> => ipcRenderer.invoke(CH.previewTask, path, line, checked, mtime),
+  /** A file in the Mac app that owns its type (a ⌘-click on a path; HTML lands in the browser). False if refused. */
+  openFileApp: (path: string, cwd?: string): Promise<boolean> => ipcRenderer.invoke(CH.previewOpenApp, path, cwd),
   /** Watch the file the pane shows (null: none); a change comes back through onDocChanged. */
   watchDoc: (path: string | null): Promise<void> => ipcRenderer.invoke(CH.previewWatch, path),
   onDocChanged: (fn: (path: string, mtime: number) => void) => on(CH.previewChanged, fn),

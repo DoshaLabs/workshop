@@ -151,8 +151,8 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   tails each open session's transcript (`src/main/transcript.ts`, parser in
   `src/shared/transcript.ts`), finding `<session id>.jsonl` under the CLI's config folder by
   name. The focused session's terminal is in the center and its tile leaves the column, as in
-  deck (the center's head has its ⌘ number and park ×); a conversation is pinned to the latest and
-  never scrolls itself (the wheel is the column's; its text a little greyer than the ink); files
+  deck (the center's head has its ⌘ number and park ×); nothing in a conversation is a link (links, paths and pictures are text; Colin, 11 Nov 2026);
+  a conversation is pinned to the latest and never scrolls itself (the wheel is the column's; its text a little greyer than the ink); files
   dropped on a session (`drop.ts`) are pasted as paths on the terminal or a tile; parked
   sessions are a Closed card at the foot. A render error stays in its piece (`Guard.tsx`).
 - Usage: the top bar's 5-hour and weekly meters are always there (a dash and a tooltip until a
@@ -178,7 +178,9 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   points at, in the center. Markdown through the tree with live task boxes (one character
   written), code and text in mono with line numbers, `edit` and ⌘S; writes locked to the mtime
   read; the file watched and reloaded unless there are unsaved edits; folders, binaries and
-  files over 2 MB refused with a note. Opened by a click on a path in a conversation
+  files over 2 MB refused with a note. Opened by a click on a path in the focused session's terminal (an xterm
+  link provider and `file://` OSC 8 links, `terminals.ts`; ⌘-click, and any HTML file, opens it
+  in its own Mac app instead, never anything that would run) or in a previewed markdown file
   (`src/shared/paths.ts`) or `node "$WORKSHOP_DOC" open <path> [--line N]`
   (`bin/workshop-doc.mjs`, POST /core/doc with the session's token; skill `workshop:doc` in core's
   own `plugin/`).

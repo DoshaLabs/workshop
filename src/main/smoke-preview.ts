@@ -130,22 +130,40 @@ export async function previewSmoke(check: Check, o: { win: BrowserWindow; door: 
   await js(`document.querySelector('.preview > .head .ghost').click(); true`)
   await waitFor(async () => (await terminals()) === 1, 3000)
 
-  // ---- a click on a path in the conversation: the launcher in the center, the session a tile
-  await turn('notes/a.md')
+  // ---- a path printed in the center terminal is a link to the preview pane
+  const lines = (await turn('notes/a.md')).split('\n')
+  const row = lines.findIndex((l) => l.includes('notes/a.md'))
+  const col = row < 0 ? -1 : lines[row].indexOf('notes/a.md') + 2
+  await js(`(() => {
+    const scr = document.querySelector('.term-host .xterm-screen'), r = scr.getBoundingClientRect()
+    const rows = ${lines.length}
+    const ch = r.height / rows
+    const probe = document.querySelector('.term-host .xterm-char-measure-element')
+    const cw = probe ? probe.getBoundingClientRect().width / Math.max(1, probe.textContent.length) : 0
+    const at = { clientX: r.left + (${col} + 0.5) * cw, clientY: r.top + (${row} + 0.5) * ch, bubbles: true, button: 0 }
+    scr.dispatchEvent(new MouseEvent('mousemove', at))
+    window.__termAt = at
+    return true
+  })()`)
+  await sleep(300)
+  await js(`(() => { const scr = document.querySelector('.term-host .xterm-screen'), at = window.__termAt
+    scr.dispatchEvent(new MouseEvent('mousedown', at)); scr.dispatchEvent(new MouseEvent('mouseup', at)); scr.dispatchEvent(new MouseEvent('click', at)); return true })()`)
+  await waitFor(async () => (await shown()) === join(cwd, 'notes', 'a.md'), 3000)
+  check('preview: a path in the center terminal opens, resolved against the session\'s folder', (await shown()) === join(cwd, 'notes', 'a.md'), `${String(await shown())} row ${row} col ${col}`)
+  await js(`document.querySelector('.preview > .head .ghost')?.click(); true`)
+  await waitFor(async () => (await terminals()) === 1, 3000)
+
+  // ⌘-click hands a file to its Mac app; never anything that would run (not tried with a real file: it would open an app)
+  await writeFile(join(cwd, 'run.sh'), '#!/bin/sh\n', { mode: 0o755 })
+  await writeFile(join(cwd, 'tool'), 'x', { mode: 0o755 })
+  const refused = await js(`Promise.all(['run.sh', 'tool', 'nowhere.md', 'X.app'].map((p) => window.core.openFileApp(p, ${JSON.stringify(cwd)})))`)
+  check('preview: ⌘-click refuses scripts, executables, apps and missing files', JSON.stringify(refused) === '[false,false,false,false]', JSON.stringify(refused))
+
+  // ---- a session tile has no links (Colin, 11 Nov 2026): a path in its prose is text
   await js(`document.querySelector('.session-plus').click(); true`)
   const tile = `document.querySelector('.session-tile[data-session="${id}"]')`
-  await waitFor(async () => (await js(`!!${tile}?.querySelector('.chat-text a.md-path')`)) === true)
-  await js(`[...${tile}.querySelectorAll('.chat-text a.md-path')].pop().click(); true`)
-  await waitFor(async () => (await shown()) === join(cwd, 'notes', 'a.md'))
-  check('preview: a path in Claude\'s prose opens, resolved against the session\'s folder', (await shown()) === join(cwd, 'notes', 'a.md'), String(await shown()))
-  check('preview: the click does not open the session\'s terminal', (await terminals()) === 0 && core.sessions.getState().focus === id)
-  await js(`document.querySelector('.preview > .head .ghost').click(); true`)
-  await waitFor(async () => (await js(`!!document.querySelector('.launcher')`)) === true, 2000)
-  check('preview: closing it returns the center to the launcher it covered', (await js(`!!document.querySelector('.launcher')`)) === true)
-  await js(`[...${tile}.querySelectorAll('.chat-tool a.md-path')].pop()?.click(); true`)
-  await waitFor(async () => (await shown()) === join(cwd, 'README.md'))
-  check('preview: a tool line\'s file opens', (await shown()) === join(cwd, 'README.md'), String(await shown()))
-  await js(`document.querySelector('.preview > .head .ghost').click(); true`)
+  await waitFor(async () => (await js(`[...(${tile}?.querySelectorAll('.chat-text') ?? [])].some((e) => e.textContent.includes('notes/a.md'))`)) === true)
+  check('preview: a session tile draws paths and links as text, never as links', (await js(`${tile}.querySelectorAll('.chat a').length`)) === 0)
 
 }
 

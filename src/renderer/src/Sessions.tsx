@@ -182,7 +182,7 @@ export function FocusPane({ session, usage, n }: { session: SessionView; usage: 
   const drop = useFileDrop(session.id)
   useLayoutEffect(() => {
     const host = box.current!
-    mount(session.id, host)
+    mount(session.id, host, session.cwd)
     focusTerminal(session.id)
     const ro = new ResizeObserver(() => fit(session.id))
     ro.observe(host)

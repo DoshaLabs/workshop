@@ -165,6 +165,7 @@ export const CH = {
   previewWrite: 'ws:core:preview-write',
   previewTask: 'ws:core:preview-task',
   previewWatch: 'ws:core:preview-watch',
+  previewOpenApp: 'ws:core:preview-open-app', // ⌘-click on a path: the file in its own Mac app
   previewOpen: 'ws:core:preview-open', // main → window: a session asked for a file (the doc CLI)
   previewChanged: 'ws:core:preview-changed', // main → window: the watched file changed on disk
   dropKeep: 'ws:core:drop-keep',

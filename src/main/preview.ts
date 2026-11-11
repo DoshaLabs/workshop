@@ -14,7 +14,7 @@
 // which POSTs to /core/doc with the session's own token. Only a session may; the window is told
 // to show the file.
 
-import { ipcMain, type BrowserWindow } from 'electron'
+import { ipcMain, shell, type BrowserWindow } from 'electron'
 import { unwatchFile, watchFile, type Stats } from 'node:fs'
 import { chmod, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { randomBytes } from 'node:crypto'
@@ -166,6 +166,16 @@ export function startPreview(o: { win: () => BrowserWindow | null; handle: (ch: 
   o.handle(CH.previewWrite, (path: string, text: string, mtime: number) => writeDoc(String(path), String(text), Number(mtime)))
   o.handle(CH.previewTask, (path: string, line: number, checked: boolean, mtime: number) => tickTask(String(path), Number(line), checked === true, Number(mtime)))
   o.handle(CH.previewWatch, (path: string | null) => watch(path))
+  // ⌘-click on a path (deck's): the file in the app that owns its type. Never anything that would
+  // run: an app bundle, a script macOS opens in Terminal, or an executable file.
+  o.handle(CH.previewOpenApp, async (path: string, cwd?: string) => {
+    const p = resolveRef(String(path), typeof cwd === 'string' ? cwd : undefined)
+    const st = await stat(p).catch(() => null)
+    if (!st) return false
+    if (/\.(app|command|tool|terminal|workflow|action|scpt|scptd|applescript|pkg|mpkg|dmg|sh|zsh|bash|webloc|inetloc|fileloc)\/?$/i.test(p)) return false
+    if (st.isFile() && (st.mode & 0o111) !== 0) return false
+    return (await shell.openPath(p)) === ''
+  })
 
   return {
     async call(name, payload, session) {

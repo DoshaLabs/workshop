@@ -1068,13 +1068,6 @@ button {
   background: color-mix(in srgb, var(--ws-ink) 8%, transparent);
   font: 11px var(--ws-font-mono);
 }
-.chat-text a {
-  color: var(--ws-accent);
-  text-decoration: none;
-}
-.chat-text a:hover {
-  text-decoration: underline;
-}
 .md-code {
   margin: 4px 0 6px;
   padding: 6px 8px;
@@ -1741,7 +1734,7 @@ button {
   word-break: break-all;
 }
 
-/* -- file references in a conversation: a link to the preview pane */
+/* -- file references in a markdown file: a link to the preview pane */
 a.md-path {
   color: var(--ws-accent);
   text-decoration: none;
@@ -1749,16 +1742,6 @@ a.md-path {
 }
 a.md-path:hover {
   text-decoration: underline;
-}
-.chat-text a.md-path code,
-.chat-user a.md-path {
-  color: var(--ws-accent);
-}
-.chat-tool a.chat-tool-label.md-path {
-  color: inherit;
-}
-.chat-tool a.chat-tool-label.md-path:hover {
-  color: var(--ws-accent);
 }
 
 /* -- drag to reorder: the grip on a tile's head, the bar where it will land, and the pages let go */

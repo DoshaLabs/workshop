@@ -1,5 +1,6 @@
 // Markdown as elements (never HTML), from the tree @shared/markdown parses. Links open in the
-// browser. Two things are optional, for whoever draws it:
+// browser, unless `links` is false (a session tile: its text is never clickable). Two things are
+// optional, for whoever draws it:
 // - `onPath`: file references become links that open in the preview pane (a session's
 //   conversation passes it; shared/paths.ts says what counts as one).
 // - `onTask`: task boxes are clickable and report their source line (the preview pane writes the
@@ -14,12 +15,12 @@ export interface MdHandlers {
   onTask?: (line: number, checked: boolean) => void
 }
 
-export function Markdown({ text, onPath, onTask, big = false }: MdHandlers & { text: string; /** Headings at their own size (the preview pane), not shrunk for a tile. */ big?: boolean }) {
-  const h: Ctx = { onPath, onTask, big }
+export function Markdown({ text, onPath, onTask, big = false, links = true }: MdHandlers & { text: string; /** Headings at their own size (the preview pane), not shrunk for a tile. */ big?: boolean; /** False: links are drawn as their text. */ links?: boolean }) {
+  const h: Ctx = { onPath, onTask, big, links }
   return <>{parseMarkdown(text).map((b, k) => block(b, k, h))}</>
 }
 
-type Ctx = MdHandlers & { big: boolean }
+type Ctx = MdHandlers & { big: boolean; links: boolean }
 
 function block(b: MdBlock, k: number, h: Ctx): ReactNode {
   switch (b.t) {
@@ -134,6 +135,7 @@ function inline(nodes: Inline[], h: Ctx): ReactNode[] {
       case 'i':
         return <em key={k}>{inline(n.kids, h)}</em>
       case 'a':
+        if (!h.links) return <span key={k}>{inline(n.kids, h)}</span>
         return (
           <a
             key={k}

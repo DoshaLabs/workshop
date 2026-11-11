@@ -153,7 +153,7 @@ function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number
       </header>
       <div className="session-body">
         <Guard what="This conversation" reset={t}>
-          <ChatView id={s.id} status={s.status} attention={s.attention} cwd={s.cwd} />
+          <ChatView id={s.id} status={s.status} attention={s.attention} />
         </Guard>
       </div>
     </article>
