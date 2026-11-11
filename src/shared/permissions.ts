@@ -13,6 +13,7 @@ export function permissionWords(p: Permissions): string[] {
   if (p.backend) out.push(FULL_ACCESS)
   if (p.transcripts) out.push('read your sessions’ conversations')
   if (p.net?.length) out.push(`reach ${p.net.join(', ')}`)
+  if (p.oauth?.length) out.push(`sign you in at ${p.oauth.join(', ')}`)
   if (p.camera) out.push('use the camera')
   if (p.microphone) out.push('use the microphone')
   if (p.sessions === 'write') out.push('see your sessions and type into them')
@@ -39,6 +40,7 @@ export function permissionKeys(p: Permissions): string[] {
   if (p.sessions) keys.push(`sessions:${p.sessions}`)
   for (const op of p.door?.ops ?? []) keys.push(`door:${op}`)
   for (const h of p.net ?? []) keys.push(`net:${h}`)
+  for (const h of p.oauth ?? []) keys.push(`oauth:${h}`)
   return keys.sort()
 }
 
@@ -57,16 +59,19 @@ export function permissionChange(before: Permissions, after: Permissions): Permi
     const p: Permissions = {}
     const ops: string[] = []
     const net: string[] = []
+    const oauth: string[] = []
     for (const k of from) {
       if (!not.has(k)) {
         if (k.startsWith('door:')) ops.push(k.slice(5))
         else if (k.startsWith('net:')) net.push(k.slice(4))
+        else if (k.startsWith('oauth:')) oauth.push(k.slice(6))
         else if (k.startsWith('sessions:')) p.sessions = k.slice(9) as 'read' | 'launch' | 'write'
         else (p as Record<string, boolean>)[k] = true
       }
     }
     if (ops.length) p.door = { ops, timeoutMs: 0 }
     if (net.length) p.net = net
+    if (oauth.length) p.oauth = oauth
     return p
   }
   return { added: permissionWords(only(b, a)), removed: permissionWords(only(a, b)) }

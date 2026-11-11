@@ -58,6 +58,7 @@ user is shown the list.
 | `"camera": true`, `"microphone": true` | `navigator.mediaDevices.getUserMedia` |
 | `"overlay": true` | `workshop.openOverlay()`: the page over the whole window, e.g. a lightbox. Needs `"workshop": "^1.1"` |
 | `"music": true` | `workshop.music`: what Spotify or Music is playing, with its artwork, and play, pause, skip, seek, volume. Needs `"workshop": "^1.3"`. No `net` needed for the artwork |
+| `"oauth": ["accounts.example.com"]` | `workshop.oauth`: sign the user in with OAuth; workshop catches the browser's redirect and hands you the code. Same host rules as `net`. Needs `"workshop": "^1.5"`; the token endpoint must also be in `net` |
 
 There is no permission for running programs, writing files, or reading a path the user did not
 pick. If the tile needs one of those, say so plainly instead of working around it.
@@ -135,6 +136,11 @@ await workshop.music.seek(90_000)              // milliseconds, a whole number
 await workshop.music.setVolume(60)             // the app's own volume, 0 to 100
 await workshop.music.playUri('spotify:track:4uLU6hMCjMI75M1A2tKUQC')  // Spotify only; see below
 
+// "oauth": [hosts]. Only there when declared. See "Signing in" below.
+workshop.oauth.redirectUri                  // 'http://127.0.0.1:47800/oauth/<your id>/callback': register this with the provider
+const { query } = await workshop.oauth.authorize(url)  // only in answer to a click; 'code=…' or 'error=access_denied'
+await workshop.oauth.cancel()               // ends a pending sign-in (authorize rejects with 'oauth: cancelled')
+
 const picked = await workshop.files.pick({ folder: true, title: 'Your games' })  // { handle, name, kind } or null
 await workshop.files.list()                 // what was picked before (kept across restarts)
 await workshop.files.entries(handle, 'sub/folder')   // [{ name, kind, size }]
@@ -168,10 +174,38 @@ btn.onclick = () => workshop.music.toggle().catch((e) => (title.textContent = e.
 - `art` is null until workshop has the picture, then the watcher fires again with it. It is on your
   tile's own origin, so the CSP needs only `img-src 'self'`.
 - `playUri` takes only the form Spotify's "Share › Copy Spotify URI" gives:
-  `spotify:track|album|playlist|artist|episode|show:<22 letters and digits>`. There is no search
-  and no playlist listing (that is Spotify's web API, which needs an account key): a tile can keep
-  URIs the user pastes in `workshop.storage`.
+  `spotify:track|album|playlist|artist|episode|show:<22 letters and digits>`. Search and
+  playlists are Spotify's web API, which needs the user signed in (see "Signing in").
 - Shuffle and repeat are read, not set.
+
+**Signing in (OAuth).** A tile cannot run a server or reach `127.0.0.1`, so a desktop sign-in's
+redirect has nowhere to land. Workshop catches it for you:
+
+```js
+// On a click (workshop refuses authorize() otherwise):
+const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)))
+const challenge = base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))))
+const u = new URL('https://accounts.example.com/authorize')
+u.search = new URLSearchParams({ client_id: CLIENT_ID, response_type: 'code', redirect_uri: workshop.oauth.redirectUri,
+  code_challenge: challenge, code_challenge_method: 'S256', scope: '…' })
+const { query } = await workshop.oauth.authorize(u.toString())
+const code = new URLSearchParams(query).get('code')       // null if the user said no: see `error`
+// Exchange it yourself (the token host must be in permissions.net and the CSP's connect-src):
+const tokens = await (await fetch('https://accounts.example.com/api/token', { method: 'POST',
+  body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: workshop.oauth.redirectUri, client_id: CLIENT_ID, code_verifier: verifier }) })).json()
+await workshop.storage.set('tokens', tokens)
+```
+
+- `redirectUri` is your tile's own, the same on every Mac. Register exactly that string with the
+  provider. It names your tile's id, so another tile can never use your app's client id.
+- Workshop requires the authorization-code flow with PKCE (`response_type=code`,
+  `code_challenge_method=S256`) and sets `state` itself; it removes `state` from what you get back.
+- The page the browser lands on is workshop's ("You can close this tab"). A sign-in waits 5
+  minutes, then rejects with `oauth: timed out`. A new `authorize()` cancels your earlier one.
+- It works only with a provider that lets an app sign in without a client secret (a "public
+  client" with PKCE) and lets a web page call its token endpoint (CORS). Spotify does. A provider
+  that needs a secret cannot be used from a tile: a secret shipped in a tile is published.
+- Keep the refresh token in `workshop.storage`; workshop never sees your tokens.
 
 Web storage (`localStorage`, IndexedDB) works and is the tile's own, but `workshop.storage` is
 what survives a reinstall and is shared between instances. Keep real data there.

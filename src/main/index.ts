@@ -6,6 +6,7 @@ import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protoco
 import { existsSync, mkdtempSync, readFileSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { createServer as createNetServer, type AddressInfo } from 'node:net'
 import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
 import { BRIDGE_VERSION } from '@shared/manifest'
 import { FONT_VARS } from '@shared/fonts'
@@ -27,6 +28,7 @@ import { Backends, utilitySpawn, type BackendTile, type UtilityProcessLike } fro
 import { backendEnv } from './backend-protocol'
 import { shellEnv } from './env'
 import { startMusic, type MusicBridge } from './music-bridge'
+import { OAUTH_PORT, OAuthHost } from './oauth'
 import { fetchSpotifyArt, osascriptRunner } from './music'
 import { smokeMusicIo } from './smoke-music'
 import { Recorder } from './recorder'
@@ -79,6 +81,8 @@ let core: CoreSessions | null = null
 let registry: Registry = { tiles: new Map(), problems: [] }
 /** `workshop.music` (main/music.ts). A smoke run gets a stand-in for osascript and never touches the real apps. */
 let music: MusicBridge | null = null
+/** `workshop.oauth` (main/oauth.ts): the loopback listener for a tile's sign-in. A smoke run gets a free port, never 47800. */
+let oauth: OAuthHost | null = null
 /** The screen recorder (main/recorder.ts): core's own, never a tile's. */
 let recorder: Recorder | null = null
 /** Install update (main/updates.ts). Offers nothing unless this is a packaged app built by `npm run dist`. */
@@ -294,6 +298,18 @@ function openForTile(id: string, url: string): boolean {
   return true
 }
 
+/** A port nothing is using now, for a smoke run's sign-ins (the installed app may be using 47800). */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const s = createNetServer()
+    s.once('error', reject)
+    s.listen(0, '127.0.0.1', () => {
+      const port = (s.address() as AddressInfo).port
+      s.close(() => resolve(port))
+    })
+  })
+}
+
 /** Every webview core's window attaches must be a registered tile, and gets core's sandbox. */
 function guardWebviews(w: BrowserWindow): void {
   w.webContents.on('will-attach-webview', (e, prefs, params) => {
@@ -364,6 +380,7 @@ function guardWebviews(w: BrowserWindow): void {
       guests.delete(wc.id)
       if (liveByTile.get(key) === g) liveByTile.delete(key)
       door.dropPage(pageOf(g))
+      oauth?.dropPage(wc.id)
     })
   })
 }
@@ -536,7 +553,9 @@ function bridge(): void {
     const g = guests.get(e.sender.id)!
     g.ops = new Set()
     music?.forget(e.sender.id)
+    oauth?.dropPage(e.sender.id)
     const hello: TileHello = { id: t.manifest.id, instance: g.key, view: views.get(g.key) ?? 'tile', vars: vars(), bridge: BRIDGE_VERSION, permissions: t.manifest.permissions }
+    if (t.manifest.permissions.oauth && oauth) hello.oauthRedirect = oauth.redirectUri(t.manifest.id)
     if (t.backend && t.manifest.backend) hello.backendOps = [...t.manifest.backend.ops]
     e.returnValue = hello
   })
@@ -573,6 +592,21 @@ function bridge(): void {
     const { tile } = need(e)
     if (typeof url !== 'string' || !isHttp(url)) throw new Error('openExternal: http(s) URLs only')
     if (!openForTile(tile.manifest.id, url)) throw new Error('openExternal: one a second')
+  })
+
+  // A sign-in (bridge 1.5): only for a declared host, only straight after a click or key in this
+  // page (once per input, like the overlay), and the redirect pinned to this tile's own path.
+  ipcMain.handle(CH.oauthAuthorize, async (e, url: unknown) => {
+    const g = need(e)
+    const hosts = g.tile.manifest.permissions.oauth
+    if (!hosts || !oauth) throw new Error('this tile did not ask for "oauth" in tile.json')
+    if (Date.now() - g.gestureAt > GESTURE_MS) throw new Error('oauth: needs a click in the tile')
+    g.gestureAt = 0
+    return oauth.authorize(g.tile.manifest.id, g.wc.id, hosts, url)
+  })
+  ipcMain.handle(CH.oauthCancel, (e) => {
+    const g = need(e)
+    if (g.tile.manifest.permissions.oauth) oauth?.cancel(g.tile.manifest.id)
   })
 
   // One store per tile, shared by its instances: a write is seen by every one of them.
@@ -875,6 +909,7 @@ app.whenReady().then(async () => {
   // Where the CLI finds the door from outside a session. Readable by this user only.
   writeFileSync(join(app.getPath('userData'), 'door.json'), JSON.stringify({ port: door.port, token: door.token }), { mode: 0o600 })
 
+  oauth = new OAuthHost({ port: SMOKE ? await freePort() : OAUTH_PORT, open: openForTile })
   bridge()
   music = startMusic({ guest: guestOf, ...(SMOKE ? smokeMusicIo : { runner: osascriptRunner, fetchArt: fetchSpotifyArt }) })
   recorder = new Recorder({
@@ -922,6 +957,7 @@ app.whenReady().then(async () => {
     core?.stop()
     backends.stopAll()
     music.host.stop()
+    oauth?.stop()
     // The run that started this one cleans up the tmux server it still needs.
     if (!RESTARTED) await core?.tmux.killServer()
     door.stop()
@@ -935,6 +971,7 @@ app.on('before-quit', () => {
   core?.stop()
   backends.stopAll()
   music?.host.stop()
+  oauth?.stop()
 })
 
 // The CLI reads door.json to find a running app; a stale one would point at a closed port.

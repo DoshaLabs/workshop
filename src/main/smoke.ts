@@ -19,6 +19,7 @@ import type { Backends } from './backend'
 import { previewSmoke, reorderSmoke } from './smoke-preview'
 import { uiSmoke, wheelSmoke } from './smoke-ui'
 import { musicSmoke } from './smoke-music'
+import { oauthSmoke } from './smoke-oauth'
 import type { MusicHost } from './music'
 import { recorderSmoke } from './smoke-recorder'
 import type { Recorder } from './recorder'
@@ -224,6 +225,7 @@ export async function runSmoke(ctx: Ctx): Promise<number> {
     await worktreesSmoke(check, ctx)
     await historySmoke(check, ctx)
     await musicSmoke(check, ctx)
+    await oauthSmoke(check, ctx)
     await knotClock(check, ctx)
     await recorderSmoke(check, ctx)
     // Last: it stops this core's sessions.

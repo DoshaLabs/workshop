@@ -129,6 +129,14 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   Denied Automation is `error: 'denied'`. Smoke drives it with a stand-in runner
   (`smoke-music.ts`, `test/fixtures/music`). A packaged build needs `NSAppleEventsUsageDescription`
   (and the Apple Events entitlement under the hardened runtime).
+- Sign-in (bridge 1.5, `permissions.oauth`: hosts, as `net`; `docs/progress/2026-11-11-oauth.md`):
+  `workshop.oauth.authorize(url)` opens a provider's authorize page and resolves with the loopback
+  callback's query. `src/main/oauth.ts` listens on 127.0.0.1:47800 only while a sign-in is pending,
+  at `/oauth/<tile id>/callback` (each tile its own path: with no client secret, the registered
+  redirect is all that ties a client id to a tile), sets `state` itself, requires `response_type=code`
+  and PKCE S256, needs a click in the page (once per input, like the overlay), answers only that
+  path with Host `127.0.0.1:47800`, and serves fixed pages. Core never sees a token: the tile
+  exchanges the code through `net`. Smoke (`smoke-oauth.ts`, `test/fixtures/oauth`) uses a free port.
 - `tiles/git/` (track C, `docs/progress/2026-11-10-git.md`): the Git tile, built in with a
   backend, read-only. Changes: every open session by project, one line per working tree (sessions
   sharing one are named together) with branch, files and `+n −m` against HEAD (untracked lines
@@ -488,6 +496,7 @@ workshop.door.handle(op, fn)       // "door"              → fn(args, caller, {
 workshop.notify({ text, attention }) // "notify"          → needs-you chip, macOS notification, the mark flares
 workshop.files.pick/list/entries/read/url/forget  // "files" → only what the user picked for this tile
 workshop.music.get/watch/play/pause/toggle/next/previous/seek/setVolume/playUri  // "music" → Spotify or Music (bridge ^1.3)
+workshop.oauth.redirectUri / authorize(url) / cancel()  // "oauth": [hosts] → a sign-in's callback query (bridge ^1.5)
 workshop.media                     // "camera" / "microphone" → passed to the macOS prompt
 workshop.backend.call(op, body) / status() / onStatus(fn)   // built-in tiles with a "backend" only (bridge ^1.2)
 ```
@@ -549,7 +558,7 @@ This generalizes what deck does by hand for each tile (`/deck:mol`, `/deck:remin
 | Spend | Sandboxed | usage |
 | Game Boy | Sandboxed | files (the games folder), storage, door |
 | PS1 | Sandboxed | files, storage |
-| Spotify | Sandboxed | music (core drives Spotify.app and Music.app by AppleScript; art through the tile's origin) |
+| Spotify | Sandboxed | music (core drives Spotify.app and Music.app by AppleScript; art through the tile's origin); net and oauth for recent plays, playlists and search (Spotify's web API) |
 | PS2 | Trusted | backend (PCSX2) |
 | Git (core) | Trusted | backend (`git`, `gh`), sessions launch |
 

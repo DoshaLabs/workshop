@@ -197,6 +197,33 @@ if (hello) {
       }
     : {}
 
+  // Sign-in (bridge 1.5): only on a tile whose manifest asks for "oauth". Core checks the URL,
+  // adds its own state, catches the loopback callback and hands back its query.
+  /** ipcRenderer.invoke wraps a refusal as "Error invoking remote method …: Error: <message>"; the page gets the message. */
+  const plain = (err: unknown): Error => new Error(String(err instanceof Error ? err.message : err).replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ''))
+  const oauth =
+    perms.oauth && hello.oauthRedirect
+      ? {
+          oauth: {
+            /** What to register with the provider, and to put in the authorize URL as redirect_uri: this tile's own. */
+            redirectUri: hello.oauthRedirect,
+            /**
+             * Opens the provider's authorize page in the browser (https, a host in permissions.oauth,
+             * response_type=code, PKCE S256, redirect_uri = redirectUri) and resolves with the callback's
+             * query string, without `state`: 'code=…' or 'error=access_denied'. Only in answer to a click
+             * or key in the tile. Exchange the code yourself, through `net`.
+             */
+            authorize: (url: string): Promise<{ query: string }> =>
+              ipcRenderer.invoke(CH.oauthAuthorize, String(url)).then(
+                (query: string) => ({ query }),
+                (err) => Promise.reject(plain(err))
+              ),
+            /** Ends this tile's pending sign-in, if any (its authorize() rejects with "oauth: cancelled"). */
+            cancel: (): Promise<void> => ipcRenderer.invoke(CH.oauthCancel)
+          }
+        }
+      : {}
+
   // contextBridge copies a getter's value once, so the live values (view, theme.vars) cross as
   // functions and the page-side object below turns them back into properties.
   const raw = {
@@ -301,7 +328,8 @@ if (hello) {
       }
     },
     ...backend,
-    ...music
+    ...music,
+    ...oauth
   }
 
   contextBridge.executeInMainWorld({

@@ -1,0 +1,12 @@
+{
+  "id": "oauth-probe",
+  "name": "Sign-in probe",
+  "version": "0.0.1",
+  "workshop": "^1.5",
+  "author": "workshop smoke test",
+  "hint": "Signs in at a provider that is not there; loaded only by npm run smoke",
+  "entry": "dist/index.html",
+  "permissions": {
+    "oauth": ["auth.example.com"]
+  }
+}

@@ -56,6 +56,8 @@ export interface TileHello {
   permissions: Manifest['permissions']
   /** The ops a built-in tile's backend answers (manifest `backend.ops`); absent without one. */
   backendOps?: string[]
+  /** `workshop.oauth.redirectUri`, on a tile that asks for "oauth" (bridge 1.5). */
+  oauthRedirect?: string
 }
 
 export interface DoorCall {
@@ -91,6 +93,8 @@ export const CH = {
   backendCall: 'ws:tile:backend-call',
   backendStatus: 'ws:tile:backend-status',
   musicGet: 'ws:tile:music-get',
+  oauthAuthorize: 'ws:tile:oauth-authorize',
+  oauthCancel: 'ws:tile:oauth-cancel',
   musicWatch: 'ws:tile:music-watch', // send: true when the page starts watching, false when it stops
   musicControl: 'ws:tile:music-control',
   /** send: a wheel the page could not use (it has nothing left to scroll that way), for the column: dy in px. */

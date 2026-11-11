@@ -6,11 +6,14 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). */
-export const BRIDGE_VERSION = '1.4.0'
+/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). */
+export const BRIDGE_VERSION = '1.5.0'
 
 /** The first bridge with `sessions: "launch"`: a tile asking for it must not claim to run on an older one. */
 export const LAUNCH_SINCE = '1.4.0'
+
+/** The first bridge with `oauth`. */
+export const OAUTH_SINCE = '1.5.0'
 
 /** A tile's own origin is tile://<id>/. */
 export const TILE_SCHEME = 'tile'
@@ -69,6 +72,12 @@ export interface Permissions {
   /** Hosts the page may reach: `example.com` or `*.example.com`. Nothing else gets through. */
   net?: string[]
   /**
+   * `workshop.oauth` (bridge 1.5): hosts whose authorize page the tile may send the user to. Core
+   * listens on 127.0.0.1 while a sign-in is in flight and hands the tile the callback's query
+   * (main/oauth.ts). The token endpoint still has to be in `net`: the tile exchanges the code itself.
+   */
+  oauth?: string[]
+  /**
    * Set by core, never by tile.json: true when the manifest declares a `backend`. It is here so the
    * words the user is shown, and what an update is compared on, include it like any permission.
    */
@@ -106,7 +115,7 @@ export const DOOR_TIMEOUT_MAX = 120_000
 export const BACKEND_TIMEOUT_DEFAULT = 10_000
 export const BACKEND_TIMEOUT_MAX = 120_000
 
-const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'music', 'net', 'backend'])
+const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'music', 'net', 'oauth', 'backend'])
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -235,15 +244,24 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
       const door = checkOps(p.door, 'permissions.door', [], { def: DOOR_TIMEOUT_DEFAULT, max: DOOR_TIMEOUT_MAX }, errors)
       if (door) permissions.door = door
     }
-    if (p.net !== undefined) {
-      if (!Array.isArray(p.net) || p.net.length > 32) errors.push('permissions.net: a list of at most 32 host names')
-      else {
-        // A host name, never an IP: the last label must hold a letter.
-        const hosts = p.net.filter((h): h is string => typeof h === 'string' && HOST_RE.test(h) && /[a-z]/.test(h.slice(h.lastIndexOf('.') + 1)))
-        if (hosts.length !== p.net.length) errors.push('permissions.net: each entry is a lowercase host name like "api.example.com" or "*.example.com" (no scheme, port, path, IP or bare "*")')
-        if (hosts.length) permissions.net = hosts
+    const hostList = (k: 'net' | 'oauth', max: number): string[] | undefined => {
+      const v = p[k]
+      if (v === undefined) return undefined
+      if (!Array.isArray(v) || v.length > max) {
+        errors.push(`permissions.${k}: a list of at most ${max} host names`)
+        return undefined
       }
+      // A host name, never an IP: the last label must hold a letter.
+      const hosts = v.filter((h): h is string => typeof h === 'string' && HOST_RE.test(h) && /[a-z]/.test(h.slice(h.lastIndexOf('.') + 1)))
+      if (hosts.length !== v.length) errors.push(`permissions.${k}: each entry is a lowercase host name like "api.example.com" or "*.example.com" (no scheme, port, path, IP or bare "*")`)
+      return hosts.length ? hosts : undefined
     }
+    const net = hostList('net', 32)
+    if (net) permissions.net = net
+    const oauth = hostList('oauth', 8)
+    if (p.oauth !== undefined && range && semver.validRange(range) && semver.lt(semver.minVersion(range) ?? '0.0.0', OAUTH_SINCE))
+      errors.push(`permissions.oauth: bridge ${OAUTH_SINCE.replace(/\.0$/, '')}; set "workshop" to "^1.5" or later`)
+    else if (oauth) permissions.oauth = oauth
     // Never a permission a tile writes: core sets it from the top-level `backend` below.
     if (p.backend !== undefined)
       errors.push(opts.builtin ? 'permissions.backend: declare a backend at the top of tile.json, as "backend": { "entry": "backend.mjs", "ops": [...] }' : `permissions.backend: ${TRUSTED_ONLY}`)

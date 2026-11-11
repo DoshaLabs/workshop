@@ -2,6 +2,7 @@
 // the words say what it does, and what a tile may fill the launcher with is checked for shape.
 // Also the Worktrees tab's page rules (tiles/git/dist/model.js), as the tile ships them.
 import { describe, expect, it } from 'vitest'
+import semver from 'semver'
 import { BRIDGE_VERSION, checkManifest } from '@shared/manifest'
 import { needsAsking, permissionChange, permissionWords } from '@shared/permissions'
 import { launchRequest, worktreeName } from '@shared/sessions'
@@ -15,8 +16,8 @@ const errs = (m: unknown): string[] => {
 }
 
 describe('sessions: "launch"', () => {
-  it('is bridge 1.4', () => {
-    expect(BRIDGE_VERSION).toBe('1.4.0')
+  it('is in this bridge (1.4 or later)', () => {
+    expect(semver.gte(BRIDGE_VERSION, '1.4.0')).toBe(true)
   })
 
   it('is taken only by a tile that says it needs bridge 1.4 or later', () => {
