@@ -2,15 +2,16 @@
 // terminal). The session column is SessionColumn.tsx.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type React from 'react'
 import { MODELS, PERMISSION_MODES } from '@shared/models'
-import { CLIS, CODEX_MODES, type CliKind } from '@shared/cli'
+import { CODEX_MODES, promptWithFiles, type CliKind } from '@shared/cli'
 import type { LaunchPrefill, SessionView } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import { fit, focusTerminal, mount, unmount } from './terminals'
 import { SessionUsage } from './UsageMeter'
 import { Mascot } from './Mascot'
 import { KnotCanvas } from './Knot'
-import { useFileDrop } from './drop'
+import { dropEffectFor, hasFiles, useFileDrop } from './drop'
 import { ParkButton } from './SessionColumn'
 import { PauseButton, SessionAsks, StopButton } from './Leash'
 
@@ -22,6 +23,25 @@ const CODEX_MODELS = [{ id: '', label: 'Default', hint: 'Your Codex config’s m
 /** Each CLI's own default permission mode in the launcher. */
 const DEFAULT_MODE: Record<CliKind, string> = { claude: 'auto', codex: '' }
 
+/** A file attached in the launcher: the path main kept (drops.ts), and a small picture if it is one. */
+interface Attached {
+  path: string
+  name: string
+  thumb?: string
+}
+
+const THUMB_MAX = 8 * 1024 * 1024
+/** A data: URL for a picture's chip (the window's CSP takes data: in img, not blob:). */
+const thumbOf = (f: File): Promise<string | undefined> =>
+  !f.type.startsWith('image/') || f.size > THUMB_MAX
+    ? Promise.resolve(undefined)
+    : new Promise((done) => {
+        const r = new FileReader()
+        r.onload = () => done(typeof r.result === 'string' ? r.result : undefined)
+        r.onerror = () => done(undefined)
+        r.readAsDataURL(f)
+      })
+
 export function Launcher({ recent, prefill, onStarted }: { recent: string[]; prefill?: LaunchPrefill; onStarted: () => void }) {
   const [cwd, setCwd] = useState(recent[0] ?? '')
   const [worktree, setWorktree] = useState(false)
@@ -32,6 +52,10 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
   const [mode, setMode] = useState(DEFAULT_MODE.claude)
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
+  const [files, setFiles] = useState<Attached[]>([])
+  const [fileOver, setFileOver] = useState(false)
+  const dragDepth = useRef(0)
+  const filePicker = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [typing, setTyping] = useState(recent.length === 0)
@@ -71,14 +95,56 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
     setBusy(true)
     setError('')
     try {
-      await window.core.newSession({ ...(cli === 'codex' ? { cli } : {}), cwd, worktree, ...(worktree && branch ? { worktreeName: branch } : {}), model, permissionMode: mode, name, prompt })
+      const first = promptWithFiles(codex ? 'codex' : 'claude', prompt, files.map((f) => f.path))
+      await window.core.newSession({ ...(cli === 'codex' ? { cli } : {}), cwd, worktree, ...(worktree && branch ? { worktreeName: branch } : {}), model, permissionMode: mode, name, prompt: first })
       setPrompt('')
+      setFiles([])
       setName('')
       onStarted()
     } catch (err) {
       setError(String((err as Error).message).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
     } finally {
       setBusy(false)
+    }
+  }
+  /** Keeps each file (main/drops.ts: a Finder file's own path, else a copy) and adds it once. */
+  const attach = async (list: File[]): Promise<void> => {
+    const added: Attached[] = []
+    for (const f of list) {
+      try {
+        const path = await window.core.keepDrop(f)
+        added.push({ path, name: base(path), thumb: await thumbOf(f) })
+      } catch (err) {
+        console.warn('[launcher] not attachable:', f.name, String(err))
+      }
+    }
+    if (added.length) setFiles((was) => [...was, ...added.filter((a) => !was.some((w) => w.path === a.path))])
+  }
+  const dropHandlers = {
+    onDragEnter: (e: React.DragEvent<HTMLElement>) => {
+      if (!hasFiles(e.dataTransfer)) return
+      e.preventDefault()
+      dragDepth.current += 1
+      setFileOver(true)
+    },
+    onDragOver: (e: React.DragEvent<HTMLElement>) => {
+      if (!hasFiles(e.dataTransfer)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = dropEffectFor(e.dataTransfer)
+    },
+    onDragLeave: (e: React.DragEvent<HTMLElement>) => {
+      if (!hasFiles(e.dataTransfer)) return
+      dragDepth.current = Math.max(0, dragDepth.current - 1)
+      if (dragDepth.current === 0) setFileOver(false)
+    },
+    onDrop: (e: React.DragEvent<HTMLElement>) => {
+      dragDepth.current = 0
+      setFileOver(false)
+      if (!hasFiles(e.dataTransfer)) return
+      e.preventDefault()
+      e.stopPropagation()
+      // The DataTransfer is readable only during the event: take the File objects now.
+      void attach(Array.from(e.dataTransfer.files))
     }
   }
   const choose = (): void => void window.core.pickFolder(cwd).then((p) => p && setCwd(p))
@@ -89,7 +155,6 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
   const modes = codex ? CODEX_MODES : PERMISSION_MODES
   const picked = models.find((m) => m.id === model)
   const perm = modes.find((m) => m.id === mode)
-  const agent = CLIS.find((c) => c.id === (codex ? 'codex' : 'claude'))
 
   return (
     <section className="launcher launch">
@@ -98,18 +163,72 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
         <h1>What are you working on?</h1>
       </div>
 
-      <div className="launch-compose">
+      {hasCodex && (
+        <div className="launch-agent">
+          <button className={`launch-agent-side${codex ? '' : ' on'}`} onClick={() => pickCli('claude')}>
+            Claude Code
+          </button>
+          <button
+            role="switch"
+            aria-checked={codex}
+            aria-label="Run Codex instead of Claude Code"
+            className={`launch-toggle${codex ? ' on' : ''}`}
+            onClick={() => pickCli(codex ? 'claude' : 'codex')}
+          >
+            <span className="knob" aria-hidden="true" />
+          </button>
+          <button className={`launch-agent-side${codex ? ' on' : ''}`} onClick={() => pickCli('codex')}>
+            Codex
+          </button>
+        </div>
+      )}
+
+      <div className={`launch-compose${fileOver ? ' file-over' : ''}`} {...dropHandlers}>
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
+          onPaste={(e) => {
+            // A picture on the clipboard (a screenshot) is attached, not pasted as text.
+            const pasted = Array.from(e.clipboardData.files)
+            if (!pasted.length) return
+            e.preventDefault()
+            void attach(pasted)
+          }}
           rows={4}
           autoFocus
-          placeholder="Describe the task, or leave this empty and start talking once the session opens."
+          placeholder="Describe the task, or leave this empty and start talking once the session opens. Drop pictures or files here to attach them."
           onKeyDown={(e) => {
             if (e.key === 'Enter' && e.metaKey) void start()
           }}
         />
+        {files.length > 0 && (
+          <ul className="launch-files" aria-label="Attached files">
+            {files.map((f) => (
+              <li key={f.path} title={f.path}>
+                {f.thumb ? <img src={f.thumb} alt="" /> : <span className="launch-file-icon" aria-hidden="true">▤</span>}
+                <span className="launch-file-name">{f.name}</span>
+                <button aria-label={`Remove ${f.name}`} onClick={() => setFiles((was) => was.filter((w) => w.path !== f.path))}>
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="launch-compose-foot">
+          <button className="launch-attach" onClick={() => filePicker.current?.click()} title="Attach files: read in when the session starts">
+            + Attach
+          </button>
+          <input
+            ref={filePicker}
+            type="file"
+            multiple
+            hidden
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? [])
+              e.target.value = ''
+              void attach(picked)
+            }}
+          />
           <span className="launch-where" title={cwd || undefined}>
             {cwd ? <>in <b>{base(cwd)}</b></> : 'Pick a folder below'}
           </span>
@@ -149,19 +268,6 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
         )}
       </div>
 
-      {hasCodex && (
-        <div className="launch-section">
-          <h2>Agent</h2>
-          <div className="launch-pills" role="radiogroup" aria-label="Agent">
-            {CLIS.map((c) => (
-              <button key={c.id} role="radio" aria-checked={c.id === cli} className={c.id === cli ? 'on' : ''} onClick={() => pickCli(c.id)}>
-                {c.label}
-              </button>
-            ))}
-          </div>
-          {agent && <p className="launch-hint">{agent.hint}</p>}
-        </div>
-      )}
 
       <div className="launch-section">
         <h2>Model</h2>

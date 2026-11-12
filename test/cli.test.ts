@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { CODEX_MODES, cleanCodexMode, cliOf, codexMcpServer, codexServerArgs, codexThreadId, codexTuiArgs } from '@shared/cli'
+import { CODEX_MODES, cleanCodexMode, cliOf, codexMcpServer, codexServerArgs, codexThreadId, codexTuiArgs, promptWithFiles } from '@shared/cli'
 import { SessionManager } from '../src/main/sessions'
 import type { Tmux } from '../src/main/tmux'
 
@@ -91,5 +91,18 @@ describe('sessions.json from before Codex', () => {
     const { m } = await load([{ ...base, id: 'c0dec0', tmuxName: 'ws-c0dec0', cli: 'codex', cliSessionId: '' }])
     m.onHook('UserPromptSubmit', { session_id: '' } as never)
     expect(m.view('c0dec0')!.status).not.toBe('busy')
+  })
+})
+
+describe('promptWithFiles', () => {
+  it('leaves a prompt with no files alone', () => {
+    expect(promptWithFiles('claude', 'fix it', [])).toBe('fix it')
+  })
+  it('mentions each file for Claude Code, quoting a path with a space', () => {
+    expect(promptWithFiles('claude', ' look ', ['/a/b.png', '/a/my shot.png'])).toBe('look\n\n@/a/b.png @"/a/my shot.png"')
+    expect(promptWithFiles('claude', '', ['/x.pdf'])).toBe('@/x.pdf')
+  })
+  it('asks Codex in words', () => {
+    expect(promptWithFiles('codex', 'go', ['/a.png'])).toBe('go\n\nRead these attached files first:\n- /a.png')
   })
 })

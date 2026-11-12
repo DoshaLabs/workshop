@@ -2130,6 +2130,128 @@ a.md-path:hover {
   color: var(--ws-muted);
   opacity: 0.8;
 }
+.launch-compose.file-over {
+  border-color: var(--ws-accent);
+  border-style: dashed;
+  background: color-mix(in srgb, var(--ws-accent) 8%, var(--ws-panel));
+}
+/* The launcher's attached files: a chip each, a picture's own thumbnail. */
+.launch-files {
+  list-style: none;
+  margin: 0;
+  padding: 4px 16px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.launch-files li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 240px;
+  padding: 4px 4px 4px 4px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+  background: var(--ws-bg);
+  font-size: 13px;
+  color: var(--ws-ink);
+}
+.launch-files img,
+.launch-file-icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.launch-file-icon {
+  display: grid;
+  place-items: center;
+  background: var(--ws-panel);
+  color: var(--ws-muted);
+}
+.launch-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.launch-files button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ws-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+.launch-files button:hover {
+  background: var(--ws-line);
+  color: var(--ws-ink);
+}
+.launch-attach {
+  flex: none;
+  border: 1px solid var(--ws-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ws-muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.launch-attach:hover {
+  color: var(--ws-ink);
+  border-color: var(--ws-muted);
+}
+/* Claude Code or Codex, above the compose box: a switch, its knob sliding in the oval. */
+.launch-agent {
+  /* Closer to the box it sets than the launcher's section gap. */
+  margin-bottom: -14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.launch-agent-side {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ws-muted);
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: color 0.15s;
+}
+.launch-agent-side.on {
+  color: var(--ws-ink);
+  font-weight: 700;
+}
+.launch-toggle {
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ws-accent);
+  cursor: pointer;
+}
+.launch-toggle .knob {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--ws-bg);
+  transition: transform 0.18s ease;
+}
+.launch-toggle.on .knob {
+  transform: translateX(20px);
+}
 .launch-compose-foot {
   display: flex;
   align-items: center;

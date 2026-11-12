@@ -105,7 +105,10 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
 - Sessions (`src/main/core-sessions.ts` wires them): `sessions.ts` (tmux + node-pty, park /
   resume / kill), `hooks.ts` (the `--settings` file), `fleet.ts`, `usage.ts`, `tmux.ts`, `env.ts`,
   carried from deck without slots, cap or wolfpack. In the window: `SessionColumn.tsx`,
-  `Sessions.tsx` (launcher, focus pane) and `terminals.ts`. Differences from deck: hooks go through the door's
+  `Sessions.tsx` (launcher, focus pane) and `terminals.ts`. The launcher's box takes files dropped,
+  pasted or picked (+ Attach), sent in the first prompt (`promptWithFiles` in `shared/cli.ts`:
+  `@path` for Claude Code, which reads them in; a line asking Codex to), and Claude Code / Codex
+  is a switch above it. Differences from deck: hooks go through the door's
   server with a per-session token kept in a 0600 file named by `WORKSHOP_AUTH` (never on a
   command line, where `ps` shows it), so core knows which session called (the door's `caller`
   is the session's name) and a hook naming another session's id is ignored; hooks read core's

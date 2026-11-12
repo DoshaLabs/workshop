@@ -14,6 +14,23 @@ export const CLIS: readonly { id: CliKind; label: string; hint: string }[] = [
   { id: 'codex', label: 'Codex', hint: 'OpenAI’s CLI, on your own ChatGPT or API sign-in' }
 ]
 
+/**
+ * The first prompt with the launcher's attached files: the user's text, then the files.
+ * Claude Code reads an `@path` mention in, a picture included (quoted when the path has a space
+ * or a quote). Codex has no such mention in a prompt, so it is asked in words to read them first.
+ * With no files the text is returned unchanged.
+ */
+export function promptWithFiles(cli: CliKind, text: string, paths: readonly string[]): string {
+  const t = text.trim()
+  if (!paths.length) return text
+  if (cli === 'codex') {
+    const list = paths.map((p) => `- ${p}`).join('\n')
+    return `${t ? t + '\n\n' : ''}Read these attached files first:\n${list}`
+  }
+  const at = paths.map((p) => (/[\s"\\]/.test(p) ? `@"${p.replace(/(["\\])/g, '\\$1')}"` : `@${p}`)).join(' ')
+  return t ? `${t}\n\n${at}` : at
+}
+
 /** A stored or requested CLI: anything but 'codex' is Claude Code (records from before Codex have none). */
 export function cliOf(v: unknown): CliKind {
   return v === 'codex' ? 'codex' : 'claude'
