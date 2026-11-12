@@ -9,7 +9,8 @@
 // computed value.
 
 import { session, type BrowserWindow } from 'electron'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { CoreSessions } from './core-sessions'
 import type { Door } from './door'
@@ -145,8 +146,18 @@ export async function previewSmoke(check: Check, o: { win: BrowserWindow; door: 
   const page = String(await js(`document.querySelector('.viewer iframe')?.src ?? ''`))
   const got = (u: string): Promise<number> => session.defaultSession.fetch(u).then((r) => r.status, () => -1)
   check('viewer: a web page is framed on a view:// origin of its own, sandboxed', page.startsWith('view://') && (await js(`document.querySelector('.viewer iframe').getAttribute('sandbox')`)) !== null, page)
-  check('viewer: the page\'s own files beside it are served', (await got(page.replace(/index\.html$/, 'css/a.css'))) === 200)
+  check('viewer: a page inside the session\'s folder gets the files beside it', (await got(page.replace(/index\.html$/, 'css/a.css'))) === 200)
   check('viewer: nothing above the page\'s folder is', (await got(page.replace(/index\.html$/, '..%2Fplan.md'))) === 404 && (await got(page.replace(/index\.html$/, '%2E%2E/plan.md'))) === 404)
+  await js(`document.querySelector('.viewer .ghost').click(); true`)
+  // A page outside every open session's folder and project (Downloads, say) gets itself alone.
+  const stranger = await realpath(await mkdtemp(join(tmpdir(), 'ws-stranger-')))
+  await mkdir(join(stranger, 'css'), { recursive: true })
+  await writeFile(join(stranger, 'page.html'), '<!doctype html><link rel="stylesheet" href="css/a.css"><p>hi</p>')
+  await writeFile(join(stranger, 'css', 'a.css'), 'p { color: red }')
+  await turn(`doc open ${join(stranger, 'page.html')}`)
+  await waitFor(async () => String(await js(`document.querySelector('.viewer iframe')?.src ?? ''`)).endsWith('/page.html'), 4000)
+  const lone = String(await js(`document.querySelector('.viewer iframe')?.src ?? ''`))
+  check('viewer: a page outside every session\'s folder gets itself, not the files beside it', (await got(lone)) === 200 && (await got(lone.replace(/page\.html$/, 'css/a.css'))) === 404, lone)
   await js(`document.querySelector('.viewer .ghost').click(); true`)
   await turn('doc open shot.png')
   await waitFor(async () => !!(await js(`document.querySelector('.viewer img')?.src ?? ''`)), 4000)

@@ -6,8 +6,10 @@
 // wrote) cannot reach core's window or its bridge, and the window's CSP lets these URLs into an
 // <img>, <video>, <audio> or <iframe> only. A grant serves exactly the file it was made for, except
 // a web page's, which also serves the files beside and below it (its stylesheets, scripts and
-// pictures), never above, never through a symlink that leads out, and never a whole home folder
-// or the disk's root (there it is the page alone). Grants are kept only for the last few files.
+// pictures), never above, never through a symlink that leads out, and only when the page is inside
+// an open session's start folder or project root (Colin, 12 Nov 2026; shared/viewer.ts
+// pageGetsFolder): a page from Downloads gets itself alone. Decided when the grant is made. Grants
+// are kept only for the last few files.
 //
 // Esc closes the viewer even when the focus is inside the page it shows (a PDF, a web page): keys
 // there never reach the window's own listeners, so main catches Esc for the window while a viewer
@@ -20,7 +22,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CH } from '@shared/ipc'
-import { VIEW_SCHEME, mimeOf, sniffKind, viewKindOf, type ViewDoc, type ViewKind } from '@shared/viewer'
+import { VIEW_SCHEME, mimeOf, pageGetsFolder, sniffKind, viewKindOf, type ViewDoc, type ViewKind } from '@shared/viewer'
 import { resolveRef } from './preview'
 
 interface Grant {
@@ -35,6 +37,12 @@ interface Grant {
 const grants = new Map<string, Grant>()
 const KEEP = 8
 let viewing = false
+/** The open sessions' start folders and project roots: a web page inside one gets its folder. */
+let sessionFolders: () => Promise<string[]> = async () => []
+
+export function setSessionFolders(fn: () => Promise<string[]>): void {
+  sessionFolders = fn
+}
 
 const within = (root: string, p: string): boolean => p === root || p.startsWith(root.endsWith(sep) ? root : root + sep)
 
@@ -67,8 +75,9 @@ export async function viewFile(ref: string, cwd?: string): Promise<ViewDoc> {
       kind = sniffed.kind
       mime = sniffed.mime
     }
-    const dir = dirname(real)
-    const root = kind === 'html' && dir !== '/' && dir !== homedir() ? dir : null
+    const home = await realpath(homedir()).catch(() => homedir())
+    const folders = kind === 'html' ? await Promise.all((await sessionFolders().catch(() => [])).map((f) => realpath(f).catch(() => f))) : []
+    const root = kind === 'html' && pageGetsFolder(real, folders, home) ? dirname(real) : null
     const token = randomBytes(12).toString('hex')
     grants.set(token, { file: real, root, mime })
     while (grants.size > KEEP) grants.delete(grants.keys().next().value!)

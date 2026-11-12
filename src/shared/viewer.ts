@@ -73,6 +73,22 @@ export function sniffKind(head: Uint8Array): { kind: ViewKind; mime: string } | 
   return null
 }
 
+/**
+ * Whether a web page at `file` may load the files in its folder (Colin, 12 Nov 2026): only when it
+ * is at or below an open session's start folder or project root. Elsewhere (Downloads, the Desktop)
+ * it gets the page alone, so a stranger's page cannot read its neighbours and send them out. A
+ * session started in the home folder or at `/` makes nothing a project. All paths real (symlinks resolved).
+ */
+export function pageGetsFolder(file: string, folders: string[], home: string): boolean {
+  const dir = file.replace(/\/[^/]*$/, '') || '/'
+  if (dir === '/' || dir === home) return false
+  return folders.some((f) => {
+    const root = f.replace(/\/+$/, '')
+    if (!root || root === home) return false
+    return dir === root || dir.startsWith(root + '/')
+  })
+}
+
 /** What the window gets for a file it asked to view. */
 export type ViewDoc =
   | { path: string; name: string; kind: ViewKind; url: string; size: number }

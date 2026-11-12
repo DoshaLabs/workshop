@@ -217,10 +217,11 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   open there, not in the pane (by name, else a PNG / JPEG / GIF / WebP / PDF by its first bytes);
   any other binary is never drawn, and "open in app" is offered. Main hands back
   `view://<grant>/<name>`, each grant its own origin, allowed by the window's CSP into img, video,
-  audio and iframe only. A grant serves that one file; an HTML page's also serves its folder and
-  below (not a home folder or `/`), in a sandboxed frame that may not navigate the window. Open
-  question: such a page also has the network, so a stranger's page could send its neighbours out
-  (section 12). Esc closes it from inside a PDF or a page (`escClosesViewer`).
+  audio and iframe only. A grant serves that one file; an HTML page runs in a sandboxed frame that
+  may not navigate the window, and gets its folder and below only under an open session's folder
+  or project root, elsewhere the page alone (Colin, 12 Nov 2026: a page has the network, so a
+  stranger's page must not read its neighbours; `pageGetsFolder`, decided when the grant is made;
+  never a home folder or `/`). Esc closes it from inside a PDF or a page (`escClosesViewer`).
 - Drag to reorder (`reorder.ts`, `src/shared/order.ts`): ⠿ on every head, both columns; orders in
   `settings.column` (`order`, `sessions`). A dragged session column keeps its order and ⌘1–9
   follow it; "most recent first" goes back. Tile pages let the pointer through during a drag.
@@ -972,10 +973,6 @@ screen points at Foxtrot's download for anyone who wants the fox (section 8).
 - **Does the tile index work as a Claude Code plugin marketplace** as is?
 - **The leash's two choices**: a pause outlives core (quit with a session paused and its next
   call waits up to an hour), and Refuse keeps the session paused. Both are Colin's to confirm.
-- **The file viewer's HTML pages** (12 Nov 2026): a page runs its scripts, reads its own folder
-  and below, and has the network. Leave it, block its network (CDN scripts and fonts break), or
-  serve the folder only under an open session's folder or project root and the page alone
-  elsewhere (workshop-fe's suggestion). Colin's call.
 - **When to open the trusted tier** to outside authors, and what its review looks like.
 - **The reader**: what "handles any language" means concretely (which books, which translator).
 

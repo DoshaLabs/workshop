@@ -45,7 +45,7 @@ import { placeWindow } from './window-bounds'
 import { reapTmuxWhenGone } from './smoke-reaper'
 import { smokeNet } from './smoke-net'
 import { doorTilesOf } from './door-tools'
-import { escClosesViewer } from './viewer'
+import { escClosesViewer, setSessionFolders } from './viewer'
 import { VIEW_SCHEME } from '@shared/viewer'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
@@ -541,6 +541,12 @@ function tileSessions(s: SessionsState): { id: string; name: string; project: st
 }
 const lastPaste = new Map<string, number>()
 const roots = new ProjectRoots()
+// The file viewer's rule for web pages: their folder only inside an open session's folder or project.
+setSessionFolders(async () => {
+  const open = (core?.sessions.getState().sessions ?? []).filter((v) => v.open)
+  await roots.ready(open)
+  return open.flatMap((v) => [v.cwd, roots.get(v.id, v.cwd)])
+})
 
 /** Every session's root is resolved before a tile hears of it; then the latest state goes out. */
 function pushSessions(s: SessionsState): void {
