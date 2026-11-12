@@ -6,9 +6,8 @@ export const WIKI = 'https://en.wikipedia.org'
 export const FORECAST = 'https://api.open-meteo.com/v1/forecast'
 export const GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search'
 
-/** A new picture every so often: today's, then two from the archive, then today's again. */
+/** A new picture every so often: today's first, then one from the archive each time. */
 export const CYCLE_MS = 2 * 60 * 1000
-export const TODAY_EVERY = 3
 export const PLACES_MAX = 6
 
 /** The featured feed's `image` is there for days from about here on; earlier days come back empty. */
@@ -25,6 +24,46 @@ export const strip = (html) => String(html ?? '').replace(/<[^>]+>/g, '').replac
 export const thumb = (url, width) =>
   String(url).replace(/^\/\//, 'https://').replace(/\?.*$/, '').replace(/\/\d+px-/, `/${width}px-`)
 
+/** The widths Wikimedia serves a thumbnail at, narrowest first (2560 is HTTP 400). */
+export const WIDTHS = [250, 330, 500, 960, 1280, 1920]
+
+/**
+ * The narrowest served width that fills a box of `w` × `h` CSS pixels at `dpr` device pixels each:
+ * `cover` crops to fill it (the tile), `contain` fits it whole (the pane, the lightbox). The
+ * picture's own shape is its original's, 3:2 when unknown. Never more than 1920.
+ */
+export function widthFor(pic, w, h, dpr, fit) {
+  const aspect = pic?.width > 0 && pic?.height > 0 ? pic.width / pic.height : 1.5
+  const across = fit === 'cover' ? Math.max(w, h * aspect) : Math.min(w, h * aspect)
+  const need = Math.ceil(across * (dpr > 0 ? dpr : 1))
+  return WIDTHS.find((x) => x >= need) ?? WIDTHS[WIDTHS.length - 1]
+}
+
+/** Every width Wikimedia serves a thumbnail at: WIDTHS and 3840 (2560 is HTTP 400). */
+export const SERVED = [...WIDTHS, 3840]
+
+/** The fewest pixels a large picture may have on its short side: 1080p. */
+export const SHARP_MIN = 1080
+
+/**
+ * The lightbox's picture (and what "crop & save" hands the viewer): one served width down from the
+ * original, unless that copy is under 1080 on its short side, when the original itself. A picture
+ * whose size the feed did not give comes at 1920.
+ */
+export function sharpUrl(pic) {
+  if (!(pic.width > 0 && pic.height > 0)) return thumb(pic.thumbSource, 1920)
+  const step = [...SERVED].reverse().find((x) => x < pic.width)
+  const short = step ? Math.min(step, (step * pic.height) / pic.width) : 0
+  if (short >= SHARP_MIN) return thumb(pic.thumbSource, step)
+  return pic.fullUrl || thumb(pic.thumbSource, step ?? 1920)
+}
+
+/**
+ * The picture's address at `width`. A thumbnail as wide as the original or wider is not served,
+ * so a picture smaller than that comes as its original, which is then the smaller file anyway.
+ */
+export const imageAt = (pic, width) => (pic.width > 0 && width >= pic.width && pic.fullUrl ? pic.fullUrl : thumb(pic.thumbSource, width))
+
 /** Local YYYY-MM-DD. */
 export function ymd(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -38,9 +77,6 @@ export function randomPastDay(now = new Date(), rand = Math.random) {
   return ymd(new Date(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate() - back))
 }
 
-/** Which picture the cycle's n-th step asks for (counting from 0): today's every third time. */
-export const whenFor = (step) => (step % TODAY_EVERY === 0 ? 'today' : 'past')
-
 export const featuredUrl = (date) => `${WIKI}/api/rest_v1/feed/featured/${date.replace(/-/g, '/')}`
 
 /** The featured feed's answer for `date` as the tile's picture, or null when that day has none. */
@@ -48,15 +84,113 @@ export function pictureFrom(feed, date, today) {
   const img = feed?.image
   if (!img?.thumbnail?.source || !img.file_page) return null
   const name = String(img.title ?? '').replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, '')
-  return {
+  const pic = {
     date,
     today,
     title: strip(img.description?.text) || name,
     credit: strip(img.artist?.text),
-    imageUrl: thumb(img.thumbnail.source, 960),
-    largeUrl: thumb(img.thumbnail.source, 1920),
+    thumbSource: thumb(img.thumbnail.source, 960),
+    // The original, drawn only when someone asks for it (or when it is smaller than a thumbnail).
+    fullUrl: img.image?.source ? String(img.image.source).replace(/\?.*$/, '') : null,
+    width: Number(img.image?.width) || 0,
+    height: Number(img.image?.height) || 0,
     url: img.file_page
   }
+  return { ...pic, imageUrl: imageAt(pic, 960) }
+}
+
+export const COMMONS = 'https://commons.wikimedia.org'
+
+/**
+ * A day's picture straight from Commons' Picture of the Day template (Template:Potd/<date>, the
+ * picture the featured feed's `image` is): about 2 KB in a fifth of a second, where the feed for a
+ * day out of Wikipedia's cache is 300 KB and up to 3 s (measured 12 Nov 2026; the feed also carries
+ * the news, the most read and on this day). Not en.wikipedia's Template:POTD, which picks its own
+ * picture (Colin, 12 Nov 2026: keep Commons'). `origin=*` is the API's CORS for another origin.
+ */
+export const potdUrl = (date) =>
+  `${COMMONS}/w/api.php?action=query&format=json&formatversion=2&origin=*&generator=images` +
+  `&titles=${encodeURIComponent(`Template:Potd/${date}`)}` +
+  `&prop=imageinfo&iiprop=url%7Csize%7Cextmetadata&iiextmetadatafilter=ImageDescription%7CArtist&iiextmetadatalanguage=en&iiurlwidth=960`
+
+/** The day's caption in English (Template:Potd/<date> (en)), as wikitext: about 500 bytes. */
+export const potdCaptionUrl = (date) =>
+  `${COMMONS}/w/api.php?action=query&format=json&formatversion=2&origin=*&prop=revisions&rvprop=content&rvslots=main` +
+  `&titles=${encodeURIComponent(`Template:Potd/${date} (en)`)}`
+
+/**
+ * The caption out of that page: the first parameter of `{{Potd description|1=…|2=en|…}}` as plain
+ * text, its links as their labels, its own templates dropped, its markup gone. '' if there is none.
+ */
+export function captionFromWikitext(src) {
+  const s = String(src ?? '')
+  const open = s.indexOf('{{')
+  if (open < 0) return ''
+  // The first top-level parameter of the outer template, counting [[ ]] and {{ }} so a link's or an
+  // inner template's | does not end it.
+  let depth = 0
+  let start = -1
+  let end = s.length
+  for (let i = open + 2; i < s.length; i++) {
+    const two = s.slice(i, i + 2)
+    if (two === '{{' || two === '[[') {
+      depth++
+      i++
+    } else if (two === '}}' || two === ']]') {
+      if (depth === 0) {
+        end = i
+        break
+      }
+      depth--
+      i++
+    } else if (s[i] === '|' && depth === 0) {
+      if (start >= 0) {
+        end = i
+        break
+      }
+      start = i + 1
+    }
+  }
+  if (start < 0) return ''
+  let text = s.slice(start, end).replace(/^\s*1\s*=/, '')
+  for (let k = 0; k < 5 && /\{\{[^{}]*\}\}/.test(text); k++) text = text.replace(/\{\{[^{}]*\}\}/g, '')
+  text = text
+    .replace(/\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2')
+    .replace(/\[\[:?([^\]]*)\]\]/g, (_, t) => t.replace(/^(?:[a-z-]+:|Category:)+/i, ''))
+    .replace(/\[(?:https?:)?\/\/\S+\s+([^\]]+)\]/g, '$1')
+    .replace(/'{2,}/g, '')
+  return strip(text)
+}
+
+/**
+ * The template query's answer as the tile's picture (the same shape as pictureFrom), or null when
+ * that day has none. A template may use more than one file; the largest is the picture. `caption`
+ * (captionFromWikitext) is the title, as the feed's is; else the file's own description.
+ */
+export function pictureFromQuery(data, date, today, caption = '') {
+  let best = null
+  for (const page of data?.query?.pages ?? []) {
+    const ii = page?.imageinfo?.[0]
+    if (!ii?.thumburl || !ii.descriptionurl) continue
+    const area = (Number(ii.width) || 0) * (Number(ii.height) || 0)
+    if (!best || area > best.area) best = { page, ii, area }
+  }
+  if (!best) return null
+  const { page, ii } = best
+  const name = String(page.title ?? '').replace(/^File:/, '').replace(/\.[a-z0-9]+$/i, '')
+  const meta = ii.extmetadata ?? {}
+  const pic = {
+    date,
+    today,
+    title: caption || strip(meta.ImageDescription?.value) || name,
+    credit: strip(meta.Artist?.value),
+    thumbSource: thumb(ii.thumburl, 960),
+    fullUrl: ii.url ? String(ii.url).replace(/\?.*$/, '') : null,
+    width: Number(ii.width) || 0,
+    height: Number(ii.height) || 0,
+    url: ii.descriptionurl
+  }
+  return { ...pic, imageUrl: imageAt(pic, 960) }
 }
 
 export const searchUrl = (q) => `${WIKI}/w/rest.php/v1/search/page?q=${encodeURIComponent(q)}&limit=12`
@@ -221,3 +355,13 @@ export function placesFrom(data, want) {
 
 /** True when a place keeps a different clock from this machine (`offsetMin` is getTimezoneOffset()). */
 export const otherClock = (row, offsetMin) => !!row.timezone && row.utcOffset !== -offsetMin * 60
+
+/**
+ * The caption the viewer offers under a 9:16 crop (workshop.viewer.show): the picture's title with
+ * who made it (most pictures are CC BY-SA, which asks for the credit), and the day as mm/dd/yy.
+ */
+export function cropCaption(pic) {
+  const [y, m, d] = String(pic.date).split('-')
+  const text = pic.credit ? `${pic.title}. ${pic.credit}` : pic.title
+  return { text, source: `Wikipedia Photo of the Day, ${m}/${d}/${String(y).slice(-2)}` }
+}

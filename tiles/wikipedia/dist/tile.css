@@ -118,6 +118,27 @@ button {
 .wiki-steps button:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.25);
 }
+/* › while another picture is on its way, in the tile, the pane and the lightbox alike. */
+.wiki-steps button.loading,
+.wikibox-steps button.loading {
+  animation: wiki-wait 900ms ease-in-out infinite alternate;
+  cursor: progress;
+}
+@keyframes wiki-wait {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wiki-steps button.loading,
+  .wikibox-steps button.loading {
+    animation: none;
+    opacity: 0.5;
+  }
+}
 .wiki-steps button:disabled {
   opacity: 0.35;
   cursor: default;
@@ -628,6 +649,12 @@ body.overlay {
 }
 .wikibox-link:hover {
   text-decoration: underline;
+}
+/* Commons, and the original file for whoever really wants every pixel. */
+.wikibox-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
 }
 /* Big enough to hit without aiming, and it sits over the image's own corner. */
 .wikibox-close {

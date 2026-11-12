@@ -1,6 +1,9 @@
 // The Wikipedia tile, ported from deck: Wikipedia's picture of the day full bleed, a clock and the
-// top left, the weather top right. The picture changes every two minutes (today's, then two from
-// the archive, then today's again); ‹ › step by hand. A session's search (the door) darkens the
+// top left, the weather top right. The picture changes every two minutes (today's first, then a
+// day from the archive each time); ‹ › step back and forth through what was shown, and › past the
+// newest loads another. In the tile and the pane a picture is fetched at the narrowest width
+// Wikimedia serves that fills where it is drawn (`widthFor`); in the lightbox, one served width down
+// from the original, or the original when that is under 1080 (`sharpUrl`). A session's search (the door) darkens the
 // picture and lists hits; a hit opens its lead section in place. A click on the
 // picture opens it large over the whole window (deck's lightbox): the tile asks core for the
 // overlay view, and this same page draws the dimmed backdrop and the picture in it. The head's
@@ -17,15 +20,22 @@ import {
   addPlace,
   cleanPlaces,
   cleanUnit,
+  cropCaption,
   deg,
   featuredUrl,
   forecastUrl,
   geocodeQuery,
   hitsFrom,
+  imageAt,
   leadPlace,
   look,
   otherClock,
   pictureFrom,
+  pictureFromQuery,
+  potdCaptionUrl,
+  potdUrl,
+  captionFromWikitext,
+  sharpUrl,
   placesExit,
   placesFrom,
   randomPastDay,
@@ -34,7 +44,7 @@ import {
   summaryFrom,
   summaryUrl,
   weatherFrom,
-  whenFor,
+  widthFor,
   ymd
 } from './wiki.js'
 
@@ -99,25 +109,38 @@ async function pictureOn(date) {
   const today = date === ymd(new Date())
   const hit = pictures.get(date)
   if (hit && (!today || Date.now() - hit.at < TODAY_TTL_MS)) return hit.item
-  const item = pictureFrom(await getJson(featuredUrl(date), 'wikipedia feed'), date, today)
+  // The day's template first (small and quick); the featured feed if that fails or finds nothing.
+  // Its caption comes from a page of its own, asked at the same time.
+  const [files, caption] = await Promise.all([
+    getJson(potdUrl(date), 'commons').catch((e) => (console.warn('[wikipedia] commons, using the feed:', plain(e)), null)),
+    getJson(potdCaptionUrl(date), 'commons')
+      .then((d) => captionFromWikitext(d?.query?.pages?.[0]?.revisions?.[0]?.slots?.main?.content))
+      .catch(() => '')
+  ])
+  const quick = files && pictureFromQuery(files, date, today, caption)
+  const item = quick ?? pictureFrom(await getJson(featuredUrl(date), 'wikipedia feed'), date, today)
   pictures.set(date, { at: Date.now(), item })
   return item
 }
 
-/** Today's picture, or with 'past' a random day's: a few days are tried, and the last resort is today's. */
-async function fetchPicture(when) {
-  if (when === 'past') {
-    for (let i = 0; i < PAST_TRIES; i++) {
-      try {
-        const item = await pictureOn(randomPastDay())
-        if (item) return item
-      } catch {
-        // try another day
-      }
+/** A day from the archive not shown yet: a few random days are tried; null if none had a picture. */
+async function fetchPast(skip) {
+  let err = null
+  for (let i = 0; i < PAST_TRIES; i++) {
+    const date = randomPastDay()
+    if (skip.some((x) => x.date === date)) continue
+    try {
+      const item = await pictureOn(date)
+      if (item) return item
+    } catch (e) {
+      err = e
     }
   }
-  return pictureOn(ymd(new Date()))
+  if (err) throw err
+  return null
 }
+
+const fetchToday = () => pictureOn(ymd(new Date()))
 
 const fetchHits = async (text) => (text.trim() ? hitsFrom(await getJson(searchUrl(text.trim()), 'wikipedia search')) : [])
 const fetchSummary = async (key) => summaryFrom(await getJson(summaryUrl(key), 'wikipedia summary'), key)
@@ -127,11 +150,12 @@ const fetchSummary = async (key) => summaryFrom(await getJson(summaryUrl(key), '
 let view = ws.view
 let pic = null
 let picErr = null
-/** Every picture shown so far, so ‹ goes back through them; › past the newest loads another. */
+/** Every picture shown so far, in order, so ‹ › go back and forth; › past the newest loads another. */
 const shown = []
 let at = -1
-let step = 0
 let loadingPic = null
+/** Why the last › past the newest found nothing, shown on that button until the next try. */
+let stepErr = null
 
 let query = ''
 let hits = null
@@ -162,27 +186,38 @@ function showAt(i) {
   render()
 }
 
-/** The next picture: forward through what was shown, else a new one (today's every third time). */
+/**
+ * The next picture: forward through what was shown, else a new one appended to the end (today's
+ * first, then a day from the archive not shown yet). A picture already in the list is never
+ * shown again as "next", so ‹ › always walk one straight line. If someone stepped back while it
+ * loaded, it is kept at the end and they stay where they are.
+ */
 function next() {
   if (at < shown.length - 1) return Promise.resolve(showAt(at + 1))
   if (loadingPic) return loadingPic
-  const when = whenFor(step++)
-  loadingPic = fetchPicture(when)
+  const from = at
+  stepErr = null
+  loadingPic = (shown.length ? fetchPast(shown) : fetchToday().then((p) => p ?? fetchPast(shown)))
     .then((p) => {
-      if (!p) {
-        if (!shown.length) picErr = 'No picture today'
-        return render()
+      if (!p || shown.some((x) => x.date === p.date)) {
+        if (shown.length) stepErr = 'No other picture came back; try again'
+        else picErr = 'No picture today'
+        return
       }
-      // Today's comes round every third time: point at the one already kept.
-      const had = shown.findIndex((x) => x.date === p.date)
-      if (had < 0) shown.push(p)
-      showAt(had < 0 ? shown.length - 1 : had)
+      shown.push(p)
+      if (at === from) at = shown.length - 1
+      pic = shown[at]
+      picErr = null
     })
     .catch((e) => {
-      picErr = `Could not reach Wikipedia: ${plain(e)}`
+      if (shown.length) stepErr = `Could not reach Wikipedia: ${plain(e)}`
+      else picErr = `Could not reach Wikipedia: ${plain(e)}`
+    })
+    .finally(() => {
+      loadingPic = null
       render()
     })
-    .finally(() => (loadingPic = null))
+  render()
   return loadingPic
 }
 
@@ -198,7 +233,7 @@ function restartCycle() {
 
 /** Today's picture, found among those shown or fetched. */
 async function showToday() {
-  const p = await fetchPicture('today')
+  const p = await fetchToday()
   if (!p) return null
   const had = shown.findIndex((x) => x.date === p.date)
   if (had < 0) shown.push(p)
@@ -361,11 +396,24 @@ function tick() {
   $('date').textContent = DATE_FMT.format(now)
 }
 
+/**
+ * The picture's address for where it is drawn: the tile crops it to fill its box, the pane fits it
+ * whole above the caption band. Sized from the box and the screen's pixel ratio, so a one-row tile
+ * on a 2x screen fetches 960 at most, never the 1920 the lightbox may want.
+ */
+function picFor(p) {
+  const w = bgBox.clientWidth || 400
+  const h = bgBox.clientHeight || 200
+  const dpr = window.devicePixelRatio || 1
+  return view === 'pane' ? imageAt(p, widthFor(p, w, Math.max(1, h - PANE_CAPTION_PX), dpr, 'contain')) : imageAt(p, widthFor(p, w, h, dpr, 'cover'))
+}
+const PANE_CAPTION_PX = 120
+
 /** The background image, swapped only when its address changes, so it fades in once. */
 function renderBg() {
-  const src = article?.imageUrl ?? pic?.imageUrl ?? null
-  const large = view === 'pane' && overlay() === 'picture' && pic?.largeUrl
-  const want = large || src
+  // Over the window the tile's face is hidden: leave it as it was rather than fetch for it.
+  if (view === 'overlay') return
+  const want = article ? article.imageUrl : pic ? picFor(pic) : null
   const img = bgBox.firstElementChild
   if (img?.getAttribute('src') === want) return
   put(bgBox, want ? el('img', { class: 'wiki-img', src: want, alt: '', draggable: 'false' }) : '')
@@ -404,13 +452,22 @@ function renderWeather() {
   )
 }
 
+/** ‹ and ›, the same in the tile, the pane and the lightbox. › says when it is fetching another. */
+function stepButtons() {
+  const fresh = at >= shown.length - 1
+  const nextTitle = loadingPic && fresh ? 'Loading another picture…' : stepErr && fresh ? stepErr : fresh ? 'Another picture' : 'The picture after'
+  return [
+    el('button', { title: 'The picture before', disabled: at <= 0, onclick: only(() => (prev(), restartCycle())) }, '‹'),
+    el('button', { title: nextTitle, class: loadingPic && fresh ? 'loading' : '', 'aria-busy': loadingPic && fresh ? 'true' : null, onclick: only(() => (next(), restartCycle())) }, '›')
+  ]
+}
+
 function renderPicture() {
   if (!pic) return put(main, el('div', { class: 'wiki-empty' }, picErr ?? 'wikipedia…'))
   const steps = el(
     'span',
     { class: 'wiki-steps' },
-    el('button', { title: 'The picture before', disabled: at <= 0, onclick: only(() => (prev(), restartCycle())) }, '‹'),
-    el('button', { title: 'Another picture', onclick: only(() => (next(), restartCycle())) }, '›')
+    ...stepButtons()
   )
   const tag = pic.today ? 'picture of the day' : `picture of the day · ${dayLabel(pic.date)}`
   put(main, 
@@ -432,8 +489,38 @@ function renderPicture() {
  * large image is not fetched again on every redraw.
  */
 let boxFor = ''
+/**
+ * The lightbox's picture, fitted whole in a frame 70% of the window wide: one served width down
+ * from the original, or the original when that would be under 1080 on its short side (sharpUrl,
+ * Colin, 12 Nov 2026), so it holds up when looked at closely and when cropped.
+ */
+const boxImage = (p) => sharpUrl(p)
+/**
+ * "crop & save": the lightbox's picture (sharpUrl) handed to
+ * core's viewer with its caption, where the user crops it to 9:16 and saves it. Straight after
+ * the click: core takes it only within a few seconds of one.
+ */
+let cropping = false
+async function cropInViewer(p) {
+  if (cropping) return
+  cropping = true
+  boxFor = ''
+  renderLightbox()
+  try {
+    const res = await fetch(sharpUrl(p))
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    await ws.viewer.show({ data: await res.arrayBuffer(), name: p.title, caption: cropCaption(p) })
+  } catch (err) {
+    console.warn('[wikipedia] crop', plain(err))
+  } finally {
+    cropping = false
+    boxFor = ''
+    renderLightbox()
+  }
+}
+
 function renderLightbox() {
-  const want = view === 'overlay' && pic ? `${pic.date}|${at}|${shown.length}` : ''
+  const want = view === 'overlay' && pic ? `${pic.date}|${at}|${shown.length}|${!!loadingPic}|${stepErr}|${cropping}` : ''
   if (want === boxFor) return
   boxFor = want
   if (!want) return put(lightbox)
@@ -441,8 +528,7 @@ function renderLightbox() {
   const steps = el(
     'span',
     { class: 'wikibox-steps' },
-    el('button', { title: 'The picture before', disabled: at <= 0, onclick: only(() => (prev(), restartCycle())) }, '‹'),
-    el('button', { title: 'Another picture', onclick: only(() => (next(), restartCycle())) }, '›')
+    ...stepButtons()
   )
   put(lightbox, 
     el(
@@ -451,14 +537,20 @@ function renderLightbox() {
       el(
         'figure',
         { class: 'wikibox', role: 'dialog', 'aria-label': pic.title, onclick: (e) => e.stopPropagation() },
-        el('img', { class: 'wikibox-img', src: pic.largeUrl || pic.imageUrl, alt: pic.title, draggable: 'false' }),
+        el('img', { class: 'wikibox-img', src: boxImage(pic), alt: pic.title, draggable: 'false' }),
         el(
           'figcaption',
           { class: 'wikibox-text' },
           el('span', { class: 'wikibox-tagline' }, el('span', { class: 'wikibox-tag' }, `picture of the day · ${pic.today ? 'today' : dayLabel(pic.date)}`), steps),
           el('h3', { class: 'wikibox-title' }, pic.title),
           pic.credit && el('p', { class: 'wikibox-credit' }, pic.credit),
-          el('button', { class: 'wikibox-link', title: pic.url, onclick: only(() => ws.openExternal(pic.url)) }, 'on Wikimedia Commons ↗')
+          el(
+            'span',
+            { class: 'wikibox-links' },
+            el('button', { class: 'wikibox-link', title: pic.url, onclick: only(() => ws.openExternal(pic.url)) }, 'on Wikimedia Commons ↗'),
+            ws.viewer && el('button', { class: 'wikibox-link', title: 'Open it in the viewer to crop a 9:16 part and save it', onclick: only(() => void cropInViewer(pic)) }, cropping ? 'opening…' : 'crop & save'),
+            pic.fullUrl && el('button', { class: 'wikibox-link', title: `The original file${pic.width ? `, ${pic.width} × ${pic.height}` : ''}, in the browser`, onclick: only(() => ws.openExternal(pic.fullUrl)) }, `full resolution${pic.width ? ` · ${pic.width} × ${pic.height}` : ''} ↗`)
+          )
         ),
         el('button', { class: 'wikibox-close', title: 'Close (Esc)', onclick: close }, '×')
       )
@@ -587,6 +679,10 @@ window.addEventListener('keydown', (e) => {
   if (overlay() !== 'picture') reset()
   else if (view === 'pane') void ws.closePane()
 })
+
+// The tile grows (↕), the window is resized: the picture is asked for again only when a different
+// width is wanted (and a narrower one comes from the browser's cache when it was seen before).
+new ResizeObserver(() => renderBg()).observe(bgBox)
 
 ws.onViewChange((v) => {
   view = v

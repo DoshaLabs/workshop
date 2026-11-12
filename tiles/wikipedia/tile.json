@@ -1,8 +1,8 @@
 {
   "id": "wikipedia",
   "name": "Today",
-  "version": "0.3.0",
-  "workshop": "^1.1",
+  "version": "0.4.0",
+  "workshop": "^1.9",
   "author": "DoshaLabs",
   "repo": "https://github.com/DoshaLabs/workshop",
   "hint": "Wikipedia's picture of the day, a clock and the weather",
@@ -13,7 +13,8 @@
   "permissions": {
     "storage": true,
     "overlay": true,
-    "net": ["en.wikipedia.org", "upload.wikimedia.org", "thumb.wikimedia.org", "api.open-meteo.com", "geocoding-api.open-meteo.com"],
+    "viewer": true,
+    "net": ["en.wikipedia.org", "commons.wikimedia.org", "upload.wikimedia.org", "thumb.wikimedia.org", "api.open-meteo.com", "geocoding-api.open-meteo.com"],
     "door": { "ops": ["show", "search", "today"], "timeoutMs": 15000 }
   }
 }

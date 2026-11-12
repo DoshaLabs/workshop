@@ -5,10 +5,18 @@ import {
   articleKey,
   cleanPlaces,
   cleanUnit,
+  cropCaption,
   defaultUnit,
   forecastUrl,
   geocodeQuery,
   hitsFrom,
+  imageAt,
+  pictureFromQuery,
+  potdCaptionUrl,
+  featuredUrl,
+  captionFromWikitext,
+  potdUrl,
+  sharpUrl,
   leadPlace,
   look,
   otherClock,
@@ -20,7 +28,7 @@ import {
   summaryFrom,
   thumb,
   weatherFrom,
-  whenFor
+  widthFor
   // @ts-expect-error plain JavaScript, as a tile's page is
 } from '../tiles/wikipedia/dist/wiki.js'
 
@@ -28,8 +36,26 @@ const lisbon = { name: 'Lisbon', region: 'Lisbon, PT', lat: 38.7167, lon: -9.133
 const oslo = { name: 'Oslo', region: 'Oslo, NO', lat: 59.9127, lon: 10.7461 }
 
 describe('wikipedia tile', () => {
-  it('cycles today, two from the archive, then today again', () => {
-    expect([0, 1, 2, 3, 4, 5, 6].map(whenFor)).toEqual(['today', 'past', 'past', 'today', 'past', 'past', 'today'])
+  it('fetches the narrowest served width that fills where the picture is drawn', () => {
+    const wide = { width: 8881, height: 5000 }
+    // A one-row tile, about 430 × 230 CSS px: cropped to fill, 860 px on a 2x screen.
+    expect(widthFor(wide, 430, 230, 2, 'cover')).toBe(960)
+    expect(widthFor(wide, 430, 230, 1, 'cover')).toBe(500)
+    // A tall picture in a wide tile still fills it across.
+    expect(widthFor({ width: 3000, height: 4000 }, 430, 230, 1, 'cover')).toBe(500)
+    // The lightbox at 2x is capped at 1920, never more.
+    expect(widthFor(wide, 1400, 800, 2, 'contain')).toBe(1920)
+    // Fitted whole, a tall picture needs only its height's worth across.
+    expect(widthFor({ width: 1000, height: 4000 }, 1400, 800, 1, 'contain')).toBe(250)
+    // Unknown shape: 3:2.
+    expect(widthFor({}, 300, 300, 1, 'cover')).toBe(500)
+  })
+
+  it('serves a picture smaller than the width wanted as its original', () => {
+    const p = { thumbSource: 'https://upload.wikimedia.org/t/960px-A.jpg', fullUrl: 'https://upload.wikimedia.org/A.jpg', width: 800, height: 600 }
+    expect(imageAt(p, 500)).toBe('https://upload.wikimedia.org/t/500px-A.jpg')
+    expect(imageAt(p, 960)).toBe('https://upload.wikimedia.org/A.jpg')
+    expect(imageAt({ ...p, width: 0 }, 1920)).toBe('https://upload.wikimedia.org/t/1920px-A.jpg')
   })
 
   it('picks archive days between 2016 and yesterday', () => {
@@ -45,8 +71,10 @@ describe('wikipedia tile', () => {
 
   it('reads the featured feed, search and summary', () => {
     const feed = { image: { title: 'File:Red fox.jpg', thumbnail: { source: 'https://upload.wikimedia.org/t/640px-Red_fox.jpg' }, description: { text: '<b>A</b> fox' }, artist: { text: '<a>Someone</a>' }, file_page: 'https://commons.wikimedia.org/wiki/File:Red_fox.jpg' } }
-    expect(pictureFrom(feed, '2020-01-02', false)).toMatchObject({ title: 'A fox', credit: 'Someone', imageUrl: 'https://upload.wikimedia.org/t/960px-Red_fox.jpg', largeUrl: 'https://upload.wikimedia.org/t/1920px-Red_fox.jpg', date: '2020-01-02', today: false })
+    expect(pictureFrom(feed, '2020-01-02', false)).toMatchObject({ title: 'A fox', credit: 'Someone', imageUrl: 'https://upload.wikimedia.org/t/960px-Red_fox.jpg', fullUrl: null, date: '2020-01-02', today: false })
     expect(pictureFrom({ image: { ...feed.image, description: {} } }, 'd', true).title).toBe('Red fox')
+    const withOriginal = pictureFrom({ image: { ...feed.image, image: { source: 'https://upload.wikimedia.org/Red_fox.jpg?utm_source=x', width: 6000, height: 4000 } } }, 'd', true)
+    expect(withOriginal).toMatchObject({ fullUrl: 'https://upload.wikimedia.org/Red_fox.jpg', width: 6000, height: 4000, imageUrl: 'https://upload.wikimedia.org/t/960px-Red_fox.jpg' })
     expect(pictureFrom({}, 'd', true)).toBeNull()
     const [h] = hitsFrom({ pages: [{ key: 'Red_fox', title: 'Red fox', description: 'Species', excerpt: 'The <span>red</span> fox', thumbnail: { url: '//upload.wikimedia.org/x/60px-F.jpg' } }] })
     expect(h).toEqual({ key: 'Red_fox', title: 'Red fox', description: 'Species', excerpt: 'The red fox', imageUrl: 'https://upload.wikimedia.org/x/250px-F.jpg', url: 'https://en.wikipedia.org/wiki/Red_fox' })
@@ -125,5 +153,100 @@ describe('wikipedia tile', () => {
     expect(otherClock({ timezone: 'Europe/Lisbon', utcOffset: 0 }, 0)).toBe(false)
     expect(otherClock({ timezone: 'Europe/Oslo', utcOffset: 3600 }, 0)).toBe(true)
     expect(otherClock({ timezone: '', utcOffset: 3600 }, 0)).toBe(false)
+  })
+})
+
+describe('the caption under a 9:16 crop', () => {
+  it('is the title with its credit, and the day as mm/dd/yy', () => {
+    expect(cropCaption({ date: '2026-11-12', title: 'Grey heron at dawn', credit: 'Jane Doe' })).toEqual({
+      text: 'Grey heron at dawn. Jane Doe',
+      source: 'Wikipedia Photo of the Day, 11/12/26'
+    })
+    expect(cropCaption({ date: '2025-01-05', title: 'Ice', credit: '' }).text).toBe('Ice')
+    expect(cropCaption({ date: '2025-01-05', title: 'Ice' }).source).toBe('Wikipedia Photo of the Day, 01/05/25')
+  })
+})
+
+describe('the lightbox picture', () => {
+  const pic = (width: number, height: number) => ({
+    width,
+    height,
+    thumbSource: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/X.jpg/960px-X.jpg',
+    fullUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg'
+  })
+  it('is one served width down from the original', () => {
+    expect(sharpUrl(pic(6231, 4154))).toMatch(/\/3840px-X\.jpg$/)
+    expect(sharpUrl(pic(2400, 1600))).toMatch(/\/1920px-X\.jpg$/)
+    expect(sharpUrl(pic(3000, 4500))).toMatch(/\/1920px-X\.jpg$/)
+  })
+  it('is the original when that step is under 1080 on its short side', () => {
+    expect(sharpUrl(pic(1800, 1200))).toBe(pic(1, 1).fullUrl)
+    expect(sharpUrl(pic(5000, 1200))).toBe(pic(1, 1).fullUrl)
+    expect(sharpUrl(pic(1200, 1800))).toBe(pic(1, 1).fullUrl)
+    expect(sharpUrl(pic(200, 150))).toBe(pic(1, 1).fullUrl)
+  })
+  it('is 1920 when the size is unknown', () => {
+    expect(sharpUrl({ ...pic(0, 0) })).toMatch(/\/1920px-X\.jpg$/)
+  })
+})
+
+describe('a day\'s picture from its template', () => {
+  const ii = (title: string, width: number, height: number) => ({
+    title,
+    imageinfo: [
+      {
+        width,
+        height,
+        url: `https://upload.wikimedia.org/wikipedia/commons/9/90/${title.slice(5)}`,
+        thumburl: `https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/${title.slice(5)}/960px-${title.slice(5)}`,
+        descriptionurl: `https://commons.wikimedia.org/wiki/${title}`,
+        extmetadata: { ImageDescription: { value: 'Soft-plumaged <i>petrel</i>' }, Artist: { value: '<a href="//x">JJ Harrison</a>' } }
+      }
+    ]
+  })
+  it('asks the API for the template\'s files, with CORS', () => {
+    const u = new URL(potdUrl('2023-08-09'))
+    expect(u.host).toBe('commons.wikimedia.org')
+    expect(u.searchParams.get('titles')).toBe('Template:Potd/2023-08-09')
+    expect(u.searchParams.get('origin')).toBe('*')
+  })
+  it('takes the largest file, as the feed\'s picture would be', () => {
+    const p = pictureFromQuery({ query: { pages: [ii('File:Icon.png', 40, 40), ii('File:Petrel.jpg', 4525, 3017)] } }, '2023-08-09', false)!
+    expect(p).toMatchObject({ date: '2023-08-09', today: false, title: 'Soft-plumaged petrel', credit: 'JJ Harrison', width: 4525, height: 3017 })
+    expect(p.url).toBe('https://commons.wikimedia.org/wiki/File:Petrel.jpg')
+    expect(p.imageUrl).toMatch(/\/960px-Petrel\.jpg$/)
+  })
+  it('is null for a day with no picture', () => {
+    expect(pictureFromQuery({ batchcomplete: true }, '2001-01-01', false)).toBeNull()
+  })
+})
+
+describe('the day\'s caption from Commons', () => {
+  it('is the first parameter as plain text, links as their labels', () => {
+    expect(
+      captionFromWikitext(
+        '{{Potd description|1=[[:en:Czechoslovak koruna|50 Korun]] banknote of [[Československo / Česko-Slovensko|Czechoslovakia]], issued in 1929 by the [[:en:National Bank of Czechoslovakia|National Bank of Czechoslovakia]] |2=en|3=2026|4=11|5=12}}'
+      )
+    ).toBe('50 Korun banknote of Czechoslovakia, issued in 1929 by the National Bank of Czechoslovakia')
+    expect(captionFromWikitext("{{Potd description|1=''[[:en:Josephine Baker|Joséphine Baker]]'', lithography, 1931.|2=en}}")).toBe('Joséphine Baker, lithography, 1931.')
+    expect(captionFromWikitext('{{Potd description|1=[[:Category:Acropolis of Athens|Acropolis]] panorama, [[:en:Athens]].|2=en}}')).toBe('Acropolis panorama, Athens.')
+  })
+  it('drops inner templates and keeps going past their pipes', () => {
+    expect(captionFromWikitext('{{Potd description|1=A {{w|heron|grey heron}} at dawn|2=en}}')).toBe('A at dawn')
+  })
+  it('is empty when there is nothing to read', () => {
+    expect(captionFromWikitext(undefined)).toBe('')
+    expect(captionFromWikitext('no template here')).toBe('')
+  })
+})
+
+describe('the page lets the tile fetch what it asks for', () => {
+  it('has every host the tile fetches from in its connect-src', async () => {
+    const { readFileSync } = await import('node:fs')
+    const html = readFileSync(new URL('../tiles/wikipedia/dist/index.html', import.meta.url), 'utf8')
+    const connect = /connect-src ([^;"]+)/.exec(html)![1].split(/\s+/)
+    const pic = { width: 6000, height: 4000, thumbSource: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/X.jpg/960px-X.jpg', fullUrl: 'https://upload.wikimedia.org/wikipedia/commons/a/ab/X.jpg' }
+    const fetched = [potdUrl('2023-08-09'), potdCaptionUrl('2023-08-09'), featuredUrl('2023-08-09'), sharpUrl(pic), sharpUrl({ ...pic, width: 1500, height: 1000 }), 'https://thumb.wikimedia.org/x']
+    for (const u of fetched) expect(connect, u).toContain(new URL(u).origin)
   })
 })

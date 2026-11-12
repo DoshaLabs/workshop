@@ -51,7 +51,12 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   the door (127.0.0.1, bearer token, caller from the token, browser `Origin` refused).
 - `tiles/wikipedia/` (named "Today"; the id stays `wikipedia`): deck's Wikipedia tile ported onto
   the contract, plain JS with no build step: the picture of the day full bleed (cycling every 2
-  minutes, today's then two from the archive), a clock top left and the weather top right
+  minutes, today's then a new day from the archive; ‹ › walk back and forth and › past the newest
+  loads one; each day's picture from Commons' `Template:Potd/<date>` and its `(en)` caption page,
+  about 3 KB in 0.2 s, the featured feed only as the fallback, since an archive day's feed is 300 KB
+  and up to 3 s; in the tile and pane at the narrowest served width that fills its box, `widthFor`;
+  in the lightbox one served width below the original, the original when that is under 1080 on its
+  short side, `sharpUrl`), a clock top left and the weather top right
   (Open-Meteo; asks for a city on first run, places kept in `workshop.storage`). No search box:
   a session's door search lists hits and opens an article over the picture. A click opens it as
   a pane, which shows the picture whole. Rules in `dist/wiki.js`, tested as shipped.
