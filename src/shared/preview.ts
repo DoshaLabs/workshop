@@ -8,6 +8,8 @@ export interface PreviewRef {
   /** The session's folder, when the reference came from its conversation. */
   cwd?: string
   line: number | null
+  /** A picture a tile handed the viewer comes with its caption (shared/viewer.ts, bridge 1.9). */
+  caption?: import('./viewer').ViewCaption
 }
 
 /**

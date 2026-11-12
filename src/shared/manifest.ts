@@ -6,8 +6,8 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). 1.7: `transcripts` (a session's conversation, parsed). 1.8: the `float` view (a tile with `"float": true` popped out into a small square the user drags anywhere), and `sessions.watch` fires at once with the list. */
-export const BRIDGE_VERSION = '1.8.0'
+/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). 1.7: `transcripts` (a session's conversation, parsed). 1.8: the `float` view (a tile with `"float": true` popped out into a small square the user drags anywhere), and `sessions.watch` fires at once with the list. 1.9: `viewer` (a picture the tile hands to core's file viewer, with a caption, where the user may crop and save it). */
+export const BRIDGE_VERSION = '1.9.0'
 
 /** The first bridge with `sessions: "launch"`: a tile asking for it must not claim to run on an older one. */
 export const LAUNCH_SINCE = '1.4.0'
@@ -79,6 +79,12 @@ export interface Permissions {
    */
   overlay?: boolean
   /**
+   * `workshop.viewer.show({ data, name, caption })` (bridge ^1.9): a picture the page holds, opened
+   * in core's file viewer over the window, where the user may crop it to 9:16 and save it (with the
+   * caption beneath, if they tick it). Only in answer to a click or key in the page.
+   */
+  viewer?: boolean
+  /**
    * `workshop.music`: what Spotify or Music is playing, and play, pause, skip, seek, volume. Core
    * drives the apps (main/music.ts) and serves the artwork on the tile's own origin, so a music
    * tile needs no `net` and no backend.
@@ -137,7 +143,7 @@ export const DOOR_TIMEOUT_MAX = 120_000
 export const BACKEND_TIMEOUT_DEFAULT = 10_000
 export const BACKEND_TIMEOUT_MAX = 120_000
 
-const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'music', 'net', 'oauth', 'backend'])
+const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'viewer', 'music', 'net', 'oauth', 'backend'])
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -252,7 +258,7 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
   if (!isObj(p)) errors.push('permissions: must be an object')
   else {
     for (const k of Object.keys(p)) if (!KNOWN.has(k)) errors.push(`permissions.${k}: not a permission this core knows`)
-    for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'music'] as const) {
+    for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'viewer', 'music'] as const) {
       if (p[k] === undefined) continue
       if (typeof p[k] !== 'boolean') errors.push(`permissions.${k}: must be true or false`)
       else if (p[k]) permissions[k] = true

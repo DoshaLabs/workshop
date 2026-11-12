@@ -108,6 +108,10 @@ const core = {
   /** The viewer is up or gone: while it is up, main turns Esc anywhere in the window into onViewClose. */
   viewOpen: (open: boolean): Promise<void> => ipcRenderer.invoke(CH.viewOpen, open),
   onViewClose: (fn: () => void) => on(CH.viewClose, fn),
+  /** Save a copy of the file the viewer shows, where the user picks (~/Downloads first). The copy's path, or null if cancelled or refused. */
+  viewSave: (path: string): Promise<string | null> => ipcRenderer.invoke(CH.viewSave, path),
+  /** Save the viewer's 9:16 crop (PNG bytes) under `name`, where the user picks. Its path, or null. */
+  viewSaveCrop: (data: Uint8Array, name: string): Promise<string | null> => ipcRenderer.invoke(CH.viewSaveCrop, data, name),
   /** A file in the Mac app that owns its type (a ⌘-click on a path). False if refused. */
   openFileApp: (path: string, cwd?: string): Promise<boolean> => ipcRenderer.invoke(CH.previewOpenApp, path, cwd),
   /** Watch the file the pane shows (null: none); a change comes back through onDocChanged. */

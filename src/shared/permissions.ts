@@ -39,6 +39,7 @@ export function permissionWords(p: Permissions): string[] {
   if (p.door) out.push(`take requests from your sessions (${p.door.ops.join(', ')})`)
   if (p.usage) out.push('see your usage and costs')
   if (p.overlay) out.push('show itself over the whole window when you click it')
+  if (p.viewer) out.push('open its pictures in the viewer when you click, for you to crop and save')
   if (p.notify) out.push('send you notifications')
   if (p.storage) out.push('keep its own data')
   return out
@@ -51,7 +52,7 @@ export function permissionWords(p: Permissions): string[] {
  */
 export function permissionKeys(p: Permissions): string[] {
   const keys: string[] = []
-  for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'music', 'backend'] as const) if (p[k]) keys.push(k)
+  for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'viewer', 'music', 'backend'] as const) if (p[k]) keys.push(k)
   if (p.sessions) keys.push(`sessions:${p.sessions}`)
   for (const op of p.door?.ops ?? []) keys.push(`door:${op}`)
   for (const h of p.net ?? []) keys.push(`net:${h}`)

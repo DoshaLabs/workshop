@@ -59,6 +59,7 @@ user is shown the list.
 | `"files": true` | `workshop.files`: read what the user picks, nothing else |
 | `"camera": true`, `"microphone": true` | `navigator.mediaDevices.getUserMedia` |
 | `"overlay": true` | `workshop.openOverlay()`: the page over the whole window, e.g. a lightbox. Needs `"workshop": "^1.1"` |
+| `"viewer": true` | `workshop.viewer.show()`: hand a picture to workshop's viewer, where the user can crop it to 9:16 and save it, your caption beneath if they tick it. Needs `"workshop": "^1.9"` |
 | `"music": true` | `workshop.music`: what Spotify or Music is playing, with its artwork, and play, pause, skip, seek, volume. Needs `"workshop": "^1.3"`. No `net` needed for the artwork |
 | `"oauth": ["accounts.example.com"]` | `workshop.oauth`: sign the user in with OAuth; workshop catches the browser's redirect and hands you the code. Same host rules as `net`. Needs `"workshop": "^1.5"`; the token endpoint must also be in `net` |
 
@@ -100,6 +101,20 @@ transparent, so a `color-mix(in srgb, var(--ws-bg) 70%, transparent)` background
 the window behind it (`backdrop-filter` cannot blur what is outside the page). Esc always closes
 it and your page never receives that Esc. One click opens it once: reopening needs a new click.
 It goes back to the view it came from (`tile` or `pane`).
+
+The viewer (needs `"viewer": true`, bridge 1.9):
+
+```js
+const data = await (await fetch(pictureUrl)).arrayBuffer()   // through your `net` hosts
+await workshop.viewer.show({ data, name: 'Heron at dawn', caption: { text: 'A grey heron at dawn', source: 'My tile, 11/12/26' } })
+```
+
+A PNG, JPEG, GIF or WebP your page holds (its bytes, at most 40 MB) opens in workshop's own
+viewer over the window, the way a file a session points at does: the user can save it, or crop a
+9:16 part and save that. `caption` is optional; when given, a box under the crop offers to draw
+it beneath, off until the user ticks it (the text wrapped, the source a smaller line). Plain text
+only, at most 400 and 120 characters. Rejects unless the user clicked or typed in this page in the
+last 5 s, once per click; if your overlay is open it closes, so the viewer is on top.
 
 Behind a permission (each call rejects with a clear message if the permission is missing):
 

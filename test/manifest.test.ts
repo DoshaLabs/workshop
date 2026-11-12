@@ -50,7 +50,7 @@ describe('checkManifest', () => {
   it('says which bridge an overlay tile needs', () => {
     expect(checkManifest({ ...base, workshop: '^1.1', permissions: { overlay: true } }).ok).toBe(true)
     expect(checkManifest({ ...base, workshop: '^1.2' }).ok).toBe(true)
-    expect(errs({ ...base, workshop: '^1.9' })[0]).toMatch(/does not accept/)
+    expect(errs({ ...base, workshop: '^1.10' })[0]).toMatch(/does not accept/)
   })
 
   it('takes "float" (bridge 1.8) as a layout flag beside "pane"', () => {

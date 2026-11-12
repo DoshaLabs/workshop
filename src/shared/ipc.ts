@@ -193,6 +193,9 @@ export const CH = {
   viewFile: 'ws:core:view-file',
   viewOpen: 'ws:core:view-open', // window → main: a viewer is up (true) or gone (false), for Esc
   viewClose: 'ws:core:view-close', // main → window: Esc while a viewer is up, wherever the focus was
+  viewSave: 'ws:core:view-save', // window → main: save a copy of the file the viewer shows (a save dialog)
+  viewSaveCrop: 'ws:core:view-save-crop', // window → main: save the viewer's 9:16 crop, a PNG it drew
+  tileViewerShow: 'ws:tile:viewer-show', // tile → main: a picture for core's viewer (bridge 1.9, permissions.viewer)
   dropKeep: 'ws:core:drop-keep',
   // the screen recorder (main/recorder.ts): the top bar's button
   recToggle: 'ws:core:rec-toggle',

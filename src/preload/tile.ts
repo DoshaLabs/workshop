@@ -259,6 +259,22 @@ if (hello) {
      */
     openOverlay: (): Promise<void> => gate('overlay', () => ipcRenderer.invoke(CH.overlay, true)),
     closeOverlay: (): Promise<void> => ipcRenderer.invoke(CH.overlay, false),
+    viewer: {
+      /**
+       * A picture this page holds (its bytes: an ArrayBuffer or Uint8Array of a PNG, JPEG, GIF or
+       * WebP) in core's viewer over the window, where the user may crop it to 9:16 and save it.
+       * `caption` ({ text, source? }) is offered beneath the crop, off until the user ticks it.
+       * Needs "viewer" in permissions and a click or key in this page in the last few seconds.
+       */
+      show: (o: { data: ArrayBuffer | Uint8Array; name?: string; caption?: { text: string; source?: string } }): Promise<void> =>
+        gate('viewer', () => {
+          const d = o?.data
+          const bytes = d instanceof Uint8Array ? d : d instanceof ArrayBuffer ? new Uint8Array(d) : null
+          if (!bytes) return Promise.reject(new Error('viewer.show: data must be an ArrayBuffer or Uint8Array'))
+          const cap = o.caption && typeof o.caption === 'object' ? { text: String(o.caption.text ?? ''), source: o.caption.source == null ? undefined : String(o.caption.source) } : null
+          return ipcRenderer.invoke(CH.tileViewerShow, bytes, String(o.name ?? ''), cap).catch((err) => Promise.reject(plain(err)))
+        })
+    },
     openExternal: (url: string): Promise<void> => ipcRenderer.invoke(CH.external, String(url)),
     storage: {
       get: (key: string): Promise<unknown> => gate('storage', () => ipcRenderer.invoke(CH.storageGet, key)),

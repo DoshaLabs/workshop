@@ -15,14 +15,14 @@
 // there never reach the window's own listeners, so main catches Esc for the window while a viewer
 // is open, as it does for a tile's overlay.
 
-import { net, protocol, type WebContents } from 'electron'
+import { BrowserWindow, dialog, net, protocol, type WebContents } from 'electron'
 import { randomBytes } from 'node:crypto'
-import { open, realpath, stat } from 'node:fs/promises'
+import { copyFile, mkdir, open, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, sep } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { CH } from '@shared/ipc'
-import { VIEW_SCHEME, mimeOf, pageGetsFolder, sniffKind, viewKindOf, type ViewDoc, type ViewKind } from '@shared/viewer'
+import { SHOW_MAX, VIEW_SCHEME, mimeOf, pageGetsFolder, sniffKind, viewKindOf, type ViewDoc, type ViewKind } from '@shared/viewer'
 import { resolveRef } from './preview'
 
 interface Grant {
@@ -127,13 +127,85 @@ async function serve(req: Request): Promise<Response> {
   headers.set('Content-Type', target === g.file ? g.mime : byName !== 'application/octet-stream' ? byName : (res.headers.get('Content-Type') ?? byName))
   headers.set('Cache-Control', 'no-store')
   headers.set('X-Content-Type-Options', 'nosniff')
+  // A picture granted may be read into core's own canvas (the viewer's 9:16 crop), so it is sent
+  // with CORS; a page and its files never are, so one grant still cannot read another's page.
+  if (target === g.file && g.mime.startsWith('image/')) headers.set('Access-Control-Allow-Origin', '*')
   return new Response(res.body, { status: res.status, headers })
+}
+
+/**
+ * The head's "download": a copy of the file the viewer shows, saved where the user picks in the Mac's
+ * save dialog (~/Downloads first; the dialog asks before replacing). Only a file with a live grant,
+ * so the window cannot use it to copy any path it names. The copy's path, or null.
+ */
+export async function saveViewed(path: string): Promise<string | null> {
+  const real = await realpath(path).catch(() => null)
+  if (!real || ![...grants.values()].some((g) => g.file === real)) return null
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const opts = { defaultPath: join(homedir(), 'Downloads', basename(real)) }
+  const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+  if (r.canceled || !r.filePath) return null
+  if ((await realpath(r.filePath).catch(() => r.filePath)) === real) return real
+  await copyFile(real, r.filePath)
+  return r.filePath
+}
+
+/** What a picture's first bytes say it is, if they say it is a picture the viewer draws. */
+const pictureType = (b: Uint8Array): string | null => {
+  const s = sniffKind(b.subarray(0, 16))
+  return s?.kind === 'image' ? s.mime : null
+}
+const EXT_OF: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' }
+
+/**
+ * A picture a tile handed over (`workshop.viewer.show`, bridge 1.9), kept in `dir` (the profile's
+ * `viewer/`, the last few only) so the viewer serves it as it serves any file. Its first bytes must
+ * say it is a PNG, JPEG, GIF or WebP; the name is the tile's, made safe, with the true extension.
+ */
+export async function keepShown(dir: string, data: Uint8Array, name: string): Promise<string> {
+  if (!(data instanceof Uint8Array) || data.byteLength === 0) throw new Error('viewer.show: data must be the picture\'s bytes')
+  if (data.byteLength > SHOW_MAX) throw new Error(`viewer.show: at most ${SHOW_MAX / (1024 * 1024)} MB`)
+  const mime = pictureType(data)
+  if (!mime || !EXT_OF[mime]) throw new Error('viewer.show: only a PNG, JPEG, GIF or WebP picture')
+  const stem = String(name ?? '')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[^\p{L}\p{N} ._()-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80) || 'picture'
+  await mkdir(dir, { recursive: true })
+  const old = (await readdir(dir).catch(() => [] as string[])).sort()
+  for (const f of old.slice(0, Math.max(0, old.length - KEEP + 1))) await rm(join(dir, f), { recursive: true, force: true })
+  // A folder per picture keeps the name the user will see, with no clash between two of one name.
+  const sub = join(dir, `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`)
+  await mkdir(sub)
+  const file = join(sub, `${stem}.${EXT_OF[mime]}`)
+  await writeFile(file, data)
+  return file
+}
+
+/**
+ * The viewer's crop, saved: a PNG core's own window drew, written where the user picks in the save
+ * dialog (~/Downloads first). The copy's path, or null if cancelled.
+ */
+export async function saveCrop(data: Uint8Array, name: string): Promise<string | null> {
+  const png = data instanceof Uint8Array && data.byteLength > 8 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47
+  if (!png) throw new Error('not a PNG')
+  const safe = basename(String(name || 'picture.png')).replace(/^\.+/, '') || 'picture.png'
+  const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const opts = { defaultPath: join(homedir(), 'Downloads', safe), filters: [{ name: 'PNG', extensions: ['png'] }] }
+  const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+  if (r.canceled || !r.filePath) return null
+  await writeFile(r.filePath, data)
+  return r.filePath
 }
 
 /** Serves `view://` and answers the window's IPC (core's window only: `handle` checks the sender). */
 export function startViewer(o: { handle: (ch: string, fn: (...a: any[]) => unknown) => void }): void {
   if (!protocol.isProtocolHandled(VIEW_SCHEME)) protocol.handle(VIEW_SCHEME, serve)
   o.handle(CH.viewFile, (path: string, cwd?: string) => viewFile(String(path), typeof cwd === 'string' ? cwd : undefined))
+  o.handle(CH.viewSave, (path: string) => saveViewed(String(path)))
+  o.handle(CH.viewSaveCrop, (data: Uint8Array, name: string) => saveCrop(data, String(name)))
   o.handle(CH.viewOpen, (open: boolean) => {
     viewing = open === true
   })

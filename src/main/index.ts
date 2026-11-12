@@ -45,7 +45,9 @@ import { placeWindow } from './window-bounds'
 import { reapTmuxWhenGone } from './smoke-reaper'
 import { smokeNet } from './smoke-net'
 import { doorTilesOf } from './door-tools'
-import { escClosesViewer, setSessionFolders } from './viewer'
+import { escClosesViewer, keepShown, setSessionFolders } from './viewer'
+import { cleanCaption } from '@shared/viewer'
+import type { PreviewRef } from '@shared/preview'
 import { VIEW_SCHEME } from '@shared/viewer'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
@@ -321,7 +323,7 @@ function guestOf(e: IpcMainEvent | IpcMainInvokeEvent): Guest | null {
 }
 const tileOf = (e: IpcMainEvent | IpcMainInvokeEvent): Tile | null => guestOf(e)?.tile ?? null
 
-function need(e: IpcMainInvokeEvent | IpcMainEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage' | 'overlay' | 'transcripts'): Guest {
+function need(e: IpcMainInvokeEvent | IpcMainEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage' | 'overlay' | 'viewer' | 'transcripts'): Guest {
   const g = guestOf(e)
   if (!g) throw new Error('not a tile')
   if (perm && !g.tile.manifest.permissions[perm]) throw new Error(`this tile did not ask for "${perm}" in tile.json`)
@@ -688,6 +690,19 @@ function bridge(): void {
     if (Date.now() - g.gestureAt > GESTURE_MS) throw new Error('openOverlay: only in answer to a click or key in the tile')
     g.gestureAt = 0
     win?.webContents.send(CH.tileOverlay, g.key, true)
+  })
+
+  // A picture for core's viewer (bridge 1.9): only straight after a click or key in this page, once
+  // per input (the overlay's rule). Kept in the profile's viewer/ and opened like any file; the
+  // tile's own overlay, if it is up, steps aside so the viewer is on top.
+  ipcMain.handle(CH.tileViewerShow, async (e, data: Uint8Array, name: string, caption: unknown) => {
+    const g = need(e, 'viewer')
+    if (Date.now() - g.gestureAt > GESTURE_MS) throw new Error('viewer.show: only in answer to a click or key in the tile')
+    g.gestureAt = 0
+    const path = await keepShown(join(app.getPath('userData'), 'viewer'), data, typeof name === 'string' ? name : '')
+    if (overlayKey === g.key) closeOverlay()
+    const ref: PreviewRef = { path, line: null, ...(cleanCaption(caption) ? { caption: cleanCaption(caption)! } : {}) }
+    win?.webContents.send(CH.previewOpen, ref, '')
   })
 
   ipcMain.handle(CH.external, (e, url: string) => {

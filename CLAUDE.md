@@ -219,7 +219,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
 - File viewer (`FileViewer.tsx` in `Lightbox.tsx`, core's shared lightbox, also the `+` menu's;
   `src/main/viewer.ts`, rules in `src/shared/viewer.ts`): pictures, PDFs, HTML, films and sounds
   open there, not in the pane (by name, else a PNG / JPEG / GIF / WebP / PDF by its first bytes);
-  any other binary is never drawn, and "open in app" is offered. Main hands back
+  any other binary is never drawn, and "open in app" is offered. "download" saves a copy through the Mac's save dialog (~/Downloads first), only of a file with a live grant (`saveViewed`). A picture has "crop 9:16" (`Crop.tsx`; rules in `shared/viewer.ts`): a box to drag, size from its corner or draw anew, cut from the full picture in a canvas (main sends a granted picture with CORS for that), saved as `<name> 9x16.png`; a caption checkbox (off) appears only for a picture a tile handed over with one (bridge 1.9 `viewer`: `workshop.viewer.show({ data, name, caption })`, kept in `<profile>/viewer/`, a click in the page needed). Main hands back
   `view://<grant>/<name>`, each grant its own origin, allowed by the window's CSP into img, video,
   audio and iframe only. A grant serves that one file; an HTML page runs in a sandboxed frame that
   may not navigate the window, and gets its folder and below only under an open session's folder
@@ -590,6 +590,7 @@ workshop.notify({ text, attention }) // "notify"          → needs-you chip, ma
 workshop.files.pick/list/entries/read/url/forget  // "files" → only what the user picked for this tile
 workshop.music.get/watch/play/pause/toggle/next/previous/seek/setVolume/playUri  // "music" → Spotify or Music (bridge ^1.3)
 workshop.oauth.redirectUri / authorize(url) / cancel()  // "oauth": [hosts] → a sign-in's callback query (bridge ^1.5)
+workshop.viewer.show({ data, name, caption })  // "viewer" → a picture in core's viewer, to crop 9:16 and save (bridge ^1.9)
 workshop.media                     // "camera" / "microphone" → passed to the macOS prompt
 workshop.backend.call(op, body) / status() / onStatus(fn)   // built-in tiles with a "backend" only (bridge ^1.2)
 ```
