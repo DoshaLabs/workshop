@@ -3270,6 +3270,7 @@ textarea,
   margin-left: auto;
 }
 /* The worktree switch, above the prompt box: greyed where the folder is not a git repo with a commit. */
+.launch-tree { margin-bottom: -14px; } /* as close to the box as the agent switch above it */
 .launch-tree.off {
   cursor: default;
   opacity: 0.6;
