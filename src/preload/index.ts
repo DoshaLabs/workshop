@@ -10,10 +10,11 @@ import type { ColumnState } from '../shared/column'
 import type { ActiveMascot } from '../shared/mascot'
 import { MENU, type IndexState, type InstallRecord, type InstallRequest, type PendingInstall } from '../shared/tile-menu'
 import type { PreviewDoc, PreviewRef, PreviewWrite } from '../shared/preview'
+import type { ViewDoc } from '../shared/viewer'
 import type { RecState } from '../shared/recorder'
 import type { AppUpdate, DevMode } from '../shared/update'
-import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 import type { AccountsState, Cli } from '../shared/accounts'
+import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
   const h = (_e: unknown, ...a: unknown[]): void => fn(...(a as A))
@@ -102,7 +103,12 @@ const core = {
   readDoc: (path: string, cwd?: string): Promise<PreviewDoc> => ipcRenderer.invoke(CH.previewRead, path, cwd),
   writeDoc: (path: string, text: string, mtime: number): Promise<PreviewWrite> => ipcRenderer.invoke(CH.previewWrite, path, text, mtime),
   tickTask: (path: string, line: number, checked: boolean, mtime: number): Promise<PreviewWrite> => ipcRenderer.invoke(CH.previewTask, path, line, checked, mtime),
-  /** A file in the Mac app that owns its type (a ⌘-click on a path; HTML lands in the browser). False if refused. */
+  /** A picture, PDF, web page, film or sound for the lightbox: a `view://` URL of its own, or why not. */
+  viewFile: (path: string, cwd?: string): Promise<ViewDoc> => ipcRenderer.invoke(CH.viewFile, path, cwd),
+  /** The viewer is up or gone: while it is up, main turns Esc anywhere in the window into onViewClose. */
+  viewOpen: (open: boolean): Promise<void> => ipcRenderer.invoke(CH.viewOpen, open),
+  onViewClose: (fn: () => void) => on(CH.viewClose, fn),
+  /** A file in the Mac app that owns its type (a ⌘-click on a path). False if refused. */
   openFileApp: (path: string, cwd?: string): Promise<boolean> => ipcRenderer.invoke(CH.previewOpenApp, path, cwd),
   /** Watch the file the pane shows (null: none); a change comes back through onDocChanged. */
   watchDoc: (path: string | null): Promise<void> => ipcRenderer.invoke(CH.previewWatch, path),
@@ -123,18 +129,18 @@ const core = {
     install: (): Promise<void> => ipcRenderer.invoke(CH.updateInstall),
     onState: (fn: (u: AppUpdate) => void) => on(CH.updateState, fn)
   },
-  /** Dev mode (main/devmode.ts): this window built from the repo the app came from, rebuilt on every save. */
-  devMode: {
-    state: (): Promise<DevMode> => ipcRenderer.invoke(CH.devGet),
-    set: (on: boolean): Promise<void> => ipcRenderer.invoke(CH.devSet, on === true),
-    onState: (fn: (s: DevMode) => void) => on(CH.devState, fn)
-  },
   /** Accounts (main/accounts.ts): who each CLI is signed in as; Sign in runs the CLI's own login. */
   accounts: {
     state: (): Promise<AccountsState> => ipcRenderer.invoke(CH.accountsGet),
     signIn: (cli: Cli): Promise<void> => ipcRenderer.invoke(CH.accountsSignIn, cli),
     cancel: (): Promise<void> => ipcRenderer.invoke(CH.accountsCancel),
     onState: (fn: (s: AccountsState) => void) => on(CH.accountsState, fn)
+  },
+  /** Dev mode (main/devmode.ts): this window built from the repo the app came from, rebuilt on every save. */
+  devMode: {
+    state: (): Promise<DevMode> => ipcRenderer.invoke(CH.devGet),
+    set: (on: boolean): Promise<void> => ipcRenderer.invoke(CH.devSet, on === true),
+    onState: (fn: (s: DevMode) => void) => on(CH.devState, fn)
   },
   keepDrop: async (file: File): Promise<string> => {
     let path = ''

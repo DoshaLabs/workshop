@@ -201,12 +201,12 @@ export function fit(id: string, tries = 10): void {
 }
 
 /**
- * A clicked path: the preview pane, or with ⌘ held (and always for HTML) the Mac app that owns the
- * file's type, as in deck.
+ * A clicked path: the preview pane (text) or the lightbox viewer (a picture, a PDF, a web page…),
+ * or with ⌘ held the Mac app that owns the file's type, as in deck.
  */
 function openRef(id: string, r: { path: string; line: number | null }, ev: MouseEvent): void {
   const cwd = cwds.get(id) ?? ''
-  if (ev.metaKey || /\.x?html?$/i.test(r.path)) void window.core.openFileApp(r.path, cwd)
+  if (ev.metaKey) void window.core.openFileApp(r.path, cwd)
   else openDoc({ path: r.path, line: r.line, cwd })
 }
 

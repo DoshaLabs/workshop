@@ -21,6 +21,7 @@ import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize, resolve } from 'node:path'
 import { CH } from '@shared/ipc'
+import { sniffKind, viewKindOf } from '@shared/viewer'
 import { PREVIEW_MAX, isMarkdownName, toggleTask, type PreviewDoc, type PreviewRef, type PreviewWrite } from '@shared/preview'
 
 /** The absolute path a reference means: `~/x`, `/x`, or relative to `cwd` (else home). */
@@ -64,9 +65,14 @@ export async function readDoc(ref: string, cwd?: string): Promise<PreviewDoc> {
   }
   if (s.isDirectory()) return refused('This is a folder. The preview pane shows one file at a time.', 0, s.mtimeMs)
   if (!s.isFile()) return refused('This is not a regular file.', 0, s.mtimeMs)
-  if (s.size > PREVIEW_MAX) return refused(`This file is ${sizeOf(s.size)}, too large to show here (the pane takes up to ${sizeOf(PREVIEW_MAX)}).`, s.size, s.mtimeMs)
   try {
-    if (await looksBinary(path)) return refused('This is a binary file, not text, so there is nothing to show here.', s.size, s.mtimeMs)
+    if (await looksBinary(path)) {
+      const head = Buffer.alloc(16)
+      const fh = await open(path, 'r')
+      await fh.read(head, 0, 16, 0).finally(() => fh.close())
+      return { ...refused('This is a binary file, not text, so there is nothing to show here.', s.size, s.mtimeMs), ...(sniffKind(head) ? { view: true } : {}) }
+    }
+    if (s.size > PREVIEW_MAX) return refused(`This file is ${sizeOf(s.size)}, too large to show here (the pane takes up to ${sizeOf(PREVIEW_MAX)}).`, s.size, s.mtimeMs)
     const buf = await readFile(path)
     const text = buf.toString('utf8')
     // Read again if it changed while being read: the mtime handed back must be the text's.
@@ -191,6 +197,7 @@ export function startPreview(o: { win: () => BrowserWindow | null; handle: (ch: 
       if (w.isMinimized()) w.restore()
       const ref: PreviewRef = { path: doc.path, line, cwd: session.cwd }
       send(CH.previewOpen, ref, session.id)
+      if (viewKindOf(doc.path) || doc.view) return { path: doc.path, shown: 'viewer' }
       return { path: doc.path, kind: doc.kind, editable: doc.kind !== 'refused', ...(line ? { line } : {}), ...(doc.kind === 'refused' ? { note: doc.note } : {}) }
     },
     stop() {

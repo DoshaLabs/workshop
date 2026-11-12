@@ -8,7 +8,7 @@
 // a real pointer drag gets through a tile's webview is the `ws-dragging` style, checked here by its
 // computed value.
 
-import type { BrowserWindow } from 'electron'
+import { session, type BrowserWindow } from 'electron'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { CoreSessions } from './core-sessions'
@@ -121,6 +121,41 @@ export async function previewSmoke(check: Check, o: { win: BrowserWindow; door: 
   await turn('doc open code.ts:12')
   await waitFor(async () => (await shown()) === join(cwd, 'code.ts'))
   check('preview: code is shown in mono with line numbers, path:N marks the line', (await js(`(() => { const r = document.querySelector('.preview-row[data-hit="1"]'); return !!r && r.textContent.includes('line12') && getComputedStyle(r).fontFamily.includes('JetBrains Mono') })()`)) === true)
+
+  // ---- the file viewer: a picture, a page and a binary with no telling name, in the lightbox
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg==', 'base64')
+  await writeFile(join(cwd, 'shot.png'), png)
+  await writeFile(join(cwd, 'shot'), png)
+  await mkdir(join(cwd, 'site', 'css'), { recursive: true })
+  await writeFile(join(cwd, 'site', 'index.html'), '<!doctype html><link rel="stylesheet" href="css/a.css"><p>hi</p>')
+  await writeFile(join(cwd, 'site', 'css', 'a.css'), 'p { color: red }')
+  const viewer = (): Promise<string | null> => js(`document.querySelector('.viewer')?.dataset.viewer ?? null`)
+  const viewed = await turn('doc open shot.png')
+  check('viewer: the doc CLI says a picture went to the viewer', viewed.replace(/\s+/g, '').includes('"shown":"viewer"'), viewed.slice(-300))
+  await waitFor(async () => (await js(`document.querySelector('.viewer img')?.naturalWidth ?? 0`)) > 0, 4000)
+  check('viewer: a picture opens in the lightbox and draws', (await viewer()) === join(cwd, 'shot.png') && (await js(`document.querySelector('.viewer img').naturalWidth`)) === 2 && (await js(`!!document.querySelector('.lightbox.center .viewer')`)) === true)
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' })
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' })
+  check('viewer: Esc closes it, and the pane under it stays', await waitFor(async () => (await viewer()) === null, 3000) && (await shown()) === join(cwd, 'code.ts'))
+  await turn('doc open shot')
+  check('viewer: a picture with no telling name is known by its bytes', await waitFor(async () => (await viewer()) === join(cwd, 'shot') && (await js(`document.querySelector('.viewer img')?.naturalWidth ?? 0`)) === 2, 4000))
+  await js(`document.querySelector('.viewer .ghost').click(); true`)
+  await turn('doc open site/index.html')
+  await waitFor(async () => !!(await js(`document.querySelector('.viewer iframe')?.src ?? ''`)), 4000)
+  const page = String(await js(`document.querySelector('.viewer iframe')?.src ?? ''`))
+  const got = (u: string): Promise<number> => session.defaultSession.fetch(u).then((r) => r.status, () => -1)
+  check('viewer: a web page is framed on a view:// origin of its own, sandboxed', page.startsWith('view://') && (await js(`document.querySelector('.viewer iframe').getAttribute('sandbox')`)) !== null, page)
+  check('viewer: the page\'s own files beside it are served', (await got(page.replace(/index\.html$/, 'css/a.css'))) === 200)
+  check('viewer: nothing above the page\'s folder is', (await got(page.replace(/index\.html$/, '..%2Fplan.md'))) === 404 && (await got(page.replace(/index\.html$/, '%2E%2E/plan.md'))) === 404)
+  await js(`document.querySelector('.viewer .ghost').click(); true`)
+  await turn('doc open shot.png')
+  await waitFor(async () => !!(await js(`document.querySelector('.viewer img')?.src ?? ''`)), 4000)
+  const pic = String(await js(`document.querySelector('.viewer img')?.src ?? ''`))
+  check('viewer: a picture\'s grant serves that file alone', (await got(pic)) === 200 && (await got(pic.replace(/shot\.png$/, 'plan.md'))) === 404)
+  await js(`document.querySelector('.viewer .ghost').click(); true`)
+  await turn('doc open data.bin')
+  check('viewer: a binary it does not know stays in the pane, refused', (await waitFor(async () => String(await js(`document.querySelector('.preview-refused')?.textContent ?? ''`)).includes('binary'), 3000)) && (await viewer()) === null)
+
   const nope = await turn('doc open nowhere.md')
   check('preview: a missing file is refused by the CLI', nope.includes('no such file'), nope.slice(-200))
   const outside = await fetch(`http://127.0.0.1:${o.door.port}/core/doc`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${o.door.token}` }, body: JSON.stringify({ op: 'open', path: plan }) })

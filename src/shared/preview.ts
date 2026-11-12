@@ -24,6 +24,8 @@ export interface PreviewDoc {
   note?: string
   /** Refused because there is nothing at that path. */
   missing?: boolean
+  /** Refused as binary, but its first bytes are a picture or a PDF: the lightbox viewer shows it. */
+  view?: boolean
   size: number
   /** The modification time read with it: the lock a save or a tick must match. */
   mtime: number

@@ -28,7 +28,8 @@ import { RecordButton } from './RecordButton'
 import { UpdateButton } from './UpdateButton'
 import { AppMark } from './Knot'
 import { PreviewPane } from './PreviewPane'
-import { closeDoc, useDoc } from './preview-store'
+import { closeDoc, closeView, useDoc, useView } from './preview-store'
+import { FileViewer } from './FileViewer'
 import { useReorder } from './reorder'
 import { arrange, moved, ordered, pruned } from '@shared/order'
 
@@ -89,6 +90,7 @@ export function App() {
   const [sessionOrder, setSessionOrder] = useState<string[] | undefined>(undefined)
   /** The file in the preview pane, if any (track E): it takes the center until closed. */
   const doc = useDoc()
+  const viewing = useView()
   /**
    * The column's state is core's (main/settings.ts), so clearing the window's storage cannot reset it.
    * No tile is drawn until it has arrived: a page mounted for a tile that turns out to be off would
@@ -497,6 +499,9 @@ export function App() {
           onClose={() => setPicker(false)}
         />
       )}
+
+      {/* A picture, PDF, web page, film or sound a session pointed at, in the same lightbox. */}
+      {viewing && <FileViewer target={viewing} onClose={closeView} />}
 
       {/* A tile's page over the whole window, below a strip that is core's alone: the page cannot
           draw on it (it is outside the webview, which core places) and so cannot hide the way out

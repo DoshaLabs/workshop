@@ -45,6 +45,8 @@ import { placeWindow } from './window-bounds'
 import { reapTmuxWhenGone } from './smoke-reaper'
 import { smokeNet } from './smoke-net'
 import { doorTilesOf } from './door-tools'
+import { escClosesViewer } from './viewer'
+import { VIEW_SCHEME } from '@shared/viewer'
 
 /** A second core started by a smoke run on that run's profile, to check its sessions survive a restart (smoke.ts `restart`). */
 const RESTARTED = process.argv.includes('--smoke-restarted')
@@ -113,7 +115,12 @@ const SMOKE_BUILTINS = SMOKE ? [{ dir: resolve(app.getAppPath(), 'test/fixtures/
 if (!SMOKE && !app.requestSingleInstanceLock()) app.exit(0)
 
 // Must happen before ready: tile:// behaves like https (its own origin, fetch, CORS, storage).
-protocol.registerSchemesAsPrivileged([{ scheme: TILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }])
+protocol.registerSchemesAsPrivileged([
+  { scheme: TILE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
+  // The file viewer's (main/viewer.ts): each grant its own origin. Standard, so a web page's
+  // relative links resolve; stream, so a film seeks. No CORS headers are sent: one grant cannot read another.
+  { scheme: VIEW_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }
+])
 
 let win: BrowserWindow | null = null
 let core: CoreSessions | null = null
@@ -918,6 +925,7 @@ function createWindow(): void {
   })
   guardWebviews(win)
   escClosesOverlay(win.webContents)
+  escClosesViewer(win.webContents)
   coreShortcuts(win.webContents)
   if (SMOKE) {
     win.webContents.on('console-message', (e) => console.log(`[window] ${e.message}`))

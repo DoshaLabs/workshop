@@ -3,17 +3,15 @@
 // folder"), Marketplace (tiles installed from a git repo, and the index's). Every row shows the same
 // things on every tab: icon, name, hint, its permissions in plain words, and whether it is on.
 //
-// It is a lightbox: a card centred over the whole window, above every tile's page (Colin, 11 Nov
-// 2026: in the column's last cell it was too crowded). Tile pages are webviews in .tile-layer, a
-// fixed layer; .lightbox is a later fixed layer with a higher z-index, so it covers them, as the
-// overlay's strip does. A click on the backdrop or Esc closes it; the install prompt stays inside
-// the card.
+// It is in core's lightbox (Lightbox.tsx), over the whole window and every tile's page (Colin, 11
+// Nov 2026: in the column's last cell it was too crowded). The install prompt stays inside the card.
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { TileInfo } from '@shared/ipc'
 import type { Permissions } from '@shared/manifest'
 import type { IndexEntry } from '@shared/tile-index'
 import type { IndexState, InstallRecord, PendingInstall } from '@shared/tile-menu'
+import { Lightbox } from './Lightbox'
 import { FULL_ACCESS, TRANSCRIPTS_WARNING, TRANSCRIPTS_WORDS, permissionWords } from '@shared/permissions'
 
 type Tab = 'builtin' | 'yours' | 'market'
@@ -55,17 +53,6 @@ export function TilePicker({
       return 'builtin'
     }
   })
-  // Esc closes the menu, and only the menu: caught on the way down so a pane open in the center
-  // (whose Esc is a bubbling listener on the window) stays open.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
-      onClose()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose])
   const pick = (t: Tab): void => {
     setTab(t)
     try {
@@ -102,7 +89,7 @@ export function TilePicker({
   }
 
   return (
-    <div className="lightbox" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <Lightbox onClose={onClose}>
       <section className="picker" role="dialog" aria-label="Tiles">
         <header className="head">
           <span className="name">Tiles</span>
@@ -123,7 +110,7 @@ export function TilePicker({
           {tab === 'market' && <Market tiles={tiles} row={row} onOn={onOn} />}
         </div>
       </section>
-    </div>
+    </Lightbox>
   )
 }
 

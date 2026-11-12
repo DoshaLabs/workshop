@@ -18,6 +18,7 @@ import { Tmux } from './tmux'
 import { TranscriptWatcher } from './transcript'
 import { UsageTracker } from './usage'
 import { startPreview } from './preview'
+import { startViewer } from './viewer'
 import { keepImage } from './drops'
 import { CommitRecorder, CommitStore, codexShellCall, type CommitRecord } from './commits'
 import { codexKillLine } from '@shared/codex'
@@ -339,6 +340,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   })
   // The preview pane (track E): files read and written for the window, and a session's `doc open`.
   const preview = startPreview({ win: o.win, handle })
+  // The file viewer: pictures, PDFs, web pages, films and sounds, served on view:// for the lightbox.
+  startViewer({ handle })
   // A picture dropped on a session (from a browser or another app, with no file of its own), kept as a file the session can read.
   handle(CH.dropKeep, (file: unknown) => keepImage(o.home, file))
   on(CH.ptyInput, (id: string, data: string) => typeof data === 'string' && sessions.input(String(id), data))

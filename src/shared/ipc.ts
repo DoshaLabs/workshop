@@ -189,6 +189,10 @@ export const CH = {
   previewOpenApp: 'ws:core:preview-open-app', // ⌘-click on a path: the file in its own Mac app
   previewOpen: 'ws:core:preview-open', // main → window: a session asked for a file (the doc CLI)
   previewChanged: 'ws:core:preview-changed', // main → window: the watched file changed on disk
+  // the file viewer (main/viewer.ts): pictures, PDFs, web pages, films and sounds, in the lightbox
+  viewFile: 'ws:core:view-file',
+  viewOpen: 'ws:core:view-open', // window → main: a viewer is up (true) or gone (false), for Esc
+  viewClose: 'ws:core:view-close', // main → window: Esc while a viewer is up, wherever the focus was
   dropKeep: 'ws:core:drop-keep',
   // the screen recorder (main/recorder.ts): the top bar's button
   recToggle: 'ws:core:rec-toggle',

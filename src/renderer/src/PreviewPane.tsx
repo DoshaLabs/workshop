@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PreviewDoc, PreviewRef } from '@shared/preview'
 import { Markdown } from './Markdown'
-import { openDoc, setDocGuard } from './preview-store'
+import { closeDoc, openDoc, openView, setDocGuard } from './preview-store'
 
 /** Past this many lines the text is one plain block without numbers (the DOM's cost). */
 const LINE_CAP = 5000
@@ -55,6 +55,12 @@ export function PreviewPane({ target, onClose }: { target: PreviewRef; onClose: 
     setProblem(null)
     void window.core.readDoc(target.path, target.cwd).then((d) => {
       if (!live) return
+      // A binary whose first bytes are a picture or a PDF, under a name that did not say so: the viewer's.
+      if (d.view) {
+        openView(target)
+        closeDoc(true)
+        return
+      }
       setDoc(d)
       setDraft(d.text ?? '')
       setChanged(false)

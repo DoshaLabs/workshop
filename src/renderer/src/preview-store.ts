@@ -6,14 +6,20 @@
 // or replacing its file (a new file, Esc, ×, a session or a tile taking the center) asks the guard
 // first. The guard does not block: it shows its question in the pane and keeps what was asked for,
 // which goes ahead if the user chooses to discard.
+//
+// A file the pane cannot draw as text (a picture, a PDF, a web page, a film, a sound: shared/viewer.ts)
+// opens in the lightbox instead (FileViewer.tsx), over whatever the center shows, which stays.
 
 import { useSyncExternalStore } from 'react'
 import type { PreviewRef } from '@shared/preview'
+import { viewKindOf } from '@shared/viewer'
 
 /** Asked before the pane's file goes away: true to go ahead now; false keeps it, and `go` runs if the user discards. */
 export type DocGuard = (go: () => void) => boolean
 
 let current: PreviewRef | null = null
+/** The file in the lightbox viewer, if one is up. */
+let viewing: PreviewRef | null = null
 const subs = new Set<() => void>()
 let guard: DocGuard | null = null
 let started = false
@@ -28,6 +34,7 @@ function start(): void {
 
 /** Show a file in the pane. A fresh object every time, so the same file asked for again reloads. */
 export function openDoc(ref: PreviewRef, force = false): void {
+  if (viewKindOf(ref.path)) return openView(ref)
   if (current && !force && guard && !guard(() => openDoc(ref, true))) return
   current = { ...ref }
   changed()
@@ -42,6 +49,18 @@ export function closeDoc(force = false): boolean {
   return true
 }
 
+/** Show a file in the lightbox viewer. The pane, if one is open, stays under it. */
+export function openView(ref: PreviewRef): void {
+  viewing = { ...ref }
+  changed()
+}
+
+export function closeView(): void {
+  if (!viewing) return
+  viewing = null
+  changed()
+}
+
 export function setDocGuard(g: DocGuard | null): void {
   guard = g
 }
@@ -54,5 +73,16 @@ export function useDoc(): PreviewRef | null {
       return () => void subs.delete(f)
     },
     () => current
+  )
+}
+
+export function useView(): PreviewRef | null {
+  return useSyncExternalStore(
+    (f) => {
+      start()
+      subs.add(f)
+      return () => void subs.delete(f)
+    },
+    () => viewing
   )
 }
