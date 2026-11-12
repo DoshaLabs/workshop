@@ -131,6 +131,7 @@ export const CH = {
   sessionNew: 'ws:core:session-new',
   /** Which agent CLIs are on the sessions' PATH: { claude, codex } (the launcher offers Codex only if so). */
   sessionClis: 'ws:core:session-clis',
+  sessionCanWorktree: 'ws:core:session-can-worktree',
   sessionResume: 'ws:core:session-resume',
   sessionPark: 'ws:core:session-park',
   sessionKill: 'ws:core:session-kill',

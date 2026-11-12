@@ -45,6 +45,8 @@ const core = {
   newSession: (opts: NewSessionOpts): Promise<unknown> => ipcRenderer.invoke(CH.sessionNew, opts),
   /** Which agent CLIs are installed (on the sessions' PATH). */
   clis: (): Promise<{ claude: boolean; codex: boolean }> => ipcRenderer.invoke(CH.sessionClis),
+  /** The folder is in a git repository with a commit, so a session there can have its own worktree. */
+  canWorktree: (cwd: string): Promise<boolean> => ipcRenderer.invoke(CH.sessionCanWorktree, cwd),
   resume: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionResume, id),
   park: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionPark, id),
   kill: (id: string): Promise<void> => ipcRenderer.invoke(CH.sessionKill, id),

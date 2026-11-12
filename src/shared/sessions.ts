@@ -138,3 +138,14 @@ export function launchRequest(v: unknown): { folder: string; worktree: boolean; 
   if (!name) throw new Error('sessions.launch: worktree.branch is lowercase letters, digits, dots, dashes and underscores (1 to 60)')
   return { folder, worktree: true, branch: name }
 }
+
+/**
+ * The project a session works in, by its folder's name. A Claude Code worktree session's `cwd` is
+ * the project itself (the CLI makes the worktree under it); a Codex one starts inside the worktree
+ * core made, `<root>/.workshop/worktrees/<name>`, so that tail is dropped. A worktree session's own
+ * name is its worktree's, so its heads lead with this instead and show the worktree below.
+ */
+export function projectName(cwd: string): string {
+  const p = cwd.replace(/\/\.(claude|workshop)\/worktrees\/[^/]+\/*$/, '').replace(/\/+$/, '')
+  return p.split('/').pop() || p || cwd
+}

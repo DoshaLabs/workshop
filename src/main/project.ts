@@ -38,6 +38,16 @@ export async function projectRoot(cwd: string): Promise<string> {
 }
 
 /**
+ * Whether a session started in `cwd` can have a worktree of its own: the folder is in a git
+ * repository with at least one commit to branch from. The launcher greys its worktree switch
+ * where this is false, since the CLI would refuse --worktree there.
+ */
+export async function canWorktree(cwd: string): Promise<boolean> {
+  if (!cwd) return false
+  return (await git(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'])) !== null
+}
+
+/**
  * Each session's project, resolved once and kept. `ready` resolves every session in a list that
  * has not been resolved yet; `get` answers from what is known (the start folder until then).
  */

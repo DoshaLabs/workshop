@@ -3269,3 +3269,29 @@ textarea,
 .acct-page {
   margin-left: auto;
 }
+/* The worktree switch, above the prompt box: greyed where the folder is not a git repo with a commit. */
+.launch-tree.off {
+  cursor: default;
+  opacity: 0.6;
+}
+/* A worktree session's head takes a second line: the project above (as on every session), the
+   worktree below it (SessionColumn.tsx, Sessions.tsx). */
+.head.with-tree {
+  height: auto;
+  min-height: 30px;
+  flex-wrap: wrap;
+  row-gap: 0;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.head.with-tree .tree-line {
+  flex: 0 0 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 2px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ws-muted);
+}

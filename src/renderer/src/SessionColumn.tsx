@@ -13,7 +13,7 @@ import { Mascot } from './Mascot'
 import { useEffect, useState } from 'react'
 import { useFileDrop } from './drop'
 import { MODELS } from '@shared/models'
-import { columnOrder, shortcutOrder, type SessionView, type SessionsState } from '@shared/sessions'
+import { columnOrder, shortcutOrder, type SessionView, type SessionsState, projectName } from '@shared/sessions'
 import { useReorder } from './reorder'
 import type { Usage } from '@shared/usage'
 import { ChatView } from './ChatView'
@@ -142,21 +142,17 @@ function SessionTile({ s, n, band, usage, onPick, drag }: { s: SessionView; n?: 
       }}
       {...drop.handlers}
     >
-      <header className="head">
+      <header className={`head${s.worktree ? ' with-tree' : ''}`}>
         <span {...drag.grip(s.id, s.name)}>⠿</span>
         {n && <span className="key">⌘{n}</span>}
         <Mascot id={s.id} status={s.status} attention={s.attention} />
+        {/* A worktree session is named for its worktree: the project leads, as on the others, and the worktree goes on a line of its own below. */}
         <span className="name" title={tilde(s.cwd)}>
-          {s.name}
+          {s.worktree ? projectName(s.cwd) : s.name}
         </span>
         {title && title !== s.name && (
           <span className="subname" title={title}>
             {title}
-          </span>
-        )}
-        {s.worktree && (
-          <span className="badge" title="In a git worktree of its own">
-            wt
           </span>
         )}
         {s.cli === 'codex' && (
@@ -172,6 +168,11 @@ function SessionTile({ s, n, band, usage, onPick, drag }: { s: SessionView; n?: 
         <SessionUsage id={s.id} usage={usage} />
         {s.cli === 'codex' ? <StopButton s={s} /> : <PauseButton s={s} />}
         <ParkButton id={s.id} />
+        {s.worktree && (
+          <span className="tree-line" title="In a git worktree of its own">
+            <span aria-hidden="true">⑂</span> {s.name}
+          </span>
+        )}
       </header>
       <div className="session-body">
         <Guard what="This conversation" reset={t}>
@@ -218,7 +219,7 @@ function ParkedCard({ parked, onPick }: { parked: SessionView[]; onPick: (s: Ses
           <Mascot id={s.id} status={s.status} attention={s.attention} />
           <span className="session-text">
             <span className="session-name">{s.name}</span>
-            <span className="session-folder">{base(s.cwd)}</span>
+            <span className="session-folder">{s.worktree ? <>{projectName(s.cwd)} <span aria-hidden="true">⑂</span></> : base(s.cwd)}</span>
           </span>
           <button
             className={`ghost ${arm === s.id ? 'armed' : ''}`}

@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { MODELS, PERMISSION_MODES } from '@shared/models'
 import { CODEX_MODES, promptWithFiles, type CliKind } from '@shared/cli'
-import type { LaunchPrefill, SessionView } from '@shared/sessions'
+import { projectName, type LaunchPrefill, type SessionView } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import { fit, focusTerminal, mount, unmount } from './terminals'
 import { SessionUsage } from './UsageMeter'
@@ -45,6 +45,8 @@ const thumbOf = (f: File): Promise<string | undefined> =>
 export function Launcher({ recent, prefill, onStarted }: { recent: string[]; prefill?: LaunchPrefill; onStarted: () => void }) {
   const [cwd, setCwd] = useState(recent[0] ?? '')
   const [worktree, setWorktree] = useState(false)
+  /** Whether the chosen folder can have a worktree (a git repo with a commit); null while asking. */
+  const [repo, setRepo] = useState<boolean | null>(null)
   const [cli, setCli] = useState<CliKind>('claude')
   /** Codex is offered only when it is installed: asked each time the launcher opens. */
   const [hasCodex, setHasCodex] = useState(false)
@@ -66,6 +68,21 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
   useEffect(() => {
     if (!cwd && recent[0]) setCwd(recent[0])
   }, [recent, cwd])
+
+  // Asked again whenever the folder changes; a typed path settles for a moment before it is asked.
+  useEffect(() => {
+    let live = true
+    setRepo(null)
+    const t = setTimeout(() => {
+      void window.core.canWorktree(cwd).then((ok) => live && setRepo(ok)).catch(() => live && setRepo(false))
+    }, 250)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [cwd])
+  /** What Start sends: the switch, unless the folder cannot have a worktree. */
+  const ownTree = worktree && repo !== false
 
   useEffect(() => {
     void window.core.clis().then((c) => setHasCodex(c.codex)).catch(() => setHasCodex(false))
@@ -96,7 +113,7 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
     setError('')
     try {
       const first = promptWithFiles(codex ? 'codex' : 'claude', prompt, files.map((f) => f.path))
-      await window.core.newSession({ ...(cli === 'codex' ? { cli } : {}), cwd, worktree, ...(worktree && branch ? { worktreeName: branch } : {}), model, permissionMode: mode, name, prompt: first })
+      await window.core.newSession({ ...(cli === 'codex' ? { cli } : {}), cwd, worktree: ownTree, ...(ownTree && branch ? { worktreeName: branch } : {}), model, permissionMode: mode, name, prompt: first })
       setPrompt('')
       setFiles([])
       setName('')
@@ -182,6 +199,21 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
           </button>
         </div>
       )}
+
+      <label className={`launch-switch launch-tree${repo === false ? ' off' : ''}`}>
+        <input
+          type="checkbox"
+          role="switch"
+          checked={ownTree}
+          disabled={repo === false}
+          onChange={(e) => { setWorktree(e.target.checked); if (!e.target.checked) setBranch('') }}
+        />
+        <span className="track" aria-hidden="true" />
+        <span>
+          <b>Its own worktree</b>
+          <span>{repo === false ? 'Not a git repository with a commit, so it works in the folder itself' : 'A new branch in its own folder, so it can’t trip over other sessions'}</span>
+        </span>
+      </label>
 
       <div className={`launch-compose${fileOver ? ' file-over' : ''}`} {...dropHandlers}>
         <textarea
@@ -300,14 +332,6 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
       </div>
 
       <div className="launch-section launch-extras">
-        <label className="launch-switch">
-          <input type="checkbox" role="switch" checked={worktree} onChange={(e) => { setWorktree(e.target.checked); if (!e.target.checked) setBranch('') }} />
-          <span className="track" aria-hidden="true" />
-          <span>
-            <b>Its own worktree</b>
-            <span>A new branch in its own folder, so it can’t trip over other sessions</span>
-          </span>
-        </label>
         <label className="launch-name">
           <b>Name</b>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="optional, e.g. login fix" />
@@ -338,11 +362,11 @@ export function FocusPane({ session, usage, n }: { session: SessionView; usage: 
   }, [session.id])
   return (
     <section className={`pane focus-pane ${drop.over ? 'file-over' : ''}`} data-session={session.id} {...drop.handlers}>
-      <header className="head">
+      <header className={`head${session.worktree ? ' with-tree' : ''}`}>
         {n && <span className="key">⌘{n}</span>}
         <Mascot id={session.id} status={session.status} attention={session.attention} />
         <span className="name" title={session.title ?? undefined}>
-          {session.name}
+          {session.worktree ? projectName(session.cwd) : session.name}
           {session.title && session.title !== session.name && <span className="muted"> · {session.title}</span>}
         </span>
         <SessionUsage id={session.id} usage={usage} />
@@ -351,6 +375,11 @@ export function FocusPane({ session, usage, n }: { session: SessionView; usage: 
         </span>
         {session.cli === 'codex' ? <StopButton s={session} /> : <PauseButton s={session} />}
         <ParkButton id={session.id} />
+        {session.worktree && (
+          <span className="tree-line" title="In a git worktree of its own">
+            <span aria-hidden="true">⑂</span> {session.name}
+          </span>
+        )}
       </header>
       <SessionAsks s={session} where="center" />
       <div className="term-host" ref={box} />

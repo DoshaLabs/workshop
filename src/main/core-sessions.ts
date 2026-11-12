@@ -13,11 +13,12 @@ import type { Door } from './door'
 import { findInPath, shellEnv } from './env'
 import { Fleet } from './fleet'
 import { HOOK_ROUTES, SessionSettings, type HookPayload } from './hooks'
-import { SessionManager } from './sessions'
+import { SessionManager, expandHome } from './sessions'
 import { Tmux } from './tmux'
 import { TranscriptWatcher } from './transcript'
 import { UsageTracker } from './usage'
 import { startPreview } from './preview'
+import { canWorktree } from './project'
 import { startViewer } from './viewer'
 import { keepImage } from './drops'
 import { CommitRecorder, CommitStore, codexShellCall, type CommitRecord } from './commits'
@@ -276,6 +277,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
   handle(CH.sessionNew, (opts: NewSessionOpts) => sessions.newSession(opts ?? { cwd: '' }))
   // Asked each time the launcher opens, so installing Codex while the app runs is seen.
   handle(CH.sessionClis, () => ({ claude: !!findInPath(env.PATH, 'claude'), codex: !!findInPath(env.PATH, 'codex') }))
+  handle(CH.sessionCanWorktree, (cwd: string) => canWorktree(typeof cwd === 'string' && cwd.trim() ? expandHome(cwd) : ''))
   handle(CH.sessionResume, (id: string) => sessions.resume(String(id)))
   handle(CH.sessionPark, (id: string) => sessions.park(String(id)))
   handle(CH.sessionKill, async (id: string) => {
