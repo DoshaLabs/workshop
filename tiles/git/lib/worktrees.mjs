@@ -8,7 +8,9 @@
 // - Never --force anything, never reset --hard, never branch -D, never push. Remove is
 //   `git worktree remove` without force, then `git branch -d`, which git refuses when unmerged.
 // - A worktree with uncommitted changes (untracked files included) is refused, and so is one with
-//   a rebase or merge already under way.
+//   a rebase or merge already under way. One exception: an untracked symlink into another
+//   worktree of the repository (an agent's worktree linking main's node_modules) is not a change;
+//   remove deletes the link, never what it leads to, and puts it back if git then refuses.
 // - A worktree a session is in is refused while that session is busy, needs you, or is starting;
 //   a merge also waits for the sessions in the worktree main is checked out in. Remove refuses a
 //   worktree any session is in, whatever it is doing (its folder would vanish under it).
@@ -20,7 +22,8 @@
 //   nothing is done.
 
 import { existsSync } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { lstat, readlink, realpath, stat, symlink, unlink } from 'node:fs/promises'
+import { join, sep } from 'node:path'
 import { failure, git, status } from './git.mjs'
 import { NOT_QUIET, overlaps, parseDiff, parseWorktreeList, pickBase, shortPath, staleness } from './parse.mjs'
 
@@ -78,6 +81,44 @@ async function underWay(path) {
   return null
 }
 
+/** Untracked entries looked at for shared links; past this many, the rest count as changes. */
+const LINKS_LOOKED = 200
+
+/**
+ * The untracked symlinks in worktree `p` that lead into another worktree of the same repository
+ * (`list`): an agent's worktree linking main's node_modules, say. They hold no work, so they are
+ * not changes. Paths relative to `p`.
+ */
+export async function sharedLinks(p, files, list) {
+  const untracked = files.filter((f) => f.kind === 'untracked').slice(0, LINKS_LOOKED)
+  const out = new Set()
+  if (!untracked.length) return out
+  const real = (x) => realpath(x).catch(() => null)
+  const self = await real(p)
+  const others = (await Promise.all(list.filter((x) => x.path !== p).map((x) => real(x.path)))).filter((o) => o && o !== self)
+  const under = (to, dir) => to === dir || to.startsWith(dir + sep)
+  for (const f of untracked) {
+    const at = join(p, f.path)
+    try {
+      if (!(await lstat(at)).isSymbolicLink()) continue
+      const to = await realpath(at)
+      // A link back into its own worktree is the worktree's business (main holds the nested ones).
+      if (self && under(to, self)) continue
+      if (others.some((o) => under(to, o))) out.add(f.path)
+    } catch {
+      // dangling, or gone since git looked: a change like any other
+    }
+  }
+  return out
+}
+
+/** git status of worktree `p`, its shared links left out. */
+async function changes(p, list) {
+  const st = await status(p)
+  const links = await sharedLinks(p, st.files, list)
+  return { files: st.files.filter((f) => !links.has(f.path)), links: [...links] }
+}
+
 /** When a worktree was last touched: its last commit, or its index written (a stage, a checkout), whichever is later. */
 async function touchedAt(path, head) {
   let at = 0
@@ -100,11 +141,11 @@ async function touchedAt(path, head) {
  * One worktree read for the tab. `changed` (every path it touches: uncommitted, and its commits
  * since the merge base with main) is for the overlap warning and is not sent to the page whole.
  */
-async function readOne(root, w, base) {
+async function readOne(root, w, base, list) {
   const out = { path: w.path, branch: w.branch, head: w.head, detached: w.detached, bare: w.bare, locked: w.locked, prunable: w.prunable, ahead: null, behind: null, dirty: null, files: [], touched: null, changed: [] }
   if (w.bare || w.prunable !== null) return out
   try {
-    const st = await status(w.path)
+    const st = await changes(w.path, list)
     out.dirty = st.files.length
     out.files = st.files.slice(0, 20).map((f) => ({ path: f.path, kind: f.kind }))
     const changed = new Set(st.files.flatMap((f) => (f.from ? [f.path, f.from] : [f.path])))
@@ -133,7 +174,7 @@ async function readOne(root, w, base) {
 export async function readProject(root, { sessionsAt, home, now = Date.now() }) {
   const list = await listWorktrees(root)
   const base = await baseOf(root)
-  const rows = await Promise.all(list.map((w) => readOne(root, w, base)))
+  const rows = await Promise.all(list.map((w) => readOne(root, w, base, list)))
   const main = list[0]?.path
   for (const r of rows) {
     r.main = r.path === main
@@ -201,14 +242,16 @@ function quiet(inside, p, where) {
   for (const s of inside(p)) if (NOT_QUIET[s.status]) throw new Refused(`${s.name} ${NOT_QUIET[s.status]}${where ? ` in ${where}` : ''}: wait until it is quiet`)
 }
 
-async function clean(p, what) {
+/** Refuses a worktree with changes or an operation under way; returns its shared links. */
+async function clean(p, what, list) {
   const doing = await underWay(p)
   if (doing) throw new Refused(`${what} is in the middle of ${doing}; finish or abort it there first`)
-  const st = await status(p)
+  const st = await changes(p, list)
   if (st.files.length) {
     const names = st.files.slice(0, 3).map((f) => f.path).join(', ')
     throw new Refused(`${what} has uncommitted changes (${names}${st.files.length > 3 ? ` and ${st.files.length - 3} more` : ''}): commit or put them away first`)
   }
+  return st.links
 }
 
 /** The files a stopped rebase or merge left in conflict. */
@@ -226,11 +269,11 @@ async function putBack(p, abortArgs) {
 
 /** Rebase the worktree's branch onto main. */
 export async function rebase(body, ctx) {
-  const { w, base, inside } = await prepare(body, ctx)
+  const { w, list, base, inside } = await prepare(body, ctx)
   if (!w.branch) throw new Refused('it is not on a branch (detached HEAD)')
   if (w.branch === base.name) throw new Refused(`this is ${base.name} itself`)
   quiet(inside, w.path)
-  await clean(w.path, 'this worktree')
+  await clean(w.path, 'this worktree', list)
   const [behind] = await aheadBehind(w.path, base.oid, w.head)
   if (behind === 0) return { done: true, nothing: true, said: `already on top of ${base.name}` }
   const r = await git(w.path, ['rebase', base.oid], { write: true, timeout: WRITE_MS })
@@ -253,8 +296,8 @@ export async function merge(body, ctx) {
   if (target.prunable !== null) throw new Refused(`the worktree ${base.name} is checked out in is gone`)
   quiet(inside, w.path)
   quiet(inside, target.path, `the ${base.name} worktree`)
-  await clean(w.path, 'this worktree')
-  await clean(target.path, `the ${base.name} worktree`)
+  await clean(w.path, 'this worktree', list)
+  await clean(target.path, `the ${base.name} worktree`, list)
   const [, ahead] = await aheadBehind(w.path, base.oid, w.head)
   if (ahead === 0) return { done: true, nothing: true, said: `${base.name} already has everything on ${w.branch}` }
   const r = await git(target.path, ['merge', '--no-edit', w.branch], { write: true, timeout: WRITE_MS })
@@ -274,11 +317,23 @@ export async function remove(body, ctx) {
   const there = inside(w.path)
   if (there.length) throw new Refused(`${there.map((s) => s.name).join(' and ')} ${there.length === 1 ? 'is' : 'are'} still in it: close that session first`)
   if (w.locked !== null) throw new Refused(`it is locked${w.locked ? ` (${w.locked})` : ''}`)
-  await clean(w.path, 'this worktree')
+  const links = await clean(w.path, 'this worktree', list)
   const merged = await git(w.path, ['merge-base', '--is-ancestor', w.head, base.oid], { cap: 4096 })
   if (merged.code !== 0) throw new Refused(`it has commits ${base.name} does not: merge it first`)
+  // Git refuses untracked files without --force, so the shared links go first: unlink removes the
+  // link itself, never what it leads to. Put back if git still refuses.
+  const unlinked = []
+  for (const l of links) {
+    const at = join(w.path, l)
+    const to = await readlink(at)
+    await unlink(at)
+    unlinked.push([at, to])
+  }
   const r = await git(main.path, ['worktree', 'remove', w.path], { write: true, timeout: WRITE_MS })
-  if (r.code !== 0) throw new Refused(`git worktree remove: ${failure(r, 'git worktree remove', WRITE_MS)}`)
+  if (r.code !== 0) {
+    for (const [at, to] of unlinked) await symlink(to, at).catch(() => {})
+    throw new Refused(`git worktree remove: ${failure(r, 'git worktree remove', WRITE_MS)}`)
+  }
   if (!w.branch) return { done: true, said: 'removed the worktree' }
   // Deleted where main is checked out, so `branch -d` judges "merged" against main.
   const at = list.find((x) => x.branch === base.name && x.prunable === null)?.path ?? main.path

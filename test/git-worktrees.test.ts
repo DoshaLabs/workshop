@@ -3,7 +3,7 @@
 // overlap warning, and the writes (rebase, merge, remove) with every refusal, a conflict undone,
 // and the repository left clean. Nothing here touches a repository outside the temp folder.
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -270,5 +270,31 @@ describe('git tile worktrees: remove', () => {
     expect(existsSync(wt.side)).toBe(false)
     expect(sh(root, 'branch', '--list', 'side')).toBe('')
     expect(isClean(root)).toBe(true)
+  })
+
+  it('a link into another worktree (main’s node_modules) is not a change: it is counted as clean, and remove deletes the link, never what it leads to', async () => {
+    const { root, wt } = repo('side')
+    mkdirSync(join(root, 'node_modules'))
+    writeFileSync(join(root, 'node_modules', 'kept.js'), 'kept\n')
+    symlinkSync(join(root, 'node_modules'), join(wt.side, 'node_modules'))
+    const read = await readProject(root, { sessionsAt: () => [], home: '/nowhere' })
+    expect(read.worktrees.find((w: { path: string }) => w.path === wt.side)).toMatchObject({ dirty: 0, files: [] })
+    const r = await remove({ root, path: wt.side }, ctxOf([]))
+    expect(r).toMatchObject({ done: true, said: 'removed the worktree and the branch side' })
+    expect(existsSync(wt.side)).toBe(false)
+    expect(existsSync(join(root, 'node_modules', 'kept.js'))).toBe(true)
+  })
+
+  it('a link that leads anywhere else, and a real untracked folder, are still changes', async () => {
+    const { root, wt } = repo('side')
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'ws-wt-out-')))
+    made.push(outside)
+    symlinkSync(outside, join(wt.side, 'elsewhere'))
+    await expect(remove({ root, path: wt.side }, ctxOf([]))).rejects.toThrow(/uncommitted changes \(elsewhere\)/)
+    rmSync(join(wt.side, 'elsewhere'))
+    mkdirSync(join(wt.side, 'node_modules'))
+    writeFileSync(join(wt.side, 'node_modules', 'x.js'), 'x\n')
+    await expect(remove({ root, path: wt.side }, ctxOf([]))).rejects.toThrow(/uncommitted changes \(node_modules\/x\.js\)/)
+    expect(lstatSync(wt.side).isDirectory()).toBe(true)
   })
 })

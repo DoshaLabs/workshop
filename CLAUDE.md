@@ -158,7 +158,8 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   (origin/HEAD, else main, else master), clean or dirty, a stale filter and a warning when two touch
   one file; diff against main, rebase, merge into main (where main is checked out) and remove once
   merged, each destructive one two clicks, refused while a session there is busy or the tree is
-  dirty, a conflict aborted at once (`docs/progress/2026-11-10-worktrees.md`).
+  dirty (an untracked link into another worktree, main's node_modules say, is not dirt: remove deletes
+  the link), a conflict aborted at once (`docs/progress/2026-11-10-worktrees.md`).
   History: the log across every branch of each open session's project (300, then more), each
   commit tagged with its session: exact when core saw the session make it, "probably <name>" when
   it is on that session's worktree branch and made in its lifetime, else nothing; a click unfolds
