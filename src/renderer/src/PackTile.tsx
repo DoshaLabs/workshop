@@ -33,7 +33,7 @@ function useNow(live: boolean): number {
   return now
 }
 
-export function PackTile({ parent, agents, leash, onPick }: { parent: SessionView; agents: AgentView[]; leash: boolean; onPick: () => void }) {
+export function PackTile({ parent, band, agents, leash, onPick }: { parent: SessionView; band: number; agents: AgentView[]; leash: boolean; onPick: () => void }) {
   const [chosen, setChosen] = useState<string | null>(null)
   const running = agents.filter((a) => a.endedAt === null)
   // The one you picked while it is here; else the newest still working; else the newest.
@@ -43,7 +43,7 @@ export function PackTile({ parent, agents, leash, onPick }: { parent: SessionVie
   const tally = [running.length && `${running.length} working`, done && `${done} done`].filter(Boolean).join(' · ')
   if (!a) return null
   return (
-    <article className="tile session-tile pack-tile" data-pack={parent.id} onClick={(e) => e.stopPropagation()}>
+    <article className="tile session-tile pack-tile" data-pack={parent.id} data-band={band} onClick={(e) => e.stopPropagation()}>
       <header className="head">
         <Mascot status={running.length ? 'busy' : 'idle'} coat="worker" />
         <button className="pack-parent" title="Open the session they work for" onClick={onPick}>

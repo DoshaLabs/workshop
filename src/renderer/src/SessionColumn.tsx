@@ -66,6 +66,7 @@ export function SessionColumn({
   const keys = keysOf(state, order)
   const drag = useReorder('sessions', onMove)
   const pack = useAgents()
+  const bands = new Map(open.filter((s) => s.id !== center).map((s, i) => [s.id, (i % 2) + 1]))
   const pick = (s: SessionView): void => {
     onPick()
     void (s.open ? window.core.focusSession(s.id) : window.core.resume(s.id))
@@ -74,12 +75,15 @@ export function SessionColumn({
   return (
     <aside className="col sessions">
       <div className="session-scroll">
-        {open.flatMap((s) => {
+        {open.flatMap((s, i) => {
           // A session's wolfpack right under it, or where it would be while its terminal is in the center.
           const agents = pack.agents.filter((a) => a.parent === s.id)
+          // Heads alternate the theme's two colours (--ws-head-1/2) down the tiles shown, so the
+          // column is not one wall of text; a pack wears its parent's.
+          const band = bands.get(s.id) ?? (i % 2) + 1
           return [
-            s.id !== center && <SessionTile key={s.id} s={s} n={keys.get(s.id)} usage={usage} onPick={() => pick(s)} drag={drag} />,
-            agents.length > 0 && <PackTile key={`pack:${s.id}`} parent={s} agents={agents} leash={pack.leash} onPick={() => pick(s)} />
+            s.id !== center && <SessionTile key={s.id} s={s} n={keys.get(s.id)} band={band} usage={usage} onPick={() => pick(s)} drag={drag} />,
+            agents.length > 0 && <PackTile key={`pack:${s.id}`} parent={s} band={band} agents={agents} leash={pack.leash} onPick={() => pick(s)} />
           ]
         })}
         <button className={`tile tile-plus session-plus ${drag.mark(null)}`} title="New session (⌘N)" onClick={onNew} {...drag.target(null)}>
@@ -118,7 +122,7 @@ export function ParkButton({ id }: { id: string }) {
  * the center, where you type to it. A file dropped on it is pasted into the session, which comes
  * into focus (deck's Tile).
  */
-function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number; usage: Usage | null; onPick: () => void; drag: Drag }) {
+function SessionTile({ s, n, band, usage, onPick, drag }: { s: SessionView; n?: number; band: number; usage: Usage | null; onPick: () => void; drag: Drag }) {
   const t = useTranscript(s.id)
   const title = t?.title ?? s.title
   const drop = useFileDrop(s.id, onPick, drag.target(s.id))
@@ -126,6 +130,7 @@ function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number
     <article
       className={`tile session-tile ${s.attention ? 'attention' : ''} ${drag.mark(s.id)} ${drop.over ? 'file-over' : ''}`}
       data-session={s.id}
+      data-band={band}
       title={n ? `Open the terminal (⌘${n})` : 'Open the terminal'}
       onClick={() => {
         // Selecting text in the conversation must not swap the session into focus on mouse-up.

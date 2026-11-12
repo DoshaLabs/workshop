@@ -987,6 +987,21 @@ button {
   flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
+/* Heads alternate the theme's two session colours down the column (SessionColumn.tsx data-band;
+   the pairs in shared/themes.ts `heads`), so a column of conversations is not one wall of text. */
+.session-tile[data-band='1'] > .head {
+  background: var(--ws-head-1);
+}
+.session-tile[data-band='2'] > .head {
+  background: var(--ws-head-2);
+}
+/* Over Deep Space's sky the heads are see-through like the panes, a little less so. */
+:root[data-wall='true'] .session-tile[data-band='1'] > .head {
+  background: color-mix(in srgb, var(--ws-head-1) 78%, transparent);
+}
+:root[data-wall='true'] .session-tile[data-band='2'] > .head {
+  background: color-mix(in srgb, var(--ws-head-2) 78%, transparent);
+}
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--ws-muted);

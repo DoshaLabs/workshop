@@ -164,7 +164,10 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   it is on that session's worktree branch and made in its lifetime, else nothing; a click unfolds
   the diff; "Today, by session" groups the last 24 hours (`docs/progress/2026-11-10-history.md`).
   PRs says "Coming".
-- Theme variables include `--ws-green` and `--ws-red` (the terminal's, at 4.5:1 on the panel).
+- Theme variables include `--ws-green` and `--ws-red` (the terminal's, at 4.5:1 on the panel), and
+  `--ws-head-1` / `--ws-head-2`: each variant's two session-head colours (`heads`, hand-picked from the
+  family's hues; Glass's from its tint), alternated down the session column (`data-band`, a pack wears
+  its parent's), ink at 4.5:1 on both (`test/themes.test.ts`).
 - Session tiles (phase 1, `docs/progress/2026-11-10-phase1.md`): the left column is a column of
   tiles, one per open session, each its live conversation (`ChatView.tsx`; prose as markdown in
   the serif face, parsed to a tree by `src/shared/markdown.ts`, never HTML), with ⌘n, the status
