@@ -1,8 +1,9 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { reapTmuxWhenGone } from '../src/main/smoke-reaper'
+import { isSmokeHome, reapTmuxWhenGone } from '../src/main/smoke-reaper'
 
 const hasTmux = (() => {
   try {
@@ -51,6 +52,39 @@ describe('the smoke run’s tmux reaper', () => {
       try {
         execFileSync('tmux', ['-L', socket, 'kill-server'], { stdio: 'ignore' })
       } catch {}
+    }
+  }, 15_000)
+
+  it('removes only a smoke run’s own folder, directly in its temp folder', () => {
+    const tmp = '/var/folders/x/T'
+    expect(isSmokeHome('/var/folders/x/T/workshop-smoke-a1B2c3', tmp)).toBe(true)
+    expect(isSmokeHome('/var/folders/x/T/workshop-smoke-a1B2c3', tmp + '/')).toBe(true)
+    expect(isSmokeHome('/var/folders/x/T', tmp)).toBe(false)
+    expect(isSmokeHome('/var/folders/x/T/workshop-smoke-a1B2c3/..', tmp)).toBe(false)
+    expect(isSmokeHome('/var/folders/x/T/deep/workshop-smoke-a1B2c3', tmp)).toBe(false)
+    expect(isSmokeHome('/Users/me/workshop-smoke-a1B2c3', tmp)).toBe(false)
+    expect(isSmokeHome('workshop-smoke-a1B2c3', '.')).toBe(false)
+    expect(isSmokeHome('/var/folders/x/T/workshop-smoke-', tmp)).toBe(false)
+    expect(isSmokeHome('/var/folders/x/T/workshop-dev', tmp)).toBe(false)
+    expect(reapTmuxWhenGone('workshop-smoke-1', process.env, process.pid, { path: homedir(), tmp: tmpdir() })).toBe(false)
+  })
+
+  it('removes the run’s folder once the run is gone', async () => {
+    const tmp = realpathSync(tmpdir())
+    const home = mkdtempSync(join(tmp, 'workshop-smoke-'))
+    mkdirSync(join(home, 'tmp', 'ws-project-abc'), { recursive: true })
+    writeFileSync(join(home, 'tmp', 'ws-project-abc', 'f'), 'x')
+    const run = spawn('/bin/sleep', ['60'], { stdio: 'ignore' })
+    try {
+      expect(reapTmuxWhenGone(`workshop-smoke-${run.pid}`, process.env, run.pid!, { path: home, tmp })).toBe(true)
+      await new Promise((r) => setTimeout(r, 2500))
+      expect(existsSync(home)).toBe(true)
+      run.kill('SIGKILL')
+      const until = Date.now() + 8000
+      while (existsSync(home) && Date.now() < until) await new Promise((r) => setTimeout(r, 200))
+      expect(existsSync(home)).toBe(false)
+    } finally {
+      run.kill('SIGKILL')
     }
   }, 15_000)
 })

@@ -3,7 +3,7 @@
 // (main/core-sessions.ts).
 
 import { BrowserWindow, Notification, app, dialog, ipcMain, nativeTheme, protocol, screen, shell, utilityProcess, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from 'electron'
-import { existsSync, mkdtempSync, readFileSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, unlinkSync, watch, writeFileSync, type FSWatcher } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createServer as createNetServer, type AddressInfo } from 'node:net'
@@ -79,10 +79,19 @@ function smokeStartFailed(why: string): void {
 }
 const PROFILE = RESTARTED ? process.env.WORKSHOP_SMOKE_PROFILE! : SMOKE ? `workshop-smoke-${process.pid}` : NAMED ?? (DEV ? 'workshop-dev' : 'workshop')
 if (SMOKE) {
-  app.setPath('userData', RESTARTED ? process.env.WORKSHOP_SMOKE_HOME! : mkdtempSync(join(tmpdir(), 'workshop-smoke-')))
+  const tmp = tmpdir()
+  const home = RESTARTED ? process.env.WORKSHOP_SMOKE_HOME! : mkdtempSync(join(tmp, 'workshop-smoke-'))
+  app.setPath('userData', home)
+  // Every folder the run makes (its projects, repos, dev tiles) goes inside its own, so one rm takes
+  // them all; the second cores inherit this from the first.
+  if (!RESTARTED) {
+    mkdirSync(join(home, 'tmp'))
+    process.env.TMPDIR = join(home, 'tmp')
+  }
   devTiles.push(resolve(app.getAppPath(), 'test/fixtures/probe'))
-  // However this run ends, its tmux server goes with it (the second cores share the first's socket).
-  if (!RESTARTED) reapTmuxWhenGone(PROFILE, shellEnv())
+  // However this run ends, its tmux server and its folder go with it (the second cores share the
+  // first's socket and folder). WORKSHOP_SMOKE_KEEP=1 keeps the folder, to look through after a failure.
+  if (!RESTARTED) reapTmuxWhenGone(PROFILE, shellEnv(), process.pid, process.env.WORKSHOP_SMOKE_KEEP === '1' ? undefined : { path: home, tmp })
   // No smoke run depends on the internet: the Wikipedia tile's hosts are answered from canned data
   // (smoke-net.ts). WORKSHOP_LIVE_NET=1 runs the same checks against the real services.
   if (process.env.WORKSHOP_LIVE_NET !== '1') setNetStandIn(smokeNet)

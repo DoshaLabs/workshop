@@ -13,7 +13,9 @@ describe what exists and delete the plan wording.
 **What exists.** `npm run dev` · `npm test` (unit) · `npm run smoke` (launches the app with a
 throwaway profile and `test/fixtures/probe`, a tile that tries every way out of the sandbox, and
 drives the door, and ends by restarting core on the same profile, so sessions are seen to survive a restart
-and a reboot; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture of the window).
+and a reboot; must print 0 failed; `WORKSHOP_SHOT=x.png` also saves a picture of the window). Each test or
+smoke run makes its temp folders inside one of its own (TMPDIR), removed when it ends however it
+ends (`test/global-tmp.ts`, `smoke-reaper.ts`); `WORKSHOP_SMOKE_KEEP=1` keeps smoke's.
 Smoke sessions run a stand-in `claude` (`test/fixtures/fake-claude/claude`) that runs our hooks the
 way the CLI does; `WORKSHOP_REAL_CLAUDE=1 npx electron . --smoke` runs one real Haiku turn instead.
 Smoke needs no network: the Wikipedia tile's hosts are answered from canned data inside its own

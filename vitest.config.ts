@@ -3,5 +3,5 @@ import { resolve } from 'node:path'
 
 export default defineConfig({
   resolve: { alias: { '@shared': resolve('src/shared') } },
-  test: { include: ['test/**/*.test.ts'] }
+  test: { include: ['test/**/*.test.ts'], globalSetup: ['test/global-tmp.ts'] }
 })
