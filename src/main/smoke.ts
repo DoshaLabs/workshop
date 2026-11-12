@@ -747,9 +747,10 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   const state = () => core.sessions.getState()
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'ws-project-')))
 
-  // A fresh profile: no window reported yet, and the meters are there anyway, empty, saying why.
+  // A fresh profile: no window reported yet, and the weekly meter is there anyway, empty, saying why
+  // (the 5-hour one is drawn only while a plan reports it).
   const meters = (await js(`[...document.querySelectorAll('.topbar .meter')].map((m) => [m.className, m.textContent, m.title])`)) as string[][]
-  check('usage: both meters show before anything is known, empty, with why', meters.length === 2 && meters.every(([c, t, title]) => c.includes('unknown') && t.includes('—') && /first reply/.test(title)), JSON.stringify(meters))
+  check('usage: the weekly meter shows before anything is known, empty, with why', meters.length === 1 && meters.every(([c, t, title]) => c.includes('unknown') && t.includes('—') && /first reply/.test(title)), JSON.stringify(meters))
 
   const made = await js(`window.core.newSession({ cwd: ${JSON.stringify(cwd)}, name: 'smoke-one', model: 'sonnet', permissionMode: 'plan' })`)
   const id = String(made.id)

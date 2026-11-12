@@ -115,3 +115,24 @@ describe("Codex's windows (account/rateLimits, codex-cli 0.167.1)", () => {
     expect(gone.get().codex?.primary?.pct).toBe(12)
   })
 })
+
+describe('Claude per-model windows', () => {
+  const now = Date.parse('2026-11-12T08:00:00Z')
+  it('reads a model_scoped row under the server label', async () => {
+    const { scopedWindow } = await import('../src/shared/usage')
+    expect(scopedWindow({ display_name: 'Fable', utilization: 8, resets_at: '2026-11-13T19:00:00Z' })).toEqual({ label: 'Fable', pct: 8, resetsAt: Date.parse('2026-11-13T19:00:00Z') })
+    expect(scopedWindow({ display_name: 'Fable', utilization: 8, resets_at: 1794596400 })?.resetsAt).toBe(1794596400000)
+    expect(scopedWindow({ display_name: 'Fable', utilization: null, resets_at: '2026-11-13T19:00:00Z' })).toBeNull()
+    expect(scopedWindow({ display_name: '', utilization: 8, resets_at: 1 })).toBeNull()
+    expect(scopedWindow({ display_name: 'Fable', utilization: 8, resets_at: null })).toBeNull()
+  })
+  it('merges by label and keeps what a status line leaves out', async () => {
+    const { mergeScoped } = await import('../src/shared/usage')
+    const at = now + 86_400_000
+    const one = mergeScoped([], [{ display_name: 'Fable', utilization: 8, resets_at: at / 1000 }], now)
+    expect(one).toEqual([{ label: 'Fable', pct: 8, resetsAt: at }])
+    expect(mergeScoped(one, undefined, now)).toBe(one)
+    expect(mergeScoped(one, [{ display_name: 'Fable', utilization: 9, resets_at: at / 1000 }], now)[0].pct).toBe(9)
+    expect(mergeScoped(one, [{ display_name: 'Fable', utilization: 5, resets_at: at / 1000 }], now)[0].pct).toBe(8)
+  })
+})

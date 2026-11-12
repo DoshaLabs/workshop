@@ -67,16 +67,20 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
     return () => window.clearInterval(t)
   }, [])
   // Codex's windows, only once a Codex session has said them (a plan may have one or two).
+  // Claude's per-model weekly windows, under the server's own label ("Fable"), when reported.
+  const scoped = (usage?.scoped ?? []).filter((w) => w.resetsAt > now)
   const codex = [usage?.codex?.primary, usage?.codex?.secondary].filter((w): w is CodexWindow => !!w && w.resetsAt > now)
   return (
     <span className="usage">
       <Plan
         cli="Claude"
-        title="The Claude plan's windows, as each session's status line reports them"
+        title={`The Claude plan's windows, as each session's status line reports them. Only the windows it reports are drawn: a plan with no 5-hour window has no 5h bar.${scoped.length ? '' : ' Per-model weekly meters (Fable) are in /usage only until the status line carries them.'}`}
         now={now}
         rows={[
-          { label: '5h', name: '5-hour window', w: usage?.fiveHour ?? null },
-          { label: '7d', name: 'weekly window', w: usage?.sevenDay ?? null }
+          // The 5-hour window only while one is reported; the weekly one always (a dash until it is).
+          ...(usage?.fiveHour && usage.fiveHour.resetsAt > now ? [{ label: '5h', name: '5-hour window', w: usage.fiveHour }] : []),
+          { label: '7d', name: 'weekly window', w: usage?.sevenDay ?? null },
+          ...scoped.map((w) => ({ label: w.label, name: `${w.label} weekly window`, w }))
         ]}
       />
       {codex.length > 0 && (

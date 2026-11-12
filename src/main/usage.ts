@@ -10,17 +10,19 @@
 // Carried over from deck's usage.ts; the session comes from the token, not the payload.
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import { laterWindow, mergeCodex, type CodexUsage, type CodexWindow, type Usage, type UsageWindow } from '@shared/usage'
+import { laterWindow, mergeCodex, mergeScoped, type CodexUsage, type CodexWindow, type ScopedWindow, type Usage, type UsageWindow } from '@shared/usage'
 
 interface StatusPayload {
   context_window?: { used_percentage?: number | null }
   cost?: { total_cost_usd?: number | null }
-  rate_limits?: Record<string, { used_percentage?: number; resets_at?: number } | undefined>
+  rate_limits?: { five_hour?: { used_percentage?: number; resets_at?: number }; seven_day?: { used_percentage?: number; resets_at?: number }; model_scoped?: unknown }
 }
 
 export class UsageTracker {
   private fiveHour: UsageWindow | null = null
   private sevenDay: UsageWindow | null = null
+  /** Per-model weekly windows (rate_limits.model_scoped), by the server's label. */
+  private scoped: ScopedWindow[] = []
   /** A Codex plan's windows (account/rateLimits from a Codex session's app-server). */
   private codex: CodexUsage | null = null
   private at = 0
@@ -35,6 +37,7 @@ export class UsageTracker {
       const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<Usage>
       this.fiveHour = win(raw.fiveHour)
       this.sevenDay = win(raw.sevenDay)
+      this.scoped = Array.isArray(raw.scoped) ? raw.scoped.flatMap((w) => { const x = win(w); return x && typeof w.label === 'string' ? [{ ...x, label: w.label }] : [] }) : []
       this.codex = raw.codex ? { primary: cwin(raw.codex.primary), secondary: cwin(raw.codex.secondary), plan: typeof raw.codex.plan === 'string' ? raw.codex.plan : null } : null
       this.at = Number(raw.at) || 0
     } catch {
@@ -54,9 +57,11 @@ export class UsageTracker {
     })
     const five = newer(this.fiveHour, p.rate_limits?.five_hour)
     const seven = newer(this.sevenDay, p.rate_limits?.seven_day)
-    if (five !== this.fiveHour || seven !== this.sevenDay) {
+    const scoped = mergeScoped(this.scoped, p.rate_limits?.model_scoped, Date.now())
+    if (five !== this.fiveHour || seven !== this.sevenDay || JSON.stringify(scoped) !== JSON.stringify(this.scoped)) {
       this.fiveHour = five
       this.sevenDay = seven
+      this.scoped = scoped
       this.at = Date.now()
       this.save()
     }
@@ -78,7 +83,7 @@ export class UsageTracker {
 
   private save(): void {
     try {
-      writeFileSync(this.file, JSON.stringify({ fiveHour: this.fiveHour, sevenDay: this.sevenDay, codex: this.codex, at: this.at }))
+      writeFileSync(this.file, JSON.stringify({ fiveHour: this.fiveHour, sevenDay: this.sevenDay, scoped: this.scoped, codex: this.codex, at: this.at }))
     } catch {
       /* the header still has it */
     }
@@ -86,7 +91,7 @@ export class UsageTracker {
 
   private changed(): void {
     const u = this.get()
-    const key = JSON.stringify([u.fiveHour, u.sevenDay, u.codex, u.sessions])
+    const key = JSON.stringify([u.fiveHour, u.sevenDay, u.scoped, u.codex, u.sessions])
     if (key === this.last) return
     this.last = key
     this.push(u)
@@ -113,7 +118,7 @@ export class UsageTracker {
     const live = <W extends UsageWindow>(w: W | null): W | null => (w && w.resetsAt > Date.now() ? w : null)
     const c = this.codex
     const codex = c && (live(c.primary) || live(c.secondary)) ? { primary: live(c.primary), secondary: live(c.secondary), plan: c.plan } : null
-    return { fiveHour: live(this.fiveHour), sevenDay: live(this.sevenDay), at: this.at, sessions: Object.fromEntries(this.sessions), codex }
+    return { fiveHour: live(this.fiveHour), sevenDay: live(this.sevenDay), scoped: this.scoped.filter((w) => live(w)), at: this.at, sessions: Object.fromEntries(this.sessions), codex }
   }
 }
 

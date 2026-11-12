@@ -271,7 +271,10 @@ button {
   font-variant-numeric: tabular-nums;
 }
 .meter-label {
-  width: 2.4em;
+  width: 3.4em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   text-align: right;
 }
 .meter-bar {

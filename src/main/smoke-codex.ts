@@ -278,16 +278,16 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
   await waitFor('the call to finish', async () => (await toolLine())?.done === true, 5000).catch(() => undefined)
   check('codex: the allowed tool then runs through the door, and the tile answers', (await toolLine())?.done === true && (await toolLine())?.error === false, JSON.stringify(await toolLine()))
 
-  // Both plans in the top bar (phase 4): Codex's windows after the Claude pair, labelled by length.
-  const bar = (): Promise<{ cli: boolean; meters: string[] }> =>
-    js(`(() => { const u = document.querySelector('.usage'); return { cli: [...(u?.querySelectorAll('.usage-cli') ?? [])].map((c) => c.textContent).join() === 'Claude,Codex', meters: [...(u?.querySelectorAll('.meter') ?? [])].map((m) => m.querySelector('.meter-label').textContent + ' ' + m.querySelector('.meter-pct').textContent) } })()`)
+  // Both plans in the top bar (phase 4): Codex's windows in a plan of their own after Claude's, labelled by length.
+  const bar = (): Promise<{ cli: boolean; claude: string[]; meters: string[] }> =>
+    js(`(() => { const plans = [...document.querySelectorAll('.usage .usage-plan')]; const rows = (p) => [...(p?.querySelectorAll('.meter') ?? [])].map((m) => m.querySelector('.meter-label').textContent + ' ' + m.querySelector('.meter-pct').textContent); return { cli: plans.map((p) => p.querySelector('.usage-cli')?.textContent).join() === 'Claude,Codex', claude: rows(plans[0]), meters: rows(plans[1]) } })()`)
   await waitFor("the Codex plan's window", async () => (await bar()).meters.includes('30d 7%'), 5000).catch(() => undefined)
   const b1 = await bar()
-  check("codex: the top bar shows the Codex plan's window (read when core joins), labelled by its length", b1.cli && b1.meters.slice(0, 2).every((m) => /^(5h|7d) /.test(m)) && b1.meters.includes('30d 7%'), JSON.stringify(b1))
+  check("codex: the top bar shows the Codex plan's window (read when core joins), labelled by its length", b1.cli && b1.claude.length > 0 && b1.claude.every((m) => /^(5h|7d) /.test(m)) && b1.meters.includes('30d 7%'), JSON.stringify(b1))
   core.sessions.input(id, 'limits\r')
-  await waitFor('the update', async () => (await bar()).meters.length === 4, 5000).catch(() => undefined)
+  await waitFor('the update', async () => (await bar()).meters.length === 2, 5000).catch(() => undefined)
   const b2 = await bar()
-  check('codex: a sparse update adds its window and keeps the other', b2.meters.slice(2).join() === '30d 7%,5h 61%', JSON.stringify(b2))
+  check('codex: a sparse update adds its window and keeps the other', b2.meters.join() === '30d 7%,5h 61%', JSON.stringify(b2))
 
   // Its tile in the column: the codex badge, and no pause (the leash is Claude Code's hooks).
   await js(`document.querySelector('.session-plus')?.click(); true`)

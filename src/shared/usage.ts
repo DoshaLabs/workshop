@@ -17,6 +17,37 @@ export interface Usage {
   sessions: Record<string, { context: number | null; costUsd: number | null }>
   /** The Codex plan's windows, from a Codex session's app-server; null until one has said. */
   codex: CodexUsage | null
+  /** Claude's per-model weekly windows ("Fable"…), when the status line carries them; often none. */
+  scoped: ScopedWindow[]
+}
+
+/** One of Claude's per-model weekly windows, under the server's own label. */
+export interface ScopedWindow extends UsageWindow {
+  label: string
+}
+
+// ---- Claude's per-model windows (rate_limits.model_scoped on Claude Code 2.1.322) --------
+
+/**
+ * One `model_scoped` row (`display_name`, `utilization` 0–100 or null, `resets_at` an ISO string or
+ * epoch seconds, or null), or null when it is not one this can show. The schema is the CLI's; no
+ * account seen so far has had it filled in (12 Nov 2026: the Fable meter was in /usage only).
+ */
+export function scopedWindow(row: unknown): ScopedWindow | null {
+  const r = row as { display_name?: unknown; utilization?: unknown; resets_at?: unknown } | null
+  if (!r || typeof r.display_name !== 'string' || !r.display_name.trim()) return null
+  if (typeof r.utilization !== 'number' || !isFinite(r.utilization)) return null
+  const at = typeof r.resets_at === 'number' ? r.resets_at * 1000 : typeof r.resets_at === 'string' ? Date.parse(r.resets_at) : NaN
+  if (!isFinite(at)) return null
+  return { label: r.display_name.trim().slice(0, 24), pct: Math.round(Math.max(0, Math.min(100, r.utilization)) * 10) / 10, resetsAt: at }
+}
+
+/** What a status line said about the per-model windows, merged into what is kept (by label, laterWindow each). */
+export function mergeScoped(cur: ScopedWindow[], rows: unknown, now: number): ScopedWindow[] {
+  if (!Array.isArray(rows)) return cur
+  const out = new Map(cur.map((w) => [w.label, w]))
+  for (const w of rows.map(scopedWindow)) if (w) out.set(w.label, laterWindow(out.get(w.label) ?? null, w, now)!)
+  return [...out.values()]
 }
 
 /** A Codex plan's window, with its length: plans differ (a free plan has one 30-day window). */
