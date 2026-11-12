@@ -197,5 +197,9 @@ export const CH = {
   // install update (main/updates.ts): the top bar's button, packaged app only
   updateGet: 'ws:core:update-get',
   updateInstall: 'ws:core:update-install',
-  updateState: 'ws:core:update-state' // main → window
+  updateState: 'ws:core:update-state', // main → window
+  // dev mode (main/devmode.ts): the top bar's button, an app built from a checkout only
+  devGet: 'ws:core:dev-get',
+  devSet: 'ws:core:dev-set',
+  devState: 'ws:core:dev-state' // main → window
 } as const

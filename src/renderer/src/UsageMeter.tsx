@@ -8,6 +8,7 @@ import { money, timeLeft, usageLevel, windowLabel, windowName, type CodexWindow,
 
 const UNKNOWN_WHY = 'nothing reported yet. A session reports it after its first reply, and only on a subscription (an API key has no such window).'
 
+/** One window: a row of the product's stacked bars (its time left is in the tooltip and, for the first, under the name). */
 function Meter({ label, name, w, now, plan }: { label: string; name: string; w: UsageWindow | null; now: number; plan?: string }) {
   const live = w && w.resetsAt > now ? w : null
   if (!live)
@@ -30,7 +31,30 @@ function Meter({ label, name, w, now, plan }: { label: string; name: string; w: 
         <i style={{ width: `${pct}%` }} />
       </span>
       <span className="meter-pct">{Math.round(pct)}%</span>
-      <span className="meter-left">{timeLeft(live.resetsAt, now)}</span>
+    </span>
+  )
+}
+
+/**
+ * One CLI's plan: its name with the soonest window's time left under it, and its windows as
+ * stacked bars beside them. The name here is which CLI's plan this is, so it may say Claude.
+ */
+function Plan({ cli, title, rows, now }: { cli: string; title: string; rows: { label: string; name: string; w: UsageWindow | null; plan?: string }[]; now: number }) {
+  const live = rows.map((r) => r.w).filter((w): w is UsageWindow => !!w && w.resetsAt > now)
+  const next = live.length ? Math.min(...live.map((w) => w.resetsAt)) : null
+  return (
+    <span className="usage-plan">
+      <span className="usage-who" title={title}>
+        <span className="usage-cli">{cli}</span>
+        <span className="usage-reset" title={next ? `The soonest window starts over in ${timeLeft(next, now)}` : undefined}>
+          {next ? `↻ ${timeLeft(next, now)}` : '—'}
+        </span>
+      </span>
+      <span className="usage-bars">
+        {rows.map((r, i) => (
+          <Meter key={i} label={r.label} name={r.name} w={r.w} now={now} plan={r.plan} />
+        ))}
+      </span>
     </span>
   )
 }
@@ -45,18 +69,23 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
   // Codex's windows, only once a Codex session has said them (a plan may have one or two).
   const codex = [usage?.codex?.primary, usage?.codex?.secondary].filter((w): w is CodexWindow => !!w && w.resetsAt > now)
   return (
-    <span className="usage" title="Usage, as each session's status line reports it">
-      <Meter label="5h" name="5-hour window" w={usage?.fiveHour ?? null} now={now} />
-      <Meter label="week" name="weekly window" w={usage?.sevenDay ?? null} now={now} />
+    <span className="usage">
+      <Plan
+        cli="Claude"
+        title="The Claude plan's windows, as each session's status line reports them"
+        now={now}
+        rows={[
+          { label: '5h', name: '5-hour window', w: usage?.fiveHour ?? null },
+          { label: 'week', name: 'weekly window', w: usage?.sevenDay ?? null }
+        ]}
+      />
       {codex.length > 0 && (
-        <>
-          <span className="usage-cli" title="A Codex session's plan, as its app-server reports it">
-            codex
-          </span>
-          {codex.map((w, i) => (
-            <Meter key={i} label={windowLabel(w.mins)} name={`Codex ${windowName(w.mins)}`} w={w} now={now} plan={usage?.codex?.plan ?? undefined} />
-          ))}
-        </>
+        <Plan
+          cli="Codex"
+          title="The Codex plan's windows, as a Codex session's app-server reports them"
+          now={now}
+          rows={codex.map((w) => ({ label: windowLabel(w.mins), name: `Codex ${windowName(w.mins)}`, w, plan: usage?.codex?.plan ?? undefined }))}
+        />
       )}
     </span>
   )

@@ -15,6 +15,27 @@ export interface AppUpdate {
   error?: string
 }
 
+/**
+ * Dev mode (src/main/devmode.ts): core's window loaded from the repo the app was built from,
+ * rebuilt on every save. `unavailable` = an app not built from a checkout (or `npm run dev`, which
+ * is live already); `starting` until the first build; `on` with `error` while the last save failed
+ * to build (the last good page stays); `error` when the watcher could not start or stopped.
+ */
+export interface DevMode {
+  state: 'unavailable' | 'off' | 'starting' | 'on' | 'error'
+  repo?: string
+  /** When the window was last rebuilt (epoch ms). */
+  builtAt?: number
+  error?: string
+}
+
+/** One line of scripts/devmode.mjs's output: a build finished, one failed (and why), or neither. */
+export function devModeLine(line: string): { built: true } | { failed: string } | null {
+  if (line.startsWith('WORKSHOP_DEVMODE_BUILT')) return { built: true }
+  if (line.startsWith('WORKSHOP_DEVMODE_ERROR')) return { failed: line.slice('WORKSHOP_DEVMODE_ERROR'.length).trim() || 'the build failed' }
+  return null
+}
+
 /** out/build-info.json, written by scripts/stamp.mjs during `npm run dist`. */
 export interface BuildInfo {
   repo: string

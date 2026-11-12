@@ -226,22 +226,58 @@ button {
   height: 600px;
   visibility: hidden;
 }
+/* Each CLI's plan: its name over the soonest reset, then its windows as stacked bars. Taller than
+   the bar's 28 px controls row; the 88 px bar has the room, centred on the same line. */
 .usage {
   display: flex;
-  gap: 10px;
-  margin-right: 4px;
+  align-items: center;
+  gap: 18px;
+  margin-right: 8px;
+}
+.usage-plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.usage-who {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+}
+.usage-cli {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ws-ink);
+}
+.usage-reset {
+  font-size: 10px;
+  color: var(--ws-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.usage-bars {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
 }
 .meter {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.1;
   color: var(--ws-muted);
+  font-variant-numeric: tabular-nums;
+}
+.meter-label {
+  width: 2.4em;
+  text-align: right;
 }
 .meter-bar {
-  width: 48px;
-  height: 4px;
-  border-radius: 2px;
+  width: 72px;
+  height: 6px;
+  border-radius: 3px;
   background: var(--ws-line);
   overflow: hidden;
 }
@@ -260,23 +296,11 @@ button {
   color: var(--ws-blocked);
 }
 /* Not reported yet: an empty bar and a dash, said in the tooltip. */
-.usage-cli {
-  margin-left: 6px;
-  padding: 0 5px;
-  border: 1px solid var(--ws-line);
-  align-self: center;
-  border-radius: 4px;
-  font-size: 10px;
-  color: var(--ws-muted);
-}
 .meter.unknown {
   opacity: 0.6;
 }
 .meter-pct {
   min-width: 2.6em;
-}
-.meter-left {
-  opacity: 0.8;
 }
 /* A session's context and cost: quiet until the context fills. */
 .badge.ctx.is-warn {
@@ -1928,6 +1952,35 @@ a.md-path:hover {
   color: var(--ws-blocked);
   border-color: var(--ws-blocked);
 }
+/* Dev mode: a dot that lights while the window is the repo's. */
+.dev-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dev-btn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0.7;
+}
+.dev-btn.is-on,
+.dev-btn.is-starting {
+  color: var(--ws-green);
+  border-color: var(--ws-green);
+}
+.dev-btn.is-on .dev-btn-dot {
+  background: currentColor;
+  opacity: 1;
+}
+.dev-btn.is-starting .dev-btn-dot {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.dev-btn.is-broken {
+  color: var(--ws-blocked);
+  border-color: var(--ws-blocked);
+}
 .update-btn:disabled {
   cursor: progress;
 }
@@ -2215,6 +2268,10 @@ a.md-path:hover {
   border-top: 1px solid var(--ws-line);
 }
 .launch-switch {
+  /* The containing block of the hidden checkbox below. Without it the box is placed against the
+     page, outside .center-scroll, and focusing it on a click scrolled the whole (overflow:
+     hidden) window up to bring it into view. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -2222,6 +2279,8 @@ a.md-path:hover {
 }
 .launch-switch input {
   position: absolute;
+  inset: 0;
+  margin: 0;
   opacity: 0;
   pointer-events: none;
 }

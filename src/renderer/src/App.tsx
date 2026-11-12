@@ -19,6 +19,7 @@ import { LEGACY_KEYS, firstColumn, legacyColumn, type ColumnState, type FloatAt 
 import { MAX_SPAN } from '@shared/manifest'
 import type { Usage } from '@shared/usage'
 import { UsageMeter } from './UsageMeter'
+import { DevModeButton } from './DevModeButton'
 import { TileLayer, type Instance } from './TileLayer'
 import { Float } from './Float'
 import { TilePicker } from './TilePicker'
@@ -325,6 +326,7 @@ export function App() {
       <AppMark working={!!sessions?.sessions.some((s) => s.open && s.status === 'busy')} />
       <div className="topbar">
         <UsageMeter usage={usage} />
+        <DevModeButton />
         <UpdateButton />
         <RecordButton />
         <button className="ghost small" title="The mascot: a sprite in every session's head" onClick={() => setMascotSetup((v) => !v)}>

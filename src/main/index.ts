@@ -7,6 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync, unlinkSync, watch, wri
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createServer as createNetServer, type AddressInfo } from 'node:net'
+import { pathToFileURL } from 'node:url'
 import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
 import { BRIDGE_VERSION } from '@shared/manifest'
 import { FONT_VARS } from '@shared/fonts'
@@ -38,6 +39,7 @@ import type { Usage } from '@shared/usage'
 import type { Transcript } from '@shared/transcript'
 import { parseBuildInfo } from '@shared/update'
 import { Updater, bundleOf } from './updates'
+import { DevMode } from './devmode'
 import { placeWindow } from './window-bounds'
 import { reapTmuxWhenGone } from './smoke-reaper'
 import { smokeNet } from './smoke-net'
@@ -114,6 +116,7 @@ let oauth: OAuthHost | null = null
 let recorder: Recorder | null = null
 /** Install update (main/updates.ts). Offers nothing unless this is a packaged app built by `npm run dist`. */
 let updater: Updater | null = null
+let devMode: DevMode | null = null
 
 interface Guest {
   tile: Tile
@@ -913,7 +916,7 @@ function createWindow(): void {
     })
   }
   if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
-  else void win.loadFile(join(__dirname, '../renderer/index.html'))
+  else void win.loadFile(devMode?.index() ?? BUNDLED_PAGE)
   rememberBounds(win)
   win.on('closed', () => (win = null))
 }
@@ -927,6 +930,38 @@ function buildInfo() {
   } catch {
     return null // an app built without the stamp
   }
+}
+
+/** Core's window as it ships inside the app. */
+const BUNDLED_PAGE = join(__dirname, '../renderer/index.html')
+
+/**
+ * Dev mode: offered when the app was built from a checkout (the updater's build info), never under
+ * `npm run dev` (live already) or in a smoke run. WORKSHOP_DEV_REPO=<checkout> offers it on an
+ * unpackaged build (`npx electron .`), to try it without installing.
+ */
+function startDevMode(): void {
+  const repo = buildInfo()?.repo ?? (!app.isPackaged && !DEV && !SMOKE && process.env.WORKSHOP_DEV_REPO?.startsWith('/') ? process.env.WORKSHOP_DEV_REPO : null)
+  devMode = new DevMode({
+    repo,
+    outDir: join(app.getPath('userData'), 'devmode'),
+    env: shellEnv,
+    onChange: (s) => win?.webContents.send(CH.devState, s),
+    load: (index) => {
+      if (!win || win.isDestroyed()) return
+      // The same page again is a reload (what a save looks like); the first build is a load.
+      if (win.webContents.getURL() === pathToFileURL(index).href) win.webContents.reloadIgnoringCache()
+      else void win.loadFile(index)
+    },
+    unload: () => {
+      if (win && !win.isDestroyed()) void win.loadFile(BUNDLED_PAGE)
+    }
+  })
+  const coreOnly = (e: IpcMainInvokeEvent): void => {
+    if (e.sender !== win?.webContents) throw new Error('not core')
+  }
+  ipcMain.handle(CH.devGet, (e) => (coreOnly(e), devMode!.get()))
+  ipcMain.handle(CH.devSet, (e, on: unknown) => (coreOnly(e), devMode!.set(on === true)))
 }
 
 function startUpdater(): void {
@@ -1032,6 +1067,7 @@ app.whenReady().then(async () => {
     onCommits: (all) => backends.setCommits(all)
   })
   startUpdater()
+  startDevMode()
   backends.setCommits(core.commits.store.all())
   // The backends start with the sessions they will be told about already listed.
   pushSessions(core.sessions.getState())
@@ -1059,6 +1095,7 @@ app.whenReady().then(async () => {
 // Sessions are parked, not killed: the next launch reattaches them.
 app.on('before-quit', () => {
   updater?.stop()
+  devMode?.dispose()
   core?.stop()
   backends.stopAll()
   music?.host.stop()

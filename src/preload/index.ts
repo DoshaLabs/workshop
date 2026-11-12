@@ -11,7 +11,7 @@ import type { ActiveMascot } from '../shared/mascot'
 import { MENU, type IndexState, type InstallRecord, type InstallRequest, type PendingInstall } from '../shared/tile-menu'
 import type { PreviewDoc, PreviewRef, PreviewWrite } from '../shared/preview'
 import type { RecState } from '../shared/recorder'
-import type { AppUpdate } from '../shared/update'
+import type { AppUpdate, DevMode } from '../shared/update'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
@@ -121,6 +121,12 @@ const core = {
     state: (): Promise<AppUpdate> => ipcRenderer.invoke(CH.updateGet),
     install: (): Promise<void> => ipcRenderer.invoke(CH.updateInstall),
     onState: (fn: (u: AppUpdate) => void) => on(CH.updateState, fn)
+  },
+  /** Dev mode (main/devmode.ts): this window built from the repo the app came from, rebuilt on every save. */
+  devMode: {
+    state: (): Promise<DevMode> => ipcRenderer.invoke(CH.devGet),
+    set: (on: boolean): Promise<void> => ipcRenderer.invoke(CH.devSet, on === true),
+    onState: (fn: (s: DevMode) => void) => on(CH.devState, fn)
   },
   keepDrop: async (file: File): Promise<string> => {
     let path = ''
