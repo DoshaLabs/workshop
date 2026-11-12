@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { money, timeLeft, usageLevel, type Usage } from '@shared/usage'
+import { codexWindow, mergeCodex, money, timeLeft, usageLevel, windowLabel, windowName, type Usage } from '@shared/usage'
 import { UsageTracker } from '../src/main/usage'
 
 describe('usage words', () => {
@@ -65,5 +65,53 @@ describe('UsageTracker', () => {
     t.onStatus('a', { cost: { total_cost_usd: 1 } })
     t.onStatus('a', { cost: { total_cost_usd: 1 } })
     expect(pushed.length).toBe(1)
+  })
+})
+
+describe("Codex's windows (account/rateLimits, codex-cli 0.167.1)", () => {
+  const now = 1_794_441_625_000
+  // A free plan's snapshot as the real CLI gave it (11 Nov 2026): one 30-day window, no secondary.
+  const free = { limitId: 'codex', limitName: null, primary: { usedPercent: 1, windowDurationMins: 43200, resetsAt: 1797015329 }, secondary: null, planType: 'free', credits: null }
+  it('labels a window by its length', () => {
+    expect([300, 10080, 43200, 1440, 30, null].map(windowLabel)).toEqual(['5h', 'week', '30d', '1d', '30m', '—'])
+    expect([300, 10080, 43200].map(windowName)).toEqual(['5-hour window', 'weekly window', '30-day window'])
+  })
+  it('reads a window: seconds to ms, its length kept; nothing usable is null', () => {
+    expect(codexWindow(free.primary)).toEqual({ pct: 1, resetsAt: 1797015329000, mins: 43200 })
+    expect(codexWindow({ usedPercent: 5, windowDurationMins: null, resetsAt: null })).toBeNull()
+    expect(codexWindow(null)).toBeNull()
+  })
+  it("a free plan: one window, its plan", () => {
+    expect(mergeCodex(null, free, now)).toEqual({ primary: { pct: 1, resetsAt: 1797015329000, mins: 43200 }, secondary: null, plan: 'free' })
+  })
+  it('an update is sparse: a window not given keeps the last one; further into a window climbs; a later window replaces', () => {
+    const cur = mergeCodex(null, { ...free, secondary: { usedPercent: 40, windowDurationMins: 300, resetsAt: now / 1000 + 3600 } }, now)!
+    const up = mergeCodex(cur, { limitId: 'codex', primary: { usedPercent: 3, windowDurationMins: 43200, resetsAt: 1797015329 }, secondary: null, planType: null }, now)!
+    expect(up.primary?.pct).toBe(3)
+    expect(up.secondary?.pct).toBe(40)
+    expect(up.plan).toBe('free')
+    const older = mergeCodex(up, { limitId: 'codex', primary: { usedPercent: 2, windowDurationMins: 43200, resetsAt: 1797015329 } }, now)!
+    expect(older.primary?.pct).toBe(3)
+    const next = mergeCodex(up, { limitId: 'codex', secondary: { usedPercent: 1, windowDurationMins: 300, resetsAt: now / 1000 + 5 * 3600 } }, now)!
+    expect(next.secondary?.pct).toBe(1)
+  })
+  it("another bucket is not the plan's, and junk changes nothing", () => {
+    expect(mergeCodex(null, { ...free, limitId: 'other' }, now)).toBeNull()
+    expect(mergeCodex(null, { limitId: null, primary: free.primary }, now)?.primary?.pct).toBe(1)
+    expect(mergeCodex(null, 'x', now)).toBeNull()
+  })
+  it('the tracker keeps them across a restart and drops a window that has reset', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'ws-usage-')), 'usage.json')
+    const pushed: Usage[] = []
+    const t = new UsageTracker(file, (u) => pushed.push(u))
+    t.setCodex({ ...free, primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 } })
+    expect(pushed.at(-1)?.codex).toMatchObject({ primary: { pct: 12, mins: 300 }, secondary: null, plan: 'free' })
+    t.setCodex({ ...free, primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 } })
+    expect(pushed).toHaveLength(1)
+    expect(new UsageTracker(file, () => undefined).get().codex).toMatchObject({ primary: { pct: 12, mins: 300 }, plan: 'free' })
+    expect(JSON.parse(readFileSync(file, 'utf8')).codex.plan).toBe('free')
+    const gone = new UsageTracker(file, () => undefined)
+    gone.setCodex({ limitId: 'codex', primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: 1 } })
+    expect(gone.get().codex?.primary?.pct).toBe(12)
   })
 })

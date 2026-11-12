@@ -260,6 +260,15 @@ button {
   color: var(--ws-blocked);
 }
 /* Not reported yet: an empty bar and a dash, said in the tooltip. */
+.usage-cli {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--ws-line);
+  align-self: center;
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--ws-muted);
+}
 .meter.unknown {
   opacity: 0.6;
 }

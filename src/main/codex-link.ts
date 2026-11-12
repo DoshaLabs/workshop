@@ -39,6 +39,8 @@ export interface CodexLinkEvents {
   transcript(t: Transcript): void
   /** Context used, %. */
   context(pct: number): void
+  /** The plan's rate-limit windows (a RateLimitSnapshot, sparse in an update): the account's, not the thread's. */
+  limits?(snapshot: unknown): void
   /** An approval is waiting in the terminal: show it. `key` names it to `answer`. */
   ask(key: string, ask: CodexAsk): void
   /** That approval is gone, answered or not: stop showing it. */
@@ -220,6 +222,9 @@ export class CodexLink {
     await this.history()
     this.pack.afterHistory()
     this.pack.rejoined()
+    // The plan's windows as they are now (no model turn); later changes come as account/rateLimits/updated.
+    const rl = await this.call<{ rateLimits?: unknown }>('account/rateLimits/read', null).catch(() => null)
+    if (rl?.rateLimits) this.on.limits?.(rl.rateLimits)
   }
 
   private sawStart(item: unknown): void {
@@ -377,6 +382,8 @@ export class CodexLink {
       if (p.requestId !== undefined && p.requestId !== null) this.drop(String(p.requestId))
       return
     }
+    // The account's, not a thread's: no threadId.
+    if (m.method === 'account/rateLimits/updated') return this.on.limits?.(p.rateLimits)
     if (typeof p.threadId === 'string' && m.method === 'thread/status/changed') this.statusOf(p.threadId, p.status)
     if (typeof p.threadId === 'string' && m.method === 'turn/completed') this.dropAll(p.threadId)
     // Anything about another thread: a subagent's (the wolfpack), or one to look at once.

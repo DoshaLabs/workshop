@@ -4,11 +4,11 @@
 // as if usage were not a thing workshop shows. The CLI's own numbers, never an estimate of ours.
 
 import { useEffect, useState } from 'react'
-import { money, timeLeft, usageLevel, type Usage, type UsageWindow } from '@shared/usage'
+import { money, timeLeft, usageLevel, windowLabel, windowName, type CodexWindow, type Usage, type UsageWindow } from '@shared/usage'
 
 const UNKNOWN_WHY = 'nothing reported yet. A session reports it after its first reply, and only on a subscription (an API key has no such window).'
 
-function Meter({ label, name, w, now }: { label: string; name: string; w: UsageWindow | null; now: number }) {
+function Meter({ label, name, w, now, plan }: { label: string; name: string; w: UsageWindow | null; now: number; plan?: string }) {
   const live = w && w.resetsAt > now ? w : null
   if (!live)
     return (
@@ -23,7 +23,7 @@ function Meter({ label, name, w, now }: { label: string; name: string; w: UsageW
   return (
     <span
       className={`meter is-${level}`}
-      title={`The ${name}: ${Math.round(pct)}% used${level === 'hot' ? ', nearly out' : level === 'warn' ? ', running high' : ''}; starts over in ${timeLeft(live.resetsAt, now)}`}
+      title={`The ${name}${plan ? ` (${plan} plan)` : ''}: ${Math.round(pct)}% used${level === 'hot' ? ', nearly out' : level === 'warn' ? ', running high' : ''}; starts over in ${timeLeft(live.resetsAt, now)}`}
     >
       <span className="meter-label">{label}</span>
       <span className="meter-bar">
@@ -42,10 +42,22 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
     const t = window.setInterval(() => setNow(Date.now()), 30_000)
     return () => window.clearInterval(t)
   }, [])
+  // Codex's windows, only once a Codex session has said them (a plan may have one or two).
+  const codex = [usage?.codex?.primary, usage?.codex?.secondary].filter((w): w is CodexWindow => !!w && w.resetsAt > now)
   return (
     <span className="usage" title="Usage, as each session's status line reports it">
       <Meter label="5h" name="5-hour window" w={usage?.fiveHour ?? null} now={now} />
       <Meter label="week" name="weekly window" w={usage?.sevenDay ?? null} now={now} />
+      {codex.length > 0 && (
+        <>
+          <span className="usage-cli" title="A Codex session's plan, as its app-server reports it">
+            codex
+          </span>
+          {codex.map((w, i) => (
+            <Meter key={i} label={windowLabel(w.mins)} name={`Codex ${windowName(w.mins)}`} w={w} now={now} plan={usage?.codex?.plan ?? undefined} />
+          ))}
+        </>
+      )}
     </span>
   )
 }

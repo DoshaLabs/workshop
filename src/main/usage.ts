@@ -10,7 +10,7 @@
 // Carried over from deck's usage.ts; the session comes from the token, not the payload.
 
 import { readFileSync, writeFileSync } from 'node:fs'
-import type { Usage, UsageWindow } from '@shared/usage'
+import { laterWindow, mergeCodex, type CodexUsage, type CodexWindow, type Usage, type UsageWindow } from '@shared/usage'
 
 interface StatusPayload {
   context_window?: { used_percentage?: number | null }
@@ -21,6 +21,8 @@ interface StatusPayload {
 export class UsageTracker {
   private fiveHour: UsageWindow | null = null
   private sevenDay: UsageWindow | null = null
+  /** A Codex plan's windows (account/rateLimits from a Codex session's app-server). */
+  private codex: CodexUsage | null = null
   private at = 0
   private readonly sessions = new Map<string, { context: number | null; costUsd: number | null }>()
   private last = ''
@@ -33,6 +35,7 @@ export class UsageTracker {
       const raw = JSON.parse(readFileSync(file, 'utf8')) as Partial<Usage>
       this.fiveHour = win(raw.fiveHour)
       this.sevenDay = win(raw.sevenDay)
+      this.codex = raw.codex ? { primary: cwin(raw.codex.primary), secondary: cwin(raw.codex.secondary), plan: typeof raw.codex.plan === 'string' ? raw.codex.plan : null } : null
       this.at = Number(raw.at) || 0
     } catch {
       /* nothing kept yet */
@@ -55,14 +58,35 @@ export class UsageTracker {
       this.fiveHour = five
       this.sevenDay = seven
       this.at = Date.now()
-      try {
-        writeFileSync(this.file, JSON.stringify({ fiveHour: five, sevenDay: seven, at: this.at }))
-      } catch {
-        /* the header still has it */
-      }
+      this.save()
     }
+    this.changed()
+  }
+
+  /**
+   * A Codex session's app-server said the plan's windows (`account/rateLimits/read` when core
+   * joins, `account/rateLimits/updated` after). Codex sessions share one account, as Claude's do.
+   */
+  setCodex(snapshot: unknown): void {
+    const next = mergeCodex(this.codex, snapshot, Date.now())
+    if (JSON.stringify(next) === JSON.stringify(this.codex)) return
+    this.codex = next
+    this.at = Date.now()
+    this.save()
+    this.changed()
+  }
+
+  private save(): void {
+    try {
+      writeFileSync(this.file, JSON.stringify({ fiveHour: this.fiveHour, sevenDay: this.sevenDay, codex: this.codex, at: this.at }))
+    } catch {
+      /* the header still has it */
+    }
+  }
+
+  private changed(): void {
     const u = this.get()
-    const key = JSON.stringify([u.fiveHour, u.sevenDay, u.sessions])
+    const key = JSON.stringify([u.fiveHour, u.sevenDay, u.codex, u.sessions])
     if (key === this.last) return
     this.last = key
     this.push(u)
@@ -76,9 +100,7 @@ export class UsageTracker {
     const was = this.sessions.get(id) ?? { context: null, costUsd: null }
     if (was.context === pct) return
     this.sessions.set(id, { ...was, context: pct })
-    const u = this.get()
-    this.last = JSON.stringify([u.fiveHour, u.sevenDay, u.sessions])
-    this.push(u)
+    this.changed()
   }
 
   /** A session that is gone takes its figures with it. */
@@ -88,8 +110,10 @@ export class UsageTracker {
 
   get(): Usage {
     // A window whose reset has passed says nothing about the one that followed.
-    const live = (w: UsageWindow | null) => (w && w.resetsAt > Date.now() ? w : null)
-    return { fiveHour: live(this.fiveHour), sevenDay: live(this.sevenDay), at: this.at, sessions: Object.fromEntries(this.sessions) }
+    const live = <W extends UsageWindow>(w: W | null): W | null => (w && w.resetsAt > Date.now() ? w : null)
+    const c = this.codex
+    const codex = c && (live(c.primary) || live(c.secondary)) ? { primary: live(c.primary), secondary: live(c.secondary), plan: c.plan } : null
+    return { fiveHour: live(this.fiveHour), sevenDay: live(this.sevenDay), at: this.at, sessions: Object.fromEntries(this.sessions), codex }
   }
 }
 
@@ -98,14 +122,14 @@ function win(w: unknown): UsageWindow | null {
   return x && typeof x.pct === 'number' && typeof x.resetsAt === 'number' ? { pct: x.pct, resetsAt: x.resetsAt } : null
 }
 
+function cwin(w: unknown): CodexWindow | null {
+  const x = win(w)
+  const mins = (w as { mins?: unknown } | null)?.mins
+  return x ? { ...x, mins: typeof mins === 'number' && mins > 0 ? mins : null } : null
+}
+
 /** `cur`, or what a session just reported when that is a later window or further into the same one. */
 function newer(cur: UsageWindow | null, got: { used_percentage?: number; resets_at?: number } | undefined): UsageWindow | null {
   if (!got || typeof got.used_percentage !== 'number' || typeof got.resets_at !== 'number') return cur
-  const next = { pct: Math.round(got.used_percentage * 10) / 10, resetsAt: got.resets_at * 1000 }
-  if (next.resetsAt <= Date.now()) return cur
-  if (!cur || cur.resetsAt <= Date.now()) return next
-  // The same window a minute apart in two sessions' clocks is still the same window.
-  if (next.resetsAt > cur.resetsAt + 60_000) return next
-  if (next.resetsAt < cur.resetsAt - 60_000) return cur
-  return next.pct > cur.pct ? next : cur
+  return laterWindow(cur, { pct: Math.round(got.used_percentage * 10) / 10, resetsAt: got.resets_at * 1000 }, Date.now())
 }

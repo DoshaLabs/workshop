@@ -143,6 +143,7 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
         title: (name) => sessionsRef?.setTitle(id, name),
         transcript: (t) => transcripts.put(t),
         context: (pct) => usageRef?.setContext(id, pct),
+        limits: (snap) => usageRef?.setCodex(snap),
         // An approval in the terminal, shown on the tile beside it; the link answers only on a click.
         ask: (key, a) => {
           const { answerable, ...call } = a

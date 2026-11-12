@@ -15,6 +15,77 @@ export interface Usage {
   at: number
   /** Per session (core's id): context used (%) and what it has cost so far (USD, list price). */
   sessions: Record<string, { context: number | null; costUsd: number | null }>
+  /** The Codex plan's windows, from a Codex session's app-server; null until one has said. */
+  codex: CodexUsage | null
+}
+
+/** A Codex plan's window, with its length: plans differ (a free plan has one 30-day window). */
+export interface CodexWindow extends UsageWindow {
+  /** Its length in minutes, as Codex gives it (null: not said). */
+  mins: number | null
+}
+
+export interface CodexUsage {
+  primary: CodexWindow | null
+  secondary: CodexWindow | null
+  /** Codex's plan type ("free", "plus"…), for the tooltip. */
+  plan: string | null
+}
+
+// ---- Codex's windows (account/rateLimits on codex-cli 0.167.1) -------------
+
+/**
+ * Which window to keep: the one a session just reported if it is a later window, or further into
+ * the same one (two clocks a minute apart are still one window), else the one already kept. Both
+ * CLIs' windows go by it.
+ */
+export function laterWindow<W extends UsageWindow>(cur: W | null, next: W | null, now: number): W | null {
+  if (!next || next.resetsAt <= now) return cur
+  if (!cur || cur.resetsAt <= now) return next
+  if (next.resetsAt > cur.resetsAt + 60_000) return next
+  if (next.resetsAt < cur.resetsAt - 60_000) return cur
+  return next.pct > cur.pct ? next : cur
+}
+
+/** A RateLimitWindow (`usedPercent`, `windowDurationMins`, `resetsAt` in seconds), or null. */
+export function codexWindow(w: unknown): CodexWindow | null {
+  const x = w as { usedPercent?: unknown; windowDurationMins?: unknown; resetsAt?: unknown } | null
+  if (!x || typeof x.usedPercent !== 'number' || !isFinite(x.usedPercent) || typeof x.resetsAt !== 'number' || !isFinite(x.resetsAt)) return null
+  const mins = typeof x.windowDurationMins === 'number' && x.windowDurationMins > 0 ? x.windowDurationMins : null
+  return { pct: Math.round(x.usedPercent * 10) / 10, resetsAt: x.resetsAt * 1000, mins }
+}
+
+/**
+ * A rate-limit snapshot (`account/rateLimits/read`'s `rateLimits`, or an `account/rateLimits/updated`)
+ * merged into what is kept. Updates are sparse: a window not given keeps the last one seen. Only
+ * the `codex` bucket (or an unnamed one) is the plan's.
+ */
+export function mergeCodex(cur: CodexUsage | null, snap: unknown, now: number): CodexUsage | null {
+  const s = snap as { limitId?: unknown; primary?: unknown; secondary?: unknown; planType?: unknown } | null
+  if (!s || typeof s !== 'object' || (s.limitId !== null && s.limitId !== undefined && s.limitId !== 'codex')) return cur
+  const primary = laterWindow(cur?.primary ?? null, codexWindow(s.primary), now)
+  const secondary = laterWindow(cur?.secondary ?? null, codexWindow(s.secondary), now)
+  const plan = typeof s.planType === 'string' && s.planType ? s.planType : (cur?.plan ?? null)
+  if (!primary && !secondary && !plan) return cur
+  return { primary, secondary, plan }
+}
+
+/** A window's short label from its length: "5h", "week", "30d". */
+export function windowLabel(mins: number | null): string {
+  if (!mins) return '—'
+  if (mins === 10080) return 'week'
+  if (mins < 60) return `${mins}m`
+  if (mins < 1440 || mins % 1440 !== 0) return `${Math.round(mins / 60)}h`
+  return `${mins / 1440}d`
+}
+
+/** Its name in a sentence: "5-hour window", "weekly window", "30-day window". */
+export function windowName(mins: number | null): string {
+  if (!mins) return 'window'
+  if (mins === 10080) return 'weekly window'
+  if (mins < 60) return `${mins}-minute window`
+  if (mins < 1440 || mins % 1440 !== 0) return `${Math.round(mins / 60)}-hour window`
+  return `${mins / 1440}-day window`
 }
 
 // ---- how the window words them (deck's thresholds) -------------------------

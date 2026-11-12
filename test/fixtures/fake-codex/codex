@@ -216,6 +216,9 @@ function server() {
           const r = await srv.rpc('tools/call', { name: p.tool, arguments: p.arguments ?? {}, _meta: { threadId: p.threadId } })
           return r.error ? send(ws, { id: m.id, error: r.error }) : reply(r.result)
         }
+        // The plan's windows, shaped as a free plan's on 0.167.1: one 30-day window, no secondary.
+        case 'account/rateLimits/read':
+          return reply({ rateLimits: { limitId: 'codex', limitName: null, primary: { usedPercent: 7, windowDurationMins: 43200, resetsAt: Math.floor(Date.now() / 1000) + 20 * 86400 }, secondary: null, credits: null, planType: 'free' }, rateLimitsByLimitId: null })
         case 'thread/unsubscribe': {
           const th = threads.get(p.threadId)
           if (th) th.subs.delete(ws)
@@ -265,7 +268,10 @@ function server() {
         case 'fake/prompt': {
           const th = threads.get(p.threadId)
           if (!th) return
-          if (p.text === 'ask') {
+          if (p.text === 'limits') {
+            // A sparse update to every client (it is the account's, not a thread's): a second window appears.
+            for (const c of wss.clients) send(c, { method: 'account/rateLimits/updated', params: { rateLimits: { limitId: 'codex', limitName: null, primary: null, secondary: { usedPercent: 61, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3 * 3600 }, credits: null, planType: null } } })
+          } else if (p.text === 'ask') {
             status(th, { type: 'active', activeFlags: ['waitingOnApproval'] })
             request(th, 'item/commandExecution/requestApproval', { kind: 'command', itemId: 'i', environmentId: null, command: "/bin/zsh -lc 'rm -rf build'", cwd: process.cwd(), reason: 'clean' })
           } else if (p.text === 'asktool') {
