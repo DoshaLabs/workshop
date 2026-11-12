@@ -36,19 +36,17 @@ export function ThemePicker({ theme }: { theme: ThemeState }) {
       </button>
       {open && (
         <div className="popover" role="menu">
-          <div className="segmented" role="group" aria-label="Appearance">
-            {APPEARANCES.map(([a, label]) => (
-              <button
-                key={a}
-                className={theme.appearance === a ? 'on' : ''}
-                disabled={forcesDark(theme.theme)}
-                title={forcesDark(theme.theme) ? `${current?.name} is always dark` : undefined}
-                onClick={() => void window.core.setSettings({ appearance: a })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {forcesDark(theme.theme) ? (
+            <div className="appearance-note">{current?.name} is always dark</div>
+          ) : (
+            <div className="segmented" role="group" aria-label="Appearance">
+              {APPEARANCES.map(([a, label]) => (
+                <button key={a} className={theme.appearance === a ? 'on' : ''} onClick={() => void window.core.setSettings({ appearance: a })}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           {THEMES.map((t) => {
             const v = theme.dark ? t.dark : t.light
             return (

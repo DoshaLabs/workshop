@@ -519,6 +519,87 @@ const graphite: ThemeFamily = {
 }
 
 /**
+ * Robin's Egg: a 1950s kitchen fridge (Colin, 12 Nov 2026, from a photo of a retro French-door
+ * fridge; the enamel there reads #84bec0). The window is the enamel, the panes the white
+ * enamel inside the door, the lines chrome trim. Accents from the same kitchens: cherry red,
+ * atomic mustard. Dark is the same fridge with the kitchen light off.
+ */
+const robin: ThemeFamily = {
+  id: 'robin',
+  name: "Robin's Egg",
+  light: variant({
+    bg: '#8ec9c8',
+    panel: '#f6fbfa',
+    ink: '#1c3336',
+    muted: '#5a7477',
+    line: '#c6d8d8',
+    accent: '#22807f',
+    busy: '#c98a1c',
+    idle: '#9fb6b6',
+    blocked: '#c8372d',
+    starting: '#3478b0',
+    dead: '#8a3328',
+    heads: ['#d7ecea', '#f3e6d8', '#f8d6d6', '#f3ecc8'], // the egg's blue, its warm shell, cherry and mustard
+    term: {
+      foreground: '#1c3336',
+      cursor: '#22807f',
+      selectionBackground: '#c4e4e2',
+      black: '#1c3336',
+      red: '#c03a2e',
+      green: '#2f7a3e',
+      yellow: '#a8700f',
+      blue: '#2f68a3',
+      magenta: '#8c4f8f',
+      cyan: '#1d7b7b',
+      white: '#c6d8d8',
+      brightBlack: '#5a7477',
+      brightRed: '#de5446',
+      brightGreen: '#43955a',
+      brightYellow: '#c98a1c',
+      brightBlue: '#4a86c2',
+      brightMagenta: '#a86aab',
+      brightCyan: '#2f9e9c',
+      brightWhite: '#ffffff'
+    }
+  }),
+  dark: variant({
+    bg: '#0e2224',
+    panel: '#15302f',
+    ink: '#e4f3f1',
+    muted: '#88a6a5',
+    line: '#2a4a4a',
+    accent: '#84cfcb',
+    busy: '#e2a83e',
+    idle: '#4f6b6b',
+    blocked: '#e8594b',
+    starting: '#6aa6dc',
+    dead: '#a3443a',
+    heads: ['#1d4441', '#33362a', '#43282a', '#3f3a20'], // teal, olive, cherry and mustard
+    term: {
+      foreground: '#e4f3f1',
+      cursor: '#84cfcb',
+      selectionBackground: '#2c5453',
+      black: '#15302f',
+      red: '#ec6a5c',
+      green: '#8cc98e',
+      yellow: '#e8bb5a',
+      blue: '#7db0e0',
+      magenta: '#c99ccc',
+      cyan: '#84cfcb',
+      white: '#c4d8d6',
+      brightBlack: '#5f7d7c',
+      brightRed: '#f5847a',
+      brightGreen: '#a4dba5',
+      brightYellow: '#f2cc74',
+      brightBlue: '#97c3ea',
+      brightMagenta: '#dab2dc',
+      brightCyan: '#a3e0dc',
+      brightWhite: '#f6fbfa'
+    }
+  })
+}
+
+/**
  * What a glass wall reads off its backdrop picture (deck's lib/glass.ts; not in workshop yet): the hue the picture leans to and how strongly
  * (0..1), and the hue of its most vivid patch, for the accent. Hues in degrees.
  */
@@ -628,7 +709,7 @@ export function forcesDark(themeId: string): boolean {
   return themeId === COSMOS_ID
 }
 
-export const THEMES: ThemeFamily[] = [cream, solarized, gruvbox, catppuccin, nord, graphite, glass, cosmos]
+export const THEMES: ThemeFamily[] = [cream, solarized, gruvbox, catppuccin, nord, graphite, robin, glass, cosmos]
 /** Deep Space is workshop's default (CLAUDE.md §3). */
 export const DEFAULT_THEME_ID = COSMOS_ID
 
