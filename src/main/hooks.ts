@@ -15,6 +15,10 @@
 //   then runs the user's own command on the same input, so what they see is unchanged.
 // - Claude Code's theme, light or dark to match the app (deck learned that a light CLI theme
 //   inside a dark app is near-white text on light grey); the user's -daltonized / -ansi is kept.
+// - Claude Code's classic renderer (`tui: default`), whatever the user's own `tui` says (Colin, 12 Nov
+//   2026). The fullscreen one keeps its own scroll position: a wheel up inside workshop's terminal
+//   left it there, not following new output, until "Jump to bottom" was clicked. The classic one
+//   writes to the terminal as it goes, so the pane follows; scrolling back is tmux's copy mode.
 // - WORKSHOP_TILE, the door's CLI, so a tile's skill can run `node "$WORKSHOP_TILE" <id> <op>`.
 // - WORKSHOP_DOC, the preview pane's CLI beside it: `node "$WORKSHOP_DOC" open <path> [--line N]`.
 // - THE LEASH and PERMISSION PROMPTS (main/leash.ts), the hooks that wait on core on purpose:
@@ -242,6 +246,7 @@ export class SessionSettings {
     const hook = (path: string) => [{ hooks: [{ type: 'command', command: this.post(path), timeout: 5 }] }]
     const settings = {
       theme: claudeTheme(this.dark, theirs.theme),
+      tui: 'default',
       statusLine: this.writeStatusScript(theirs.statusLine),
       env: this.sessionEnv(),
       hooks: {
