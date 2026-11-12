@@ -1026,6 +1026,10 @@ button {
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
+.parked .parked-end-all {
+  margin-left: auto;
+  font-size: 11px;
+}
 .parked .session {
   margin: 4px 4px 0;
   opacity: 0.8;

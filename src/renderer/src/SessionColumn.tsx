@@ -177,6 +177,9 @@ function SessionTile({ s, n, usage, onPick, drag }: { s: SessionView; n?: number
   )
 }
 
+/** The Closed card's arm for its End All button (session ids are UUIDs, so this never matches one). */
+const ALL = '*'
+
 /** Closed sessions: still running in tmux, or resumable with --resume after a reboot. A click brings one back. */
 function ParkedCard({ parked, onPick }: { parked: SessionView[]; onPick: (s: SessionView) => void }) {
   const [arm, setArm] = useState<string | null>(null)
@@ -190,6 +193,17 @@ function ParkedCard({ parked, onPick }: { parked: SessionView[]; onPick: (s: Ses
       <header className="head">
         <span className="name">Closed</span>
         <span className="muted">{parked.length}</span>
+        <button
+          className={`ghost parked-end-all ${arm === ALL ? 'armed' : ''}`}
+          title={arm === ALL ? 'Click again to end every closed session for good' : 'End every closed session (their conversations are kept)'}
+          onClick={() => {
+            if (arm !== ALL) return setArm(ALL)
+            setArm(null)
+            for (const s of parked) void window.core.kill(s.id)
+          }}
+        >
+          {arm === ALL ? 'end all?' : 'End All'}
+        </button>
       </header>
       {parked.map((s) => (
         <div key={s.id} className="session" data-session={s.id} title={`${s.title ? `${s.title}\n` : ''}${tilde(s.cwd)}\nClick to bring it back`} onClick={() => onPick(s)}>
