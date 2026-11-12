@@ -201,5 +201,10 @@ export const CH = {
   // dev mode (main/devmode.ts): the top bar's button, an app built from a checkout only
   devGet: 'ws:core:dev-get',
   devSet: 'ws:core:dev-set',
-  devState: 'ws:core:dev-state' // main → window
+  devState: 'ws:core:dev-state', // main → window
+  // accounts (main/accounts.ts): who each CLI is signed in as, and Sign in again
+  accountsGet: 'ws:core:accounts-get',
+  accountsSignIn: 'ws:core:accounts-sign-in',
+  accountsCancel: 'ws:core:accounts-cancel',
+  accountsState: 'ws:core:accounts-state' // main → window
 } as const

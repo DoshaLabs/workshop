@@ -13,6 +13,7 @@ import type { PreviewDoc, PreviewRef, PreviewWrite } from '../shared/preview'
 import type { RecState } from '../shared/recorder'
 import type { AppUpdate, DevMode } from '../shared/update'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
+import type { AccountsState, Cli } from '../shared/accounts'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
   const h = (_e: unknown, ...a: unknown[]): void => fn(...(a as A))
@@ -127,6 +128,13 @@ const core = {
     state: (): Promise<DevMode> => ipcRenderer.invoke(CH.devGet),
     set: (on: boolean): Promise<void> => ipcRenderer.invoke(CH.devSet, on === true),
     onState: (fn: (s: DevMode) => void) => on(CH.devState, fn)
+  },
+  /** Accounts (main/accounts.ts): who each CLI is signed in as; Sign in runs the CLI's own login. */
+  accounts: {
+    state: (): Promise<AccountsState> => ipcRenderer.invoke(CH.accountsGet),
+    signIn: (cli: Cli): Promise<void> => ipcRenderer.invoke(CH.accountsSignIn, cli),
+    cancel: (): Promise<void> => ipcRenderer.invoke(CH.accountsCancel),
+    onState: (fn: (s: AccountsState) => void) => on(CH.accountsState, fn)
   },
   keepDrop: async (file: File): Promise<string> => {
     let path = ''

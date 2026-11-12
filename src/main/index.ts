@@ -40,6 +40,7 @@ import type { Transcript } from '@shared/transcript'
 import { parseBuildInfo } from '@shared/update'
 import { Updater, bundleOf } from './updates'
 import { DevMode } from './devmode'
+import { Accounts } from './accounts'
 import { placeWindow } from './window-bounds'
 import { reapTmuxWhenGone } from './smoke-reaper'
 import { smokeNet } from './smoke-net'
@@ -117,6 +118,7 @@ let recorder: Recorder | null = null
 /** Install update (main/updates.ts). Offers nothing unless this is a packaged app built by `npm run dist`. */
 let updater: Updater | null = null
 let devMode: DevMode | null = null
+let accounts: Accounts | null = null
 
 interface Guest {
   tile: Tile
@@ -969,6 +971,23 @@ function startDevMode(): void {
   ipcMain.handle(CH.devSet, (e, on: unknown) => (coreOnly(e), devMode!.set(on === true)))
 }
 
+/** Who each CLI is signed in as (main/accounts.ts). Not in a smoke run: its CLIs are stand-ins. */
+function startAccounts(): void {
+  accounts = new Accounts({ env: shellEnv, onChange: (s) => win?.webContents.send(CH.accountsState, s) })
+  const coreOnly = (e: IpcMainInvokeEvent): void => {
+    if (e.sender !== win?.webContents) throw new Error('not core')
+  }
+  ipcMain.handle(CH.accountsGet, (e) => (coreOnly(e), accounts!.get()))
+  ipcMain.handle(CH.accountsSignIn, (e, cli: unknown) => {
+    coreOnly(e)
+    if (cli === 'claude' || cli === 'codex') accounts!.signIn(cli)
+  })
+  ipcMain.handle(CH.accountsCancel, (e) => (coreOnly(e), accounts!.cancel()))
+  if (SMOKE) return
+  accounts.start()
+  app.on('browser-window-focus', () => accounts?.focused())
+}
+
 function startUpdater(): void {
   updater = new Updater({
     info: buildInfo(),
@@ -1073,6 +1092,7 @@ app.whenReady().then(async () => {
   })
   startUpdater()
   startDevMode()
+  startAccounts()
   backends.setCommits(core.commits.store.all())
   // The backends start with the sessions they will be told about already listed.
   pushSessions(core.sessions.getState())
@@ -1101,6 +1121,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   updater?.stop()
   devMode?.dispose()
+  accounts?.stop()
   core?.stop()
   backends.stopAll()
   music?.host.stop()
