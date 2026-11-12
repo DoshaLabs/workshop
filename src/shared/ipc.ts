@@ -210,5 +210,6 @@ export const CH = {
   accountsGet: 'ws:core:accounts-get',
   accountsSignIn: 'ws:core:accounts-sign-in',
   accountsCancel: 'ws:core:accounts-cancel',
+  accountsSignOut: 'ws:core:accounts-sign-out',
   accountsState: 'ws:core:accounts-state' // main → window
 } as const

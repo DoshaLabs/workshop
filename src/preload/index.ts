@@ -13,7 +13,7 @@ import type { PreviewDoc, PreviewRef, PreviewWrite } from '../shared/preview'
 import type { ViewDoc } from '../shared/viewer'
 import type { RecState } from '../shared/recorder'
 import type { AppUpdate, DevMode } from '../shared/update'
-import type { AccountsState, Cli } from '../shared/accounts'
+import type { AccountsState, Cli, SignInHow } from '../shared/accounts'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
 
 const on = <A extends unknown[]>(ch: string, fn: (...a: A) => void): (() => void) => {
@@ -132,7 +132,8 @@ const core = {
   /** Accounts (main/accounts.ts): who each CLI is signed in as; Sign in runs the CLI's own login. */
   accounts: {
     state: (): Promise<AccountsState> => ipcRenderer.invoke(CH.accountsGet),
-    signIn: (cli: Cli): Promise<void> => ipcRenderer.invoke(CH.accountsSignIn, cli),
+    signIn: (cli: Cli, how?: SignInHow): Promise<void> => ipcRenderer.invoke(CH.accountsSignIn, cli, how),
+    signOut: (cli: Cli): Promise<void> => ipcRenderer.invoke(CH.accountsSignOut, cli),
     cancel: (): Promise<void> => ipcRenderer.invoke(CH.accountsCancel),
     onState: (fn: (s: AccountsState) => void) => on(CH.accountsState, fn)
   },

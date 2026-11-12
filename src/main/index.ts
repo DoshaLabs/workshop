@@ -1001,9 +1001,15 @@ function startAccounts(): void {
     if (e.sender !== win?.webContents) throw new Error('not core')
   }
   ipcMain.handle(CH.accountsGet, (e) => (coreOnly(e), accounts!.get()))
-  ipcMain.handle(CH.accountsSignIn, (e, cli: unknown) => {
+  ipcMain.handle(CH.accountsSignIn, (e, cli: unknown, how: unknown) => {
     coreOnly(e)
-    if (cli === 'claude' || cli === 'codex') accounts!.signIn(cli)
+    const way = how === 'console' || how === 'sso' || how === 'claudeai' ? how : undefined
+    if (cli === 'claude') accounts!.signIn(cli, way)
+    else if (cli === 'codex') accounts!.signIn(cli)
+  })
+  ipcMain.handle(CH.accountsSignOut, async (e, cli: unknown) => {
+    coreOnly(e)
+    if (cli === 'claude' || cli === 'codex') await accounts!.signOut(cli)
   })
   ipcMain.handle(CH.accountsCancel, (e) => (coreOnly(e), accounts!.cancel()))
   if (SMOKE) return

@@ -250,9 +250,18 @@ button {
   line-height: 1.15;
 }
 .usage-cli {
+  font: inherit;
   font-size: 12px;
   font-weight: 700;
   color: var(--ws-ink);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.usage-cli:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .usage-reset {
   font-size: 10px;
@@ -324,10 +333,12 @@ button {
   height: 100%;
   background: var(--ws-accent);
 }
-.meter.is-warn .meter-bar i {
+.meter.is-warn .meter-bar i,
+.acct-meter.is-warn .meter-bar i {
   background: var(--ws-busy);
 }
-.meter.is-hot .meter-bar i {
+.meter.is-hot .meter-bar i,
+.acct-meter.is-hot .meter-bar i {
   background: var(--ws-blocked);
 }
 .meter.is-hot .meter-pct {
@@ -2877,4 +2888,167 @@ textarea,
   max-width: 520px;
   text-align: center;
   color: var(--ws-muted);
+}
+
+/* ==== The account manager (Accounts.tsx): a card per CLI in core's lightbox, opened from a plan's
+   name in the top bar. Built on .picker, so it has the + menu's card, head and reading size. ==== */
+.accounts .picker-body {
+  gap: 12px;
+}
+.acct {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--ws-line);
+  border-radius: 10px;
+}
+.acct h3 {
+  margin: 4px 0 0;
+}
+.acct-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.acct-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ws-ink);
+}
+.acct-state {
+  font-size: 13px;
+}
+.acct-state.is-in {
+  color: var(--ws-green);
+}
+.acct-state.is-out {
+  color: var(--ws-blocked);
+}
+.acct-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.acct-facts > div {
+  display: contents;
+}
+.acct-facts dt {
+  color: var(--ws-muted);
+}
+.acct-facts dd {
+  margin: 0;
+  color: var(--ws-ink);
+  overflow-wrap: anywhere;
+}
+.acct-windows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.acct-meter {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'name pct' 'bar bar' 'reset reset';
+  gap: 3px 10px;
+  font-size: 13px;
+}
+.acct-meter-name {
+  grid-area: name;
+  color: var(--ws-ink);
+}
+.acct-meter-pct {
+  grid-area: pct;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-ink);
+}
+.acct-meter .meter-bar {
+  grid-area: bar;
+  width: auto;
+  height: 8px;
+}
+.acct-meter-reset {
+  grid-area: reset;
+  color: var(--ws-muted);
+  font-size: 13px;
+}
+.acct-meter.unknown .acct-meter-pct,
+.acct-meter.unknown .acct-meter-name {
+  color: var(--ws-muted);
+}
+.acct-sessions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+.acct-sessions li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.acct-session-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ws-ink);
+}
+.acct-ctx,
+.acct-cost {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-muted);
+}
+.acct-ctx.is-warn {
+  color: var(--ws-busy);
+}
+.acct-ctx.is-hot {
+  color: var(--ws-blocked);
+}
+.acct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.acct-actions .preview-btn {
+  font-size: 13px;
+  padding: 3px 10px;
+}
+.acct-how {
+  display: inline-flex;
+  gap: 4px;
+}
+.acct-primary {
+  color: var(--ws-ink);
+  border-color: var(--ws-accent);
+}
+.acct-out.armed {
+  color: var(--ws-blocked);
+  border-color: var(--ws-blocked);
+}
+.acct-signing {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ws-muted);
+}
+.acct-signing a,
+.acct-page {
+  color: var(--ws-accent);
+  font-size: 13px;
+}
+.acct-page {
+  margin-left: auto;
 }

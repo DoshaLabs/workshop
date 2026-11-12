@@ -6,6 +6,8 @@
 import { useEffect, useState } from 'react'
 import { needsSignIn, planName, type AccountsState, type Cli, type CliAccount } from '@shared/accounts'
 import { money, timeLeft, usageLevel, windowLabel, windowName, type CodexWindow, type Usage, type UsageWindow } from '@shared/usage'
+import type { SessionsState } from '@shared/sessions'
+import { Accounts, type PlanInfo } from './Accounts'
 
 const UNKNOWN_WHY = 'nothing reported yet. A session reports it after its first reply, and only on a subscription (an API key has no such window).'
 
@@ -48,7 +50,8 @@ function Plan({
   rows,
   now,
   account,
-  signIn
+  signIn,
+  onOpen
 }: {
   cli: string
   /** The CLI's own mark as its terminal shows it (✻, >_): text, never a logo file (ground rule 6). */
@@ -59,6 +62,7 @@ function Plan({
   now: number
   account: CliAccount | null
   signIn: AccountsState['signIn']
+  onOpen: () => void
 }) {
   const live = rows.map((r) => r.w).filter((w): w is UsageWindow => !!w && w.resetsAt > now)
   const next = live.length ? Math.min(...live.map((w) => w.resetsAt)) : null
@@ -70,13 +74,13 @@ function Plan({
       : ''
   return (
     <span className="usage-plan">
-      <span className="usage-who" title={[title, who].filter(Boolean).join('\n\n')}>
-        <span className="usage-cli">
+      <span className="usage-who" title={[title, who, 'Click the name for the account.'].filter(Boolean).join('\n\n')}>
+        <button className="usage-cli" onClick={onOpen}>
           <span className="usage-glyph" aria-hidden="true">
             {glyph}
           </span>
           {cli}
-        </span>
+        </button>
         {mine && !mine.error ? (
           <span className="usage-signin is-busy">
             {mine.url ? (
@@ -113,7 +117,8 @@ function Plan({
   )
 }
 
-export function UsageMeter({ usage }: { usage: Usage | null }) {
+export function UsageMeter({ usage, sessions }: { usage: Usage | null; sessions: SessionsState | null }) {
+  const [open, setOpen] = useState(false)
   const [acc, setAcc] = useState<AccountsState>({ claude: null, codex: null, signIn: null })
   useEffect(() => {
     // An installed core older than this window (dev mode) has no accounts yet: nothing to show.
@@ -137,6 +142,17 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
   // Claude's per-model weekly windows, under the server's own label ("Fable"), when reported.
   const scoped = (usage?.scoped ?? []).filter((w) => w.resetsAt > now)
   const codex = [usage?.codex?.primary, usage?.codex?.secondary].filter((w): w is CodexWindow => !!w && w.resetsAt > now)
+  const claudeRows = [
+    // The 5-hour window only while one is reported; the weekly one always (a dash until it is).
+    ...(usage?.fiveHour && usage.fiveHour.resetsAt > now ? [{ label: '5h', name: '5-hour window', w: usage.fiveHour }] : []),
+    { label: '7d', name: 'weekly window', w: usage?.sevenDay ?? null },
+    ...scoped.map((w) => ({ label: w.label, name: `${w.label} weekly window`, w }))
+  ]
+  const codexRows = codex.map((w) => ({ label: windowLabel(w.mins), name: windowName(w.mins), w, plan: usage?.codex?.plan ?? undefined }))
+  const plans: PlanInfo[] = [
+    { id: 'claude', cli: 'Claude', glyph: '✻', rows: claudeRows, page: 'https://claude.ai/settings/usage' },
+    ...(acc.codex ? [{ id: 'codex' as const, cli: 'Codex', glyph: '>_', rows: codexRows, page: 'https://chatgpt.com/codex/settings/usage' }] : [])
+  ]
   return (
     <span className="usage">
       <Plan
@@ -147,12 +163,8 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
         signIn={acc.signIn}
         title={`The Claude plan's windows, as each session's status line reports them. Only the windows it reports are drawn: a plan with no 5-hour window has no 5h bar.${scoped.length ? '' : ' Per-model weekly meters (Fable) are in /usage only until the status line carries them.'}`}
         now={now}
-        rows={[
-          // The 5-hour window only while one is reported; the weekly one always (a dash until it is).
-          ...(usage?.fiveHour && usage.fiveHour.resetsAt > now ? [{ label: '5h', name: '5-hour window', w: usage.fiveHour }] : []),
-          { label: '7d', name: 'weekly window', w: usage?.sevenDay ?? null },
-          ...scoped.map((w) => ({ label: w.label, name: `${w.label} weekly window`, w }))
-        ]}
+        rows={claudeRows}
+        onOpen={() => setOpen(true)}
       />
       {(codex.length > 0 || needsSignIn(acc.codex, now) || acc.signIn?.cli === 'codex') && (
         <Plan
@@ -163,9 +175,11 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
           signIn={acc.signIn}
           title="The Codex plan's windows, as a Codex session's app-server reports them"
           now={now}
-          rows={codex.map((w) => ({ label: windowLabel(w.mins), name: `Codex ${windowName(w.mins)}`, w, plan: usage?.codex?.plan ?? undefined }))}
+          rows={codexRows.map((r) => ({ ...r, name: `Codex ${r.name}` }))}
+          onOpen={() => setOpen(true)}
         />
       )}
+      {open && <Accounts plans={plans} acc={acc} usage={usage} sessions={sessions} now={now} onClose={() => setOpen(false)} />}
     </span>
   )
 }

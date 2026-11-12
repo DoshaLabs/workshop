@@ -327,7 +327,7 @@ export function App() {
     <div className={['app', overInst && 'overlaid', floats.some((i) => viewOf(i.key) === 'float') && 'floating'].filter(Boolean).join(' ')}>
       <AppMark working={!!sessions?.sessions.some((s) => s.open && s.status === 'busy')} />
       <div className="topbar">
-        <UsageMeter usage={usage} />
+        <UsageMeter usage={usage} sessions={sessions} />
         <DevModeButton />
         <UpdateButton />
         <RecordButton />

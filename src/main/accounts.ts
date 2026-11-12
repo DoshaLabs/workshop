@@ -8,7 +8,7 @@
 
 import { execFile } from 'node:child_process'
 import * as pty from 'node-pty'
-import { parseClaudeStatus, parseCodexStatus, signInUrl, type AccountsState, type Cli } from '@shared/accounts'
+import { loginCommand, logoutCommand, parseClaudeStatus, parseCodexStatus, parseVersion, signInUrl, type AccountsState, type Cli, type SignInHow } from '@shared/accounts'
 
 const EVERY_MS = 10 * 60_000
 const FOCUS_MIN_MS = 60_000
@@ -41,8 +41,6 @@ const realRun: Run = (cmd, args, env) =>
 
 const realSpawn: SpawnPty = (cmd, args, env) =>
   pty.spawn(cmd, args, { name: 'xterm-256color', cols: 100, rows: 30, cwd: env.HOME ?? '/', env: env as Record<string, string> })
-
-const LOGIN: Record<Cli, [string, string[]]> = { claude: ['claude', ['auth', 'login']], codex: ['codex', ['login']] }
 
 export class Accounts {
   private s: AccountsState = { claude: null, codex: null, signIn: null }
@@ -82,9 +80,16 @@ export class Accounts {
   private async read(): Promise<void> {
     this.lastRead = Date.now()
     const env = this.o.env()
-    const [c, x] = await Promise.all([this.run('claude', ['auth', 'status', '--json'], env), this.run('codex', ['login', 'status'], env)])
-    const claude = c.missing ? null : (parseClaudeStatus(c.out) ?? this.s.claude)
-    const codex = x.missing ? null : parseCodexStatus(x.out, x.code)
+    const [c, x, cv, xv] = await Promise.all([
+      this.run('claude', ['auth', 'status', '--json'], env),
+      this.run('codex', ['login', 'status'], env),
+      this.run('claude', ['--version'], env),
+      this.run('codex', ['--version'], env)
+    ])
+    const claudeAcc = c.missing ? null : (parseClaudeStatus(c.out) ?? this.s.claude)
+    const codexAcc = x.missing ? null : parseCodexStatus(x.out, x.code)
+    const claude = claudeAcc && { ...claudeAcc, version: cv.code === 0 ? parseVersion(cv.out) : claudeAcc.version }
+    const codex = codexAcc && { ...codexAcc, version: xv.code === 0 ? parseVersion(xv.out) : (this.s.codex?.version ?? null) }
     this.put({ ...this.s, claude, codex })
   }
 
@@ -95,9 +100,9 @@ export class Accounts {
   }
 
   /** Run the CLI's own login. One at a time; another click while one runs does nothing. */
-  signIn(cli: Cli): void {
+  signIn(cli: Cli, how?: SignInHow): void {
     if (this.child) return
-    const [cmd, args] = LOGIN[cli]
+    const [cmd, args] = loginCommand(cli, how)
     let out = ''
     let child: PtyLike
     try {
@@ -125,6 +130,18 @@ export class Accounts {
     })
     this.giveUp = setTimeout(() => this.cancel(), SIGN_IN_MAX_MS)
     this.giveUp.unref?.()
+  }
+
+  /**
+   * Run the CLI's own logout, then read status again. Sessions already running keep the login they
+   * started with until the CLI next reads it. A failure keeps its reason for the accounts card.
+   */
+  async signOut(cli: Cli): Promise<void> {
+    if (this.child) return
+    const [cmd, args] = logoutCommand(cli)
+    const r = await this.run(cmd, args, this.o.env())
+    await this.refresh()
+    this.put({ ...this.s, signOutError: r.code === 0 ? null : { cli, error: tail(r.out) || `${cmd} exited ${r.code}` } })
   }
 
   /** Stop a sign-in under way (or clear the last one's error). */
