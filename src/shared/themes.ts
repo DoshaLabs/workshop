@@ -47,11 +47,11 @@ export interface ThemeVariant {
   starting: string
   dead: string
   /**
-   * The session column's two head colours, alternated tile by tile so a column of conversations
-   * is not one wall of text: two of the family's own hues washed toward the panel, each keeping
-   * the ink at 4.5:1 (test/themes.test.ts).
+   * The session column's four head colours, cycled tile by tile so a column of conversations is
+   * not one wall of text: four of the family's own hues washed toward the panel, warm and cool in
+   * turn, each keeping the ink at 4.5:1 (test/themes.test.ts).
    */
-  heads: [string, string]
+  heads: [string, string, string, string]
   term: TermPalette
 }
 
@@ -81,7 +81,7 @@ const cream: ThemeFamily = {
     blocked: '#d3402a',
     starting: '#3a7bd5',
     dead: '#8a2f1c',
-    heads: ['#f1dccd', '#dfe6d3'], // terracotta and sage, washed into the cream
+    heads: ['#f1dccd', '#dfe6d3', '#dce4ee', '#ece0ea'], // terracotta, sage, slate blue and plum, washed into the cream
     term: {
       foreground: '#2b2a26',
       cursor: '#c8552d',
@@ -116,7 +116,7 @@ const cream: ThemeFamily = {
     blocked: '#e25a42',
     starting: '#5b93d8',
     dead: '#9c3f2a',
-    heads: ['#3a2a22', '#283326'], // rust and moss
+    heads: ['#3a2a22', '#283326', '#24303d', '#35283a'], // rust, moss, slate and plum
     term: {
       foreground: '#ece6d8',
       cursor: '#e0764f',
@@ -156,7 +156,7 @@ const solarized: ThemeFamily = {
     blocked: '#dc322f',
     starting: '#268bd2',
     dead: '#8b2b26',
-    heads: ['#f8ebcc', '#e6f0ea'], // yellow and cyan; close to the panel, as Solarized's own ink is only 5:1 on it
+    heads: ['#f8ebcc', '#e6f0ea', '#f9e9e5', '#efebf7'], // yellow, cyan, red and violet; close to the panel, as Solarized's own ink is only 5:1 on it
     term: {
       foreground: '#586e75',
       cursor: '#cb4b16',
@@ -191,7 +191,7 @@ const solarized: ThemeFamily = {
     blocked: '#dc322f',
     starting: '#268bd2',
     dead: '#8b2b26',
-    heads: ['#04364a', '#11304a'], // cyan and blue, just lifted off base03
+    heads: ['#04364a', '#11304a', '#10352d', '#262c48'], // cyan, blue, green and violet, just lifted off base03
     term: {
       foreground: '#93a1a1',
       cursor: '#cb4b16',
@@ -231,7 +231,7 @@ const gruvbox: ThemeFamily = {
     blocked: '#cc241d',
     starting: '#458588',
     dead: '#9d0006',
-    heads: ['#f2dfb0', '#e3e6c1'], // yellow and aqua
+    heads: ['#f2dfb0', '#e3e6c1', '#f0d5c0', '#e9dbd8'], // yellow, aqua, orange and purple
     term: {
       foreground: '#3c3836',
       cursor: '#d65d0e',
@@ -266,7 +266,7 @@ const gruvbox: ThemeFamily = {
     blocked: '#fb4934',
     starting: '#83a598',
     dead: '#cc241d',
-    heads: ['#3a3022', '#2b3530'], // orange and aqua
+    heads: ['#3a3022', '#2b3530', '#3a2a2e', '#262f40'], // orange, aqua, purple and blue
     term: {
       foreground: '#ebdbb2',
       cursor: '#fe8019',
@@ -307,7 +307,7 @@ const catppuccin: ThemeFamily = {
     blocked: '#d20f39',
     starting: '#1e66f5',
     dead: '#a3123a',
-    heads: ['#e6ddf7', '#d9eaf0'], // mauve and sky
+    heads: ['#e6ddf7', '#d9eaf0', '#f3e0e4', '#e0eedd'], // mauve, sky, pink and green
     term: {
       foreground: '#4c4f69',
       cursor: '#dc8a78',
@@ -343,7 +343,7 @@ const catppuccin: ThemeFamily = {
     blocked: '#f38ba8',
     starting: '#89b4fa',
     dead: '#e64553',
-    heads: ['#2c2540', '#1f2f3a'], // mauve and sapphire
+    heads: ['#2c2540', '#1f2f3a', '#382634', '#22322a'], // mauve, sapphire, pink and green
     term: {
       foreground: '#cdd6f4',
       cursor: '#f5e0dc',
@@ -383,7 +383,7 @@ const nord: ThemeFamily = {
     blocked: '#bf616a',
     starting: '#81a1c1',
     dead: '#8f4a51',
-    heads: ['#dbe4ef', '#e9e2d6'], // frost and sand
+    heads: ['#dbe4ef', '#e9e2d6', '#dcebdc', '#ece0e6'], // frost, sand, aurora green and purple
     term: {
       foreground: '#2e3440',
       cursor: '#5e81ac',
@@ -418,7 +418,7 @@ const nord: ThemeFamily = {
     blocked: '#bf616a',
     starting: '#81a1c1',
     dead: '#8f4a51',
-    heads: ['#323d52', '#3f3a45'], // frost and aurora purple
+    heads: ['#323d52', '#3f3a45', '#2f3e38', '#4a3636'], // frost, aurora purple, green and red
     term: {
       foreground: '#d8dee9',
       cursor: '#88c0d0',
@@ -458,7 +458,7 @@ const graphite: ThemeFamily = {
     blocked: '#ff453a',
     starting: '#0a84ff',
     dead: '#a52a20',
-    heads: ['#dfeafb', '#f2e4f4'], // blue and lavender
+    heads: ['#dfeafb', '#f2e4f4', '#e2f1e6', '#f6ebdc'], // blue, lavender, green and orange
     term: {
       foreground: '#1d1d1f',
       cursor: '#0a84ff',
@@ -493,7 +493,7 @@ const graphite: ThemeFamily = {
     blocked: '#ff453a',
     starting: '#0a84ff',
     dead: '#a52a20',
-    heads: ['#1d2a3c', '#2a2433'], // blue and plum
+    heads: ['#1d2a3c', '#2a2433', '#1f3127', '#33291d'], // blue, plum, green and orange
     term: {
       foreground: '#f2f2f7',
       cursor: '#0a84ff',
@@ -565,8 +565,12 @@ export function glassVariant(dark: boolean, tint: GlassTint | null): ThemeVarian
     muted: dark ? hsl(h, 0.14, 0.75) : hsl(h, 0.14, 0.3),
     line: dark ? hsl(h, s * 0.8, 0.3) : hsl(h, s * 0.6, 0.72),
     accent,
-    // The wall's hue and, tinted, the accent's (else the opposite hue), as faint washes of the panel.
-    heads: [dark ? hsl(h, 0.3, 0.17) : hsl(h, 0.4, 0.89), dark ? hsl(tint?.accentHue ?? h + 180, 0.3, 0.17) : hsl(tint?.accentHue ?? h + 180, 0.4, 0.89)],
+    // Four washes of the panel a quarter turn apart round the wheel, from the accent's hue when
+    // tinted, else from the wall's.
+    heads: [0, 90, 180, 270].map((turn) => {
+      const hue = ((tint?.accentHue ?? h) + turn) % 360
+      return dark ? hsl(hue, 0.3, 0.17) : hsl(hue, 0.45, 0.89)
+    }) as ThemeVariant['heads'],
     term: {
       ...base.term,
       background: `${panel}00`,
@@ -607,8 +611,8 @@ const cosmosVariant: ThemeVariant = (() => {
     muted: '#a9aed6',
     line: '#2f3566',
     accent,
-    // Nebula violet and a deep teal (the stylesheet lets the sky through them, as through the panes).
-    heads: ['#2a2058', '#0f3a4c'],
+    // Nebula violet, deep teal, magenta and blue (the stylesheet lets the sky through them, as through the panes).
+    heads: ['#2a2058', '#0f3a4c', '#47204a', '#1a2a5c'],
     term: { ...base.term, background: `${panel}00`, cursorAccent: panel, foreground: ink, selectionForeground: ink, cursor: accent, selectionBackground: `${accent}59` }
   }
 })()
@@ -664,8 +668,7 @@ export function themeVars(v: ThemeVariant): Record<string, string> {
     '--ws-blocked': v.blocked,
     '--ws-starting': v.starting,
     '--ws-dead': v.dead,
-    '--ws-head-1': v.heads[0],
-    '--ws-head-2': v.heads[1],
+    ...Object.fromEntries(v.heads.map((c, i) => [`--ws-head-${i + 1}`, c])),
     // Added and removed, good and bad (a diff's counts, a passing check): the terminal's own green
     // and red, moved toward the ink where needed so small text in them reads on the panel (4.5:1).
     '--ws-green': readable(v.term.green, v),

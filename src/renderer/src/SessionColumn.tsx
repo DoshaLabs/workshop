@@ -66,7 +66,7 @@ export function SessionColumn({
   const keys = keysOf(state, order)
   const drag = useReorder('sessions', onMove)
   const pack = useAgents()
-  const bands = new Map(open.filter((s) => s.id !== center).map((s, i) => [s.id, (i % 2) + 1]))
+  const bands = new Map(open.filter((s) => s.id !== center).map((s, i) => [s.id, (i % HEADS) + 1]))
   const pick = (s: SessionView): void => {
     onPick()
     void (s.open ? window.core.focusSession(s.id) : window.core.resume(s.id))
@@ -78,9 +78,9 @@ export function SessionColumn({
         {open.flatMap((s, i) => {
           // A session's wolfpack right under it, or where it would be while its terminal is in the center.
           const agents = pack.agents.filter((a) => a.parent === s.id)
-          // Heads alternate the theme's two colours (--ws-head-1/2) down the tiles shown, so the
+          // Heads cycle the theme's four colours (--ws-head-1…4) down the tiles shown, so the
           // column is not one wall of text; a pack wears its parent's.
-          const band = bands.get(s.id) ?? (i % 2) + 1
+          const band = bands.get(s.id) ?? (i % HEADS) + 1
           return [
             s.id !== center && <SessionTile key={s.id} s={s} n={keys.get(s.id)} band={band} usage={usage} onPick={() => pick(s)} drag={drag} />,
             agents.length > 0 && <PackTile key={`pack:${s.id}`} parent={s} band={band} agents={agents} leash={pack.leash} onPick={() => pick(s)} />
@@ -99,6 +99,9 @@ export function SessionColumn({
     </aside>
   )
 }
+
+/** How many head colours a theme has (ThemeVariant `heads`). */
+const HEADS = 4
 
 type Drag = ReturnType<typeof useReorder>
 
