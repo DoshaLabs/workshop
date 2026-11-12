@@ -42,6 +42,7 @@ function Meter({ label, name, w, now, plan }: { label: string; name: string; w: 
  */
 function Plan({
   cli,
+  glyph,
   id,
   title,
   rows,
@@ -50,6 +51,8 @@ function Plan({
   signIn
 }: {
   cli: string
+  /** The CLI's own mark as its terminal shows it (✻, >_): text, never a logo file (ground rule 6). */
+  glyph: string
   id: Cli
   title: string
   rows: { label: string; name: string; w: UsageWindow | null; plan?: string }[]
@@ -68,7 +71,12 @@ function Plan({
   return (
     <span className="usage-plan">
       <span className="usage-who" title={[title, who].filter(Boolean).join('\n\n')}>
-        <span className="usage-cli">{cli}</span>
+        <span className="usage-cli">
+          <span className="usage-glyph" aria-hidden="true">
+            {glyph}
+          </span>
+          {cli}
+        </span>
         {mine && !mine.error ? (
           <span className="usage-signin is-busy">
             {mine.url ? (
@@ -133,6 +141,7 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
     <span className="usage">
       <Plan
         cli="Claude"
+        glyph="✻"
         id="claude"
         account={acc.claude}
         signIn={acc.signIn}
@@ -148,6 +157,7 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
       {(codex.length > 0 || needsSignIn(acc.codex, now) || acc.signIn?.cli === 'codex') && (
         <Plan
           cli="Codex"
+          glyph=">_"
           id="codex"
           account={acc.codex}
           signIn={acc.signIn}

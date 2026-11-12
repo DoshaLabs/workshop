@@ -239,6 +239,10 @@ button {
   align-items: center;
   gap: 8px;
 }
+.usage-glyph {
+  font-family: var(--ws-font-mono);
+  margin-right: 5px;
+}
 .usage-who {
   display: inline-flex;
   flex-direction: column;
