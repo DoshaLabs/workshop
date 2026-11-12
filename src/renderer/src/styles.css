@@ -870,6 +870,10 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* It hangs into the window's drag strip (.app's top padding), and its contents take no part in
+     the region (.app > * *), so without this the Auto / Light / Dark row moved the window instead
+     of taking the click. */
+  -webkit-app-region: no-drag;
 }
 .segmented {
   display: flex;
