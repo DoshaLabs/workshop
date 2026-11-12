@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>workshop</title>
-    <meta name="description" content="Claude Code sessions side by side in one Mac window, and a column of small apps beside them that anyone can write and share. Open source, MIT." />
+    <meta name="description" content="Claude Code and Codex sessions side by side in one Mac window, and a column of small apps beside them that anyone can write and share. Open source, MIT." />
     <meta name="theme-color" content="#04050d" />
     <link rel="icon" href="../docs/assets/knot-icon.svg" type="image/svg+xml" />
     <script type="module" src="./main.ts"></script>
@@ -16,26 +16,26 @@
       <canvas id="hero-knot" class="hero-knot" aria-hidden="true"></canvas>
       <div class="hero-words">
         <h1>workshop</h1>
-        <p class="lede">Claude Code sessions side by side in one Mac window, and a column of small apps beside them that anyone can write and share.</p>
+        <p class="lede">Claude Code and Codex sessions side by side in one Mac window, and a column of small apps beside them that anyone can write and share.</p>
         <p class="actions">
           <a class="button primary" href="#marketplace">Browse the marketplace</a>
           <a class="button" href="#tiles">Build a tile</a>
           <a class="button" href="https://github.com/DoshaLabs/workshop">Source on GitHub</a>
         </p>
-        <p class="fine">macOS and Claude Code first. Open source under MIT. Build the Mac app from source today; there is no download yet.</p>
+        <p class="fine">macOS, Claude Code and Codex, each on your own plan. Open source under MIT. Build the Mac app from source today; there is no download yet.</p>
       </div>
     </header>
 
     <main>
       <section id="window" class="sheet wide">
         <h2>One window</h2>
-        <p>Every session is the real <code>claude</code> command, unchanged, in its own terminal. Workshop puts them in a column, shows each conversation as it happens, and keeps them running after you quit. The session you are on fills the middle. On the right is a column of tiles.</p>
+        <p>Every session is the real <code>claude</code> or <code>codex</code> command, unchanged, in its own terminal. Workshop puts them in a column, shows each conversation as it happens, and keeps them running after you quit. The session you are on fills the middle. On the right is a column of tiles.</p>
         <figure>
           <img src="../docs/assets/app.png" width="1200" height="760" alt="The workshop window in Deep Space: a session's conversation on the left, the new-session form in the middle, and the Git, Reminders and Wikipedia tiles on the right." />
           <figcaption>From the test run, in Deep Space. Wikipedia's picture of the day: <a href="https://commons.wikimedia.org/wiki/File:D%C3%BClmen,_Kirchspiel,_BMW_Mini_--_2016_--_5065-71.jpg">BMW Mini at night in Dülmen</a> by Dietmar Rabich, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>; the screenshot is CC BY-SA 4.0 too.</figcaption>
         </figure>
         <ul class="columns">
-          <li><strong>Sessions</strong> on the left, most recent first: what each said, its context and cost, and the Knot showing whether it is working or waiting for you.</li>
+          <li><strong>Sessions</strong> on the left, most recent first, Claude Code and Codex alike: what each said, its context (and cost, for Claude Code), and the Knot showing whether it is working or waiting for you.</li>
           <li><strong>The middle</strong> is the session you are on, a terminal. A tile can open there at reading size, or you can start a new session in a folder or a fresh worktree.</li>
           <li><strong>Tiles</strong> on the right: Git, Reminders, Today with the weather, and whatever you build or install from the <a href="#marketplace">marketplace</a>. Any tile can open large in the middle, or pop out into a small square you drag anywhere.</li>
         </ul>
@@ -95,8 +95,8 @@ node bin/workshop.mjs tile check ./focus-timer</code></pre>
           <div><dt>storage</dt><dd>Its own saved data, 5 MB</dd></div>
           <div><dt>net</dt><dd>https to the hosts it names, and nowhere else</dd></div>
           <div><dt>sessions</dt><dd>See your sessions; open the new-session form; type into one</dd></div>
-          <div><dt>door</dt><dd>Let a Claude session call it from the shell</dd></div>
-          <div><dt>usage</dt><dd>Your rate-limit windows and what each session costs</dd></div>
+          <div><dt>door</dt><dd>Let a session call it: from the shell in Claude Code, as an MCP tool in Codex</dd></div>
+          <div><dt>usage</dt><dd>Your rate-limit windows, and each session's context and cost</dd></div>
           <div><dt>notify</dt><dd>A badge, a Mac notification, a nudge on the Knot</dd></div>
           <div><dt>files</dt><dd>Read only the folder or file you pick for it</dd></div>
           <div><dt>camera, microphone</dt><dd>Passed to the macOS prompt</dd></div>
@@ -123,7 +123,7 @@ node bin/workshop.mjs tile check ./focus-timer</code></pre>
 
       <section class="sheet">
         <h2>Run it from source</h2>
-        <p class="prose">You need a Mac, Node 22 or later, tmux, and Claude Code installed and logged in.</p>
+        <p class="prose">You need a Mac, Node 22 or later, tmux, and Claude Code installed and logged in. Codex is optional: once <code>codex</code> is on your PATH and logged in, the new-session form offers it.</p>
         <ol class="steps">
           <li><pre class="code"><code>git clone https://github.com/DoshaLabs/workshop
 cd workshop</code></pre></li>
@@ -140,8 +140,10 @@ cd workshop</code></pre></li>
             <h3>Working now</h3>
             <ul>
               <li>Sessions: start, park, resume, ⌘1–9, each conversation live in its tile</li>
-              <li>Answer a session's permission prompts from its tile, or pause it before its next step</li>
+              <li>Codex sessions beside Claude Code ones: approvals, subagents, commits and tiles, with Stop where Claude Code has pause</li>
+              <li>Answer a session's permission prompts from its tile, or pause a Claude Code session before its next step</li>
               <li>A session's subagents and helper sessions as one pack under it, each one killable</li>
+              <li>Both plans' rate-limit windows in the top bar</li>
               <li>The marketplace: an index, and install, update and remove from the + menu</li>
               <li>The tile sandbox and the whole bridge above; tiles open large or pop out</li>
               <li>Git (Changes, Worktrees, History), Reminders, Today</li>
@@ -164,7 +166,7 @@ cd workshop</code></pre></li>
     </main>
 
     <footer>
-      <p>workshop is open source under the MIT licence, by <a href="https://github.com/DoshaLabs">DoshaLabs</a>. Its fonts, Nunito, Source Serif 4 and JetBrains Mono, are under the SIL Open Font License. Claude Code is Anthropic's; workshop runs it unchanged and never touches its credentials.</p>
+      <p>workshop is open source under the MIT licence, by <a href="https://github.com/DoshaLabs">DoshaLabs</a>. Its fonts, Nunito, Source Serif 4 and JetBrains Mono, are under the SIL Open Font License. Claude Code is Anthropic's and Codex is OpenAI's; workshop runs each unchanged, never touches their credentials, and is affiliated with neither.</p>
       <p><a href="https://github.com/DoshaLabs/workshop">github.com/DoshaLabs/workshop</a></p>
     </footer>
   </body>

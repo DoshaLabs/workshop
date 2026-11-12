@@ -2,10 +2,10 @@
   <img src="docs/assets/banner.svg" width="100%" alt="workshop: the Knot, a cinquefoil, turning in a Deep Space sky beside the word workshop">
 </p>
 
-**workshop** is a Mac app for people who use Claude Code: several Claude Code sessions side by
-side in one window, and a column of small apps beside them, called tiles, that anyone can write,
-share and install. It is **macOS and Claude Code first**. Other platforms and other agent CLIs
-are welcome contributions, not launch scope.
+**workshop** is a Mac app for people who use Claude Code and Codex: several sessions of either
+side by side in one window, and a column of small apps beside them, called tiles, that anyone can
+write, share and install. It is **macOS, Claude Code and Codex**, each CLI on your own plan. Other
+platforms and other agent CLIs are welcome contributions, not launch scope.
 
 **Build a tile:** a tile is a folder with a manifest and a web page. Press **+** at the foot of
 the tile column and choose **Build a new tile**, and workshop starts a session that builds one with
@@ -18,7 +18,7 @@ marketplace: [doshalabs.github.io/workshop](https://doshalabs.github.io/workshop
 
 ## Why
 
-Most Claude Code tools are session managers: several sessions in one window. Anthropic's own
+Most coding-agent tools are session managers: several sessions in one window. Anthropic's own
 desktop app does that now, and does it well. Workshop does it too, and then gives the rest of the
 window to **tiles**: small apps that sit beside your sessions and that anyone can write.
 
@@ -38,12 +38,23 @@ Workshop runs from source, and `npm run install-app` builds the Mac app from it.
 download or installer yet**; that is next on the [roadmap](#roadmap). Tiles from the
 [marketplace](https://doshalabs.github.io/workshop/#marketplace) install from the + menu.
 
-- **Sessions.** Each one is the real `claude` command, unchanged, in its own tmux session, so it
-  keeps running when you quit. The left column shows each session's conversation as it happens,
-  with its context use and cost, and the Knot showing whether it is working or waiting for you.
-  The session you are on fills the middle as a terminal. Start one in a folder or a fresh
-  worktree; park it and resume it later; switch with ⌘1 to ⌘9.
-- **Usage.** Your 5-hour and weekly rate-limit windows across the top.
+- **Sessions.** Each one is the real `claude` or `codex` command, unchanged, in its own tmux
+  session, so it keeps running when you quit. The left column shows each session's conversation
+  as it happens, with its context use (and cost, for Claude Code), and the Knot showing whether it
+  is working or waiting for you. The session you are on fills the middle as a terminal. Start one
+  in a folder or a fresh worktree; park it and resume it later; switch with ⌘1 to ⌘9.
+- **Codex, beside Claude Code.** If `codex` is installed, the new-session form offers it with its
+  own modes. A Codex session gets what a Claude one does: its conversation on its tile, its
+  approvals as cards, its subagents in the pack, its commits tagged in Git, and your tiles as
+  tools. Where Claude Code has ⏸ pause, Codex has ■ Stop, since Codex cannot hold a call from
+  outside.
+- **Permission prompts on the tile.** When a session asks before running a command, editing a
+  file or calling a tool, the question shows on its tile with Allow and Deny. The terminal can
+  still answer; whichever answers first wins.
+- **Subagents.** A session's subagents and helper sessions sit in one pack tile under it, each
+  conversation live, with kill (and, for Claude Code, pause) one click away.
+- **Usage.** The rate-limit windows across the top: Claude's 5-hour and weekly, and, once a Codex
+  session has reported them, your Codex plan's windows beside them, each labelled by its length.
 - **Tiles.** The right-hand column. Built in today: **Git** (every session's changes and diffs,
   and every worktree with rebase, merge and remove behind two clicks), **Reminders** (to-dos, notes
   and a log by project, which sessions can write to) and **Wikipedia** (the picture of the day, a
@@ -64,6 +75,8 @@ You need:
 - Node 22 or later (the build uses Vite 7, which wants 20.19+ or 22.12+)
 - tmux (`brew install tmux`)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code), installed and logged in
+- optionally [Codex](https://github.com/openai/codex) (`npm i -g @openai/codex`), logged in; the
+  new-session form offers it once it is on your PATH
 
 ```sh
 git clone https://github.com/DoshaLabs/workshop
@@ -74,7 +87,8 @@ npm run dev
 
 `npm run dev` uses its own profile (`workshop-dev`), so it never sees the sessions of another copy
 of workshop. Other scripts: `npm test` (unit tests), `npm run typecheck`, and `npm run smoke`, which
-builds the app and drives it end to end with a stand-in `claude` and a throwaway profile.
+builds the app and drives it end to end with a stand-in `claude` and `codex` and a throwaway
+profile.
 
 ## Build a tile
 
@@ -183,10 +197,11 @@ tick()
 variables: `var(--ws-panel)`, `var(--ws-ink)`, `var(--ws-accent)`, `var(--ws-font)` and the rest.
 That folder passes `tile check` as it stands (with two warnings: no icon, and no `repo` yet).
 
-### Letting Claude use your tile
+### Letting a session use your tile
 
 Declare ops under `permissions.door` and answer them in the page with `workshop.door.handle`. Any
-session workshop starts can then call your tile from the shell. If the timer declared
+session workshop starts can then call your tile. A Claude Code session calls it from the shell.
+If the timer declared
 `"door": { "ops": ["start"] }`:
 
 ```sh
@@ -204,6 +219,11 @@ workshop.door.handle('start', async ([minutes], caller) => {
 Put a skill in the tile's `plugin/` folder to teach sessions when to do that. It is an ordinary
 Claude Code plugin, limited to skills.
 
+A Codex session gets the same tile as an MCP tool, `focus-timer`, taking `{ "op": "start", "args":
+["25"] }`, with your skill's words as its description. Codex asks before each call, and that
+question shows on the session's tile too. The call goes through the same door, so the same
+checks hold: only declared ops, only while the tile is on, and the caller is the session.
+
 ## The sandbox
 
 Tiles from strangers are untrusted code, so each one runs in its own sandboxed web page, on its
@@ -216,11 +236,11 @@ permission is refused, not ignored.
 |---|---|
 | `storage` | `workshop.storage`: one JSON store for the tile, up to 5 MB, written atomically |
 | `net: ["api.example.com"]` | https and wss to exactly these hosts. No IPs, no `localhost`, no bare `*` |
-| `sessions: "read"` | The list of sessions: name, project, status, which one is focused |
+| `sessions: "read"` | The list of sessions (Claude Code and Codex): name, project, status, which one is focused |
 | `sessions: "launch"` | Also opens the new-session form, filled in. You press Start |
 | `sessions: "write"` | Also types into a session |
 | `usage` | The rate-limit windows, and each session's cost and context use |
-| `door` | Claude sessions may call the ops it lists |
+| `door` | Sessions may call the ops it lists (from the shell, or as an MCP tool in Codex) |
 | `notify` | A chip on the tile's head and a macOS notification; with `attention: true`, a jump of the session's Knot |
 | `files` | Read-only access to what the user picks for it in the macOS chooser |
 | `camera`, `microphone` | Passed through to the macOS prompt |
@@ -273,12 +293,12 @@ Credit is not required, but he appreciates it, and so do we. Consider a tip.
 1. **The tile contract and sandbox.** Done.
 2. **Our own tiles on the contract.** Reminders, Wikipedia and Git (Changes and Worktrees) done;
    Git's History and PRs tabs, Spend, Files and Posture next.
-3. **The rest of sessions.** Answering permission prompts from a session's tile; subagents as
-   tiles, with pause and kill.
+3. **The rest of sessions.** Done: permission prompts answered from a session's tile, subagents
+   in a pack tile with pause and kill, and Codex sessions beside Claude Code ones.
 4. **Something a stranger can install.** A packaged app, an install script, and a first-run
    tutorial that builds your first tile with you.
-5. **The index.** A public repository listing tiles at pinned commits, checked by CI, and a
-   Marketplace tab in the app that reads it.
+5. **The index.** Done: a public repository listing tiles at pinned commits, checked by CI, and
+   a Marketplace tab in the app that reads it. The site is next.
 6. **Rankings**, from an anonymous install counter you can turn off. Anything hosted beyond that
    only if people are actually building tiles.
 
@@ -286,9 +306,11 @@ Credit is not required, but he appreciates it, and so do we. Consider a tip.
 
 Issues and pull requests are welcome. Some ground rules shape what gets merged:
 
-- Claude Code is never wrapped, forked or patched. A session is the unchanged `claude` binary in
-  a real terminal, and workshop only uses its own extension points (`--settings`, hooks,
-  `--plugin-dir`, the status line, the transcript). It never reads or proxies the CLI's
+- The CLIs are never wrapped, forked or patched. A session is the unchanged `claude` or `codex`
+  binary in a real terminal, and workshop only uses their own extension points: for Claude Code
+  `--settings`, hooks, `--plugin-dir`, the status line and the transcript; for Codex its
+  app-server, which the terminal and workshop both connect to, and `-c` options for that one
+  session (nothing is written to your Codex config). Workshop never reads or proxies either CLI's
   credentials.
 - Only truly open assets go in this repository: CC0, owned by DoshaLabs, or under a licence that
   allows redistribution in source form. "Free to use" is not enough.
@@ -310,4 +332,5 @@ the work list.
   Mono](assets/fonts/LICENSE-jetbrains-mono.txt), are under the SIL Open Font License; the
   licences are beside the files in `assets/fonts/`.
 - The banner's lettering is Nunito, outlined (`scripts/wordmark.py`).
-- Claude Code is Anthropic's. Workshop runs it as it is and is not affiliated with Anthropic.
+- Claude Code is Anthropic's, and Codex is OpenAI's. Workshop runs each as it is and is
+  affiliated with neither.
