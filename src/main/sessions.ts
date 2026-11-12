@@ -130,6 +130,15 @@ export class SessionManager {
     this.broadcast()
   }
 
+  /**
+   * The window was reloaded in place (dev mode): its terminals are new and know none of the modes
+   * the CLI and tmux set at attach (mouse reporting, the alternate screen), so a redraw is not
+   * enough. Ending each client makes handlePtyExit attach a fresh one, which sets them all again.
+   */
+  reattachAll(): void {
+    for (const r of this.rt.values()) r.pty?.kill()
+  }
+
   /** App quitting: drop the pty clients but keep sessions open, so the next launch reattaches them. */
   detachAll(): void {
     this.quitting = true

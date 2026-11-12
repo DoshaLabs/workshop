@@ -76,7 +76,7 @@ export function UsageMeter({ usage }: { usage: Usage | null }) {
         now={now}
         rows={[
           { label: '5h', name: '5-hour window', w: usage?.fiveHour ?? null },
-          { label: 'week', name: 'weekly window', w: usage?.sevenDay ?? null }
+          { label: '7d', name: 'weekly window', w: usage?.sevenDay ?? null }
         ]}
       />
       {codex.length > 0 && (

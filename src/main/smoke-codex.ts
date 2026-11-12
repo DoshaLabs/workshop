@@ -283,7 +283,7 @@ export async function codexSmoke(check: Check, { win, core, userData }: Ctx): Pr
     js(`(() => { const u = document.querySelector('.usage'); return { cli: [...(u?.querySelectorAll('.usage-cli') ?? [])].map((c) => c.textContent).join() === 'Claude,Codex', meters: [...(u?.querySelectorAll('.meter') ?? [])].map((m) => m.querySelector('.meter-label').textContent + ' ' + m.querySelector('.meter-pct').textContent) } })()`)
   await waitFor("the Codex plan's window", async () => (await bar()).meters.includes('30d 7%'), 5000).catch(() => undefined)
   const b1 = await bar()
-  check("codex: the top bar shows the Codex plan's window (read when core joins), labelled by its length", b1.cli && b1.meters.slice(0, 2).every((m) => /^(5h|week) /.test(m)) && b1.meters.includes('30d 7%'), JSON.stringify(b1))
+  check("codex: the top bar shows the Codex plan's window (read when core joins), labelled by its length", b1.cli && b1.meters.slice(0, 2).every((m) => /^(5h|7d) /.test(m)) && b1.meters.includes('30d 7%'), JSON.stringify(b1))
   core.sessions.input(id, 'limits\r')
   await waitFor('the update', async () => (await bar()).meters.length === 4, 5000).catch(() => undefined)
   const b2 = await bar()

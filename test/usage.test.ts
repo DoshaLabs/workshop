@@ -73,7 +73,7 @@ describe("Codex's windows (account/rateLimits, codex-cli 0.167.1)", () => {
   // A free plan's snapshot as the real CLI gave it (11 Nov 2026): one 30-day window, no secondary.
   const free = { limitId: 'codex', limitName: null, primary: { usedPercent: 1, windowDurationMins: 43200, resetsAt: 1797015329 }, secondary: null, planType: 'free', credits: null }
   it('labels a window by its length', () => {
-    expect([300, 10080, 43200, 1440, 30, null].map(windowLabel)).toEqual(['5h', 'week', '30d', '1d', '30m', '—'])
+    expect([300, 10080, 43200, 1440, 30, null].map(windowLabel)).toEqual(['5h', '7d', '30d', '1d', '30m', '—'])
     expect([300, 10080, 43200].map(windowName)).toEqual(['5-hour window', 'weekly window', '30-day window'])
   })
   it('reads a window: seconds to ms, its length kept; nothing usable is null', () => {

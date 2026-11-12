@@ -949,12 +949,17 @@ function startDevMode(): void {
     onChange: (s) => win?.webContents.send(CH.devState, s),
     load: (index) => {
       if (!win || win.isDestroyed()) return
+      // The new page's terminals start blank and modeless: once they have mounted, every session is reattached.
+      const w = win
+      w.webContents.once('did-finish-load', () => setTimeout(() => core?.sessions.reattachAll(), 800))
       // The same page again is a reload (what a save looks like); the first build is a load.
       if (win.webContents.getURL() === pathToFileURL(index).href) win.webContents.reloadIgnoringCache()
       else void win.loadFile(index)
     },
     unload: () => {
-      if (win && !win.isDestroyed()) void win.loadFile(BUNDLED_PAGE)
+      if (!win || win.isDestroyed()) return
+      win.webContents.once('did-finish-load', () => setTimeout(() => core?.sessions.reattachAll(), 800))
+      void win.loadFile(BUNDLED_PAGE)
     }
   })
   const coreOnly = (e: IpcMainInvokeEvent): void => {

@@ -70,10 +70,9 @@ export function mergeCodex(cur: CodexUsage | null, snap: unknown, now: number): 
   return { primary, secondary, plan }
 }
 
-/** A window's short label from its length: "5h", "week", "30d". */
+/** A window's short label from its length: "5h", "7d", "30d". */
 export function windowLabel(mins: number | null): string {
   if (!mins) return '—'
-  if (mins === 10080) return 'week'
   if (mins < 60) return `${mins}m`
   if (mins < 1440 || mins % 1440 !== 0) return `${Math.round(mins / 60)}h`
   return `${mins / 1440}d`
