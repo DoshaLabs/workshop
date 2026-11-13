@@ -44,6 +44,14 @@ describe('permissions in words', () => {
   })
 })
 
+describe('activity with net', () => {
+  it('needs a person, as transcripts with net does: a command line can hold a key', () => {
+    expect(needsReview({ activity: true, sessions: 'read' })).toBeNull()
+    expect(needsReview({ activity: true, sessions: 'read', net: ['api.example.com'] })).toMatch(/"activity" and "net" \(api.example.com\).*a person/)
+    expect(permissionWords({ activity: true, sessions: 'read' })[0]).toMatch(/^see what your sessions do: .*the commands they run.*\(not the conversation\)$/)
+  })
+})
+
 describe('transcripts with net', () => {
   it('is the one pairing routed to a person', () => {
     expect(needsReview({ transcripts: true, sessions: 'read' })).toBeNull()

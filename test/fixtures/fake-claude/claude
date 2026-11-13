@@ -188,12 +188,19 @@ let calls = 0
 const turn = (line) => {
   write({ type: 'user', origin: { kind: 'human' }, promptSource: 'typed', message: { role: 'user', content: line } })
   write({ type: 'user', isMeta: true, message: { role: 'user', content: 'META NOT SHOWN' } })
-  write({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `Looking into **${line}**.` }] } })
+  // As the CLI writes them: a line per content block, every block of one model request under its
+  // message id, with the model (the activity bridge reads steps from these).
+  const step = (n) => ({ id: `msg_${calls}_${n}`, model: 'claude-haiku-5-5' })
+  write({ type: 'assistant', message: { role: 'assistant', ...step(1), content: [{ type: 'text', text: `Looking into **${line}**.` }] } })
   const id = `toolu_${++calls}`
-  write({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: path.join(process.cwd(), 'README.md') } }] } })
+  write({ type: 'assistant', message: { role: 'assistant', ...step(1), content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: path.join(process.cwd(), 'README.md'), content: 'WRITTEN TEXT NOT SERVED' } }] } })
   write({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: 'ok' }] } })
+  const sh = `toolu_sh_${calls}`
+  write({ type: 'assistant', message: { role: 'assistant', ...step(2), content: [{ type: 'tool_use', id: sh, name: 'Bash', input: { command: 'curl -s https://example.com/smoke', description: 'Fetch the smoke page' } }] } })
+  write({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: sh, content: 'RESULT TEXT NOT SERVED' }] } })
   write({ type: 'assistant', isSidechain: true, message: { role: 'assistant', content: [{ type: 'text', text: 'SIDECHAIN NOT SHOWN' }] } })
-  write({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `Finished \`${line}\`:\n\n- one\n- two` }] } })
+  write({ type: 'assistant', message: { role: 'assistant', ...step(3), content: [{ type: 'text', text: `Finished \`${line}\`:\n\n- one\n- two` }] } })
+  write({ type: 'system', subtype: 'turn_duration', durationMs: 10 })
   if (!titled) {
     titled = true
     write({ type: 'ai-title', aiTitle: 'Smoke conversation' })

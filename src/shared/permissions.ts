@@ -10,6 +10,9 @@ export const FULL_ACCESS = 'run its own program with full access to this Mac'
 /** `transcripts` in words, as every list shows it. */
 export const TRANSCRIPTS_WORDS = 'read your sessions’ conversations'
 
+/** `activity` in words: what it shows, and that a command line is among it. */
+export const ACTIVITY_WORDS = 'see what your sessions do: each step, the files they touch, the commands they run, the sites they reach (not the conversation)'
+
 /** The loud line `transcripts` gets of its own, on its row and in the install prompt (CLAUDE.md §5). */
 export const TRANSCRIPTS_WARNING = 'Reads your conversations: everything you typed into your sessions and everything they answered, a pasted password or key included.'
 
@@ -19,7 +22,10 @@ export const TRANSCRIPTS_WARNING = 'Reads your conversations: everything you typ
  * reads its code first (CLAUDE.md §5). Null when the tile does not ask for both.
  */
 export function needsReview(p: Permissions): string | null {
-  return p.transcripts && p.net?.length ? `it asks for both "transcripts" and "net" (${p.net.join(', ')}): a conversation could leave this Mac, so the index lists it only after a person has read its code` : null
+  if (!p.net?.length) return null
+  if (p.transcripts) return `it asks for both "transcripts" and "net" (${p.net.join(', ')}): a conversation could leave this Mac, so the index lists it only after a person has read its code`
+  if (p.activity) return `it asks for both "activity" and "net" (${p.net.join(', ')}): the commands your sessions run (a key typed into one included) could leave this Mac, so the index lists it only after a person has read its code`
+  return null
 }
 
 /** One line per permission, in the order a person would care about them: full access, then what can leave the machine. */
@@ -27,6 +33,7 @@ export function permissionWords(p: Permissions): string[] {
   const out: string[] = []
   if (p.backend) out.push(FULL_ACCESS)
   if (p.transcripts) out.push(TRANSCRIPTS_WORDS)
+  if (p.activity) out.push(ACTIVITY_WORDS)
   if (p.net?.length) out.push(`reach ${p.net.join(', ')}`)
   if (p.oauth?.length) out.push(`sign you in at ${p.oauth.join(', ')}`)
   if (p.camera) out.push('use the camera')
@@ -52,7 +59,7 @@ export function permissionWords(p: Permissions): string[] {
  */
 export function permissionKeys(p: Permissions): string[] {
   const keys: string[] = []
-  for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'viewer', 'music', 'backend'] as const) if (p[k]) keys.push(k)
+  for (const k of ['storage', 'transcripts', 'activity', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'viewer', 'music', 'backend'] as const) if (p[k]) keys.push(k)
   if (p.sessions) keys.push(`sessions:${p.sessions}`)
   for (const op of p.door?.ops ?? []) keys.push(`door:${op}`)
   for (const h of p.net ?? []) keys.push(`net:${h}`)

@@ -202,3 +202,35 @@ export async function transcriptsSmoke(check: Check, o: O, id: string): Promise<
   const noWatch = (await wiki.executeJavaScript(`(() => { try { workshop.sessions.watchTranscript(${JSON.stringify(id)}, () => 0); return 'watching' } catch (e) { return e.message } })()`)) as string
   check('transcripts: nor can it watch one', /transcripts/.test(noWatch), noWatch)
 }
+
+/** The probe asks for "activity" (with "sessions"); Wikipedia does not. Run after transcriptsSmoke's turns. */
+export async function activitySmoke(check: Check, o: O, id: string): Promise<void> {
+  const { win, core, liveByTile } = o
+  const probe = liveByTile.get('probe')!.wc
+  const wiki = liveByTile.get('wikipedia')!.wc
+  const screen = async (): Promise<string> => (await core.tmux.screen(`ws-${id}`))?.text ?? ''
+  type Ev = { kind: string; name?: string; input?: Record<string, unknown>; status?: string; model?: string; end?: number }
+  const a = (await probe.executeJavaScript(`workshop.sessions.activity(${JSON.stringify(id)})`)) as { id: string; found: boolean; events: Ev[] } | null
+  const ev = a?.events ?? []
+  const shell = ev.find((e) => e.kind === 'tool' && e.name === 'Bash')
+  check(
+    'activity: a tile with the permission reads what a session does: prompts, model steps, calls and their end',
+    !!a && a.id === id && a.found && ev.some((e) => e.kind === 'prompt') && ev.some((e) => e.kind === 'step' && e.model === 'claude-haiku-5-5') && ev.some((e) => e.kind === 'end') && shell?.status === 'ok' && shell.input?.command === 'curl -s https://example.com/smoke',
+    JSON.stringify(ev).slice(0, 400)
+  )
+  const raw = JSON.stringify(a)
+  check('activity: never the prose, a result, or what a call wrote', !/Looking into|Finished|RESULT TEXT NOT SERVED|WRITTEN TEXT NOT SERVED|SIDECHAIN NOT SHOWN|META NOT SHOWN/.test(raw), raw.slice(0, 300))
+  await probe.executeJavaScript(`window.seenA = []; window.stopA = workshop.sessions.watchActivity(${JSON.stringify(id)}, (a) => window.seenA.push(a)); true`)
+  const prompts = ev.filter((e) => e.kind === 'prompt').length
+  await win.webContents.executeJavaScript(`window.core.ptyInput(${JSON.stringify(id)}, 'mapped turn\\r'); true`)
+  await waitFor(async () => (await screen()).includes('DONE mapped turn'))
+  const heard = await waitFor(async () => (await probe.executeJavaScript(`window.seenA.some((a) => a.events.filter((e) => e.kind === 'prompt').length > ${prompts})`)) === true, 4000)
+  check('activity: watchActivity hears the next turn', heard)
+  await probe.executeJavaScript(`window.stopA(); true`)
+  const bad = (await probe.executeJavaScript(`Promise.all([workshop.sessions.activity('agent:x').then(() => 'ok', (e) => e.message), workshop.sessions.activity('ffffff').then(() => 'ok', (e) => e.message)])`)) as string[]
+  check('activity: only a session\'s, by its id', bad.every((m) => /no such session/.test(m)), JSON.stringify(bad))
+  const refused = (await wiki.executeJavaScript(`workshop.sessions.activity(${JSON.stringify(id)}).then(() => 'read it', (e) => e.message)`)) as string
+  check('activity: a tile without the permission is refused', /activity/.test(refused), refused)
+  const noWatch = (await wiki.executeJavaScript(`(() => { try { workshop.sessions.watchActivity(${JSON.stringify(id)}, () => 0); return 'watching' } catch (e) { return e.message } })()`)) as string
+  check('activity: nor can it watch one', /activity/.test(noWatch), noWatch)
+}

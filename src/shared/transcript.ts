@@ -42,14 +42,23 @@ export function emptyTranscript(id: string): Transcript {
  * marked `isSidechain`; in a session's file those lines are not the conversation.
  */
 export function applyLine(t: Transcript, line: string, sidechain = false): boolean {
-  if (!line.trim()) return false
-  let o: Json
+  const o = parseLine(line)
+  return o ? applyEntry(t, o, sidechain) : false
+}
+
+/** One transcript line as an object, or null for a blank, torn or foreign one (skipped, never a reason to stop reading). */
+export function parseLine(line: string): Json | null {
+  if (!line.trim()) return null
   try {
-    o = JSON.parse(line) as Json
+    const o = JSON.parse(line) as unknown
+    return o && typeof o === 'object' && !Array.isArray(o) ? (o as Json) : null
   } catch {
-    return false // a torn or foreign line: skip it, never stop reading
+    return null
   }
-  if (!o || typeof o !== 'object') return false
+}
+
+/** `applyLine` for a line already parsed (main parses each once, for the conversation and the activity). */
+export function applyEntry(t: Transcript, o: Json, sidechain = false): boolean {
   if (o.type === 'ai-title' && typeof o.aiTitle === 'string') {
     if (t.title === o.aiTitle) return false
     t.title = o.aiTitle

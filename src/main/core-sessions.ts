@@ -30,6 +30,7 @@ import { AgentTracker } from './agents'
 import { Helpers } from './helpers'
 import { agentTranscriptId, type AgentsState, type AgentView } from '@shared/agents'
 import type { Transcript } from '@shared/transcript'
+import { mergeActivity, type Activity } from '@shared/activity'
 
 export interface CoreSessions {
   sessions: SessionManager
@@ -43,6 +44,8 @@ export interface CoreSessions {
   helpers: Helpers
   /** Every open session's subagents and helpers, as the window shows them. */
   agentsState(): AgentsState
+  /** What a Claude Code session has been doing, its wolfpack's calls woven in (shared/activity.ts); null for none or a Codex session. */
+  activity(id: string): Activity | null
   /** Which session made which commit, as far as core saw (main/commits.ts). */
   commits: CommitRecorder
   /** Route a /hook/<name> call (the door's server hands them here). */
@@ -79,6 +82,8 @@ export interface Options {
   onCommits?: (all: CommitRecord[]) => void
   /** A transcript changed (a session's, or `agent:<id>`): tiles with "transcripts" may hear of it. */
   onTranscript?: (t: Transcript) => void
+  /** A session's activity changed, its own or one of its wolfpack's: tiles with "activity" may hear of it. */
+  onActivity?: (sessionId: string) => void
   /** The installed tiles with door ops, and their skills: a Codex session's MCP tools (`/core/tools`). */
   doorTiles?: () => Promise<DoorTile[]>
 }
@@ -106,6 +111,11 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     send(CH.transcriptChanged, t)
     agents?.onTranscript(t)
     o.onTranscript?.(t)
+  }, (id) => {
+    // An agent's tail is `agent:<id>`: its parent session is the one whose activity changed.
+    if (!id.startsWith('agent:')) return o.onActivity?.(id)
+    const parent = agentsStateRef?.().agents.find((a) => agentTranscriptId(a.id) === id)?.parent
+    if (parent) o.onActivity?.(parent)
   })
   const watchOpen = (s: SessionsState): void => {
     const open = s.sessions.filter((x) => x.open)
@@ -223,6 +233,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
       // A subagent paused or killed: its session's tool calls go to core (leash.sh), the rest stay quiet.
       leash.markAgents(tracker.leashed())
       send(CH.agentsState, agentsState())
+      // An agent started or finished: its parent's activity lists its wolfpack.
+      for (const p of new Set(agentsState().agents.map((a) => a.parent))) o.onActivity?.(p)
     }
   )
   agents = tracker
@@ -239,6 +251,8 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     () => {
       syncTails()
       send(CH.agentsState, agentsState())
+      // An agent started or finished: its parent's activity lists its wolfpack.
+      for (const p of new Set(agentsState().agents.map((a) => a.parent))) o.onActivity?.(p)
     }
   )
   helpers = helperList
@@ -360,6 +374,12 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     agents: tracker,
     helpers: helperList,
     agentsState,
+    activity(id) {
+      const own = transcripts.activity(id)
+      if (!own) return null
+      const pack = agentsState().agents.filter((a) => a.parent === id && a.cli !== 'codex')
+      return mergeActivity(own, pack.map((a) => ({ id: a.id, running: a.endedAt === null, activity: transcripts.activity(agentTranscriptId(a.id)) })))
+    },
     commits,
     hook(name, token, payload) {
       const rec = sessions.byToken(token)

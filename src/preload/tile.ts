@@ -18,6 +18,7 @@ if (hello) {
   const storageSubs = new Map<string, Set<(v: unknown) => void>>()
   const sessionSubs = new Set<(list: unknown) => void>()
   const transcriptSubs = new Map<string, Set<(t: unknown) => void>>()
+  const activitySubs = new Map<string, Set<(a: unknown) => void>>()
   const usageSubs = new Set<(u: unknown) => void>()
   const backendSubs = new Set<(s: unknown) => void>()
   const backendEventSubs = new Set<(e: unknown) => void>()
@@ -90,6 +91,9 @@ if (hello) {
   })
   ipcRenderer.on(CH.tileTranscriptChanged, (_e, id: string, t: unknown) => {
     for (const fn of transcriptSubs.get(id) ?? []) call(() => fn(t))
+  })
+  ipcRenderer.on(CH.tileActivityChanged, (_e, id: string, a: unknown) => {
+    for (const fn of activitySubs.get(id) ?? []) call(() => fn(a))
   })
   ipcRenderer.on(CH.tileUsageChanged, (_e, u: unknown) => {
     for (const fn of usageSubs) call(() => fn(u))
@@ -345,6 +349,30 @@ if (hello) {
           if (!set!.delete(fn) || set!.size > 0) return
           transcriptSubs.delete(key)
           ipcRenderer.send(CH.tileTranscriptWatch, key, false)
+        }
+      },
+      /**
+       * What a session has been doing: { id, found, events, agents }, each event a model step, a tool
+       * call with the fields that say what it touched, a hook, a compaction, a background task's end,
+       * a prompt or the end of a turn (the last 300, its subagents' woven in); null for a Codex
+       * session. Never the conversation's prose. Needs "activity" (bridge 1.10).
+       */
+      activity: (id: string): Promise<unknown> => gate('activity', () => ipcRenderer.invoke(CH.tileActivityGet, id)),
+      /** `fn(activity)` whenever that session's activity changes. Returns a function that stops it. Needs "activity". */
+      watchActivity: (id: string, fn: (a: unknown) => void): (() => void) => {
+        needs('activity')
+        if (typeof fn !== 'function') throw new TypeError('expected a function')
+        const key = String(id)
+        let set = activitySubs.get(key)
+        if (!set) {
+          activitySubs.set(key, (set = new Set()))
+          ipcRenderer.send(CH.tileActivityWatch, key, true)
+        }
+        set.add(fn)
+        return () => {
+          if (!set!.delete(fn) || set!.size > 0) return
+          activitySubs.delete(key)
+          ipcRenderer.send(CH.tileActivityWatch, key, false)
         }
       },
       /** Types `text` into an open session and submits it. Needs "sessions": "write". */

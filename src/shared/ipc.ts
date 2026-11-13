@@ -171,6 +171,9 @@ export const CH = {
   tileTranscriptGet: 'ws:tile:transcript-get',
   tileTranscriptWatch: 'ws:tile:transcript-watch', // send: (session id, true to start, false to stop)
   tileTranscriptChanged: 'ws:tile:transcript-changed', // main → tile
+  tileActivityGet: 'ws:tile:activity-get', // bridge 1.10, permissions.activity
+  tileActivityWatch: 'ws:tile:activity-watch', // send: (session id, true to start, false to stop)
+  tileActivityChanged: 'ws:tile:activity-changed', // main → tile
   // ⌘1–9, ⌘[ ⌘], ⌘N, caught by main wherever the focus is (shared/shortcuts.ts)
   shortcut: 'ws:core:shortcut', // main → window
   // the tile column's state (off, extra instances, heights), kept in core's settings

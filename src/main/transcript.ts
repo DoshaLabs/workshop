@@ -12,7 +12,8 @@
 import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
-import { TRANSCRIPT_KEEP, applyLine, emptyTranscript, trimTranscript, type Transcript } from '@shared/transcript'
+import { TRANSCRIPT_KEEP, applyEntry, applyLine, emptyTranscript, parseLine, trimTranscript, type Transcript } from '@shared/transcript'
+import { foldActivity, newFold, trimActivity, type Activity, type ActivityFold } from '@shared/activity'
 
 const POLL_MS = 400
 /** How often a session whose file has not appeared is looked for (a readdir of every project). */
@@ -38,6 +39,9 @@ interface Tail {
   decoder: StringDecoder
   transcript: Transcript
   dirty: boolean
+  /** What the session does, from the same lines (shared/activity.ts): for tiles with "activity". */
+  fold: ActivityFold
+  activityDirty: boolean
 }
 
 export class TranscriptWatcher {
@@ -46,7 +50,9 @@ export class TranscriptWatcher {
 
   constructor(
     private readonly projectsDir: string,
-    private readonly emit: (t: Transcript) => void
+    private readonly emit: (t: Transcript) => void,
+    /** A tail's activity changed (`id` is a session's, or `agent:<id>`). */
+    private readonly emitActivity: (id: string) => void = () => undefined
   ) {}
 
   /** Keep exactly these sessions (core id → the CLI's session id) under watch. */
@@ -111,6 +117,11 @@ export class TranscriptWatcher {
     return this.tails.get(id)?.transcript ?? this.external.get(id) ?? null
   }
 
+  /** What a tailed session or agent has been doing; null for one not tailed here (a Codex session's). */
+  activity(id: string): Activity | null {
+    return this.tails.get(id)?.fold.activity ?? null
+  }
+
   /** The transcript file of a watched session, null until the CLI has written it. */
   pathOf(id: string): string | null {
     return this.tails.get(id)?.path ?? null
@@ -134,6 +145,10 @@ export class TranscriptWatcher {
         t.dirty = false
         this.emit(t.transcript)
       }
+      if (t.activityDirty) {
+        t.activityDirty = false
+        this.emitActivity(t.id)
+      }
     }
   }
 
@@ -149,7 +164,9 @@ export class TranscriptWatcher {
     const size = statSync(t.path).size
     if (!t.transcript.found) {
       t.transcript.found = true
+      t.fold.activity.found = true
       t.dirty = true
+      t.activityDirty = true
     }
     if (size < t.offset) {
       // Rewritten under us: start over.
@@ -157,7 +174,9 @@ export class TranscriptWatcher {
       t.rest = ''
       t.decoder = new StringDecoder('utf8')
       t.transcript.blocks = []
+      t.fold = { ...newFold(t.id), activity: { ...newFold(t.id).activity, found: true } }
       t.dirty = true
+      t.activityDirty = true
     }
     if (size === t.offset) return
     const fd = openSync(t.path, 'r')
@@ -180,11 +199,13 @@ export class TranscriptWatcher {
   private firstRead(t: Tail, fd: number, size: number): void {
     for (let span = TAIL_BYTES; ; span *= 2) {
       const from = Math.max(0, size - span)
-      const tail: Tail = { ...t, offset: from, rest: '', decoder: new StringDecoder('utf8'), transcript: { ...emptyTranscript(t.id), found: true } }
+      const fold = newFold(t.id)
+      fold.activity.found = true
+      const tail: Tail = { ...t, offset: from, rest: '', decoder: new StringDecoder('utf8'), transcript: { ...emptyTranscript(t.id), found: true }, fold }
       consume(tail, fd, size, from > 0)
       if (from > 0 && tail.transcript.blocks.length < TRANSCRIPT_KEEP) continue
       if (from > 0 && tail.transcript.title === null) tail.transcript.title = titleBefore(fd, from)
-      Object.assign(t, { offset: tail.offset, rest: tail.rest, decoder: tail.decoder, transcript: tail.transcript, dirty: true })
+      Object.assign(t, { offset: tail.offset, rest: tail.rest, decoder: tail.decoder, transcript: tail.transcript, dirty: true, fold: tail.fold, activityDirty: true })
       return
     }
   }
@@ -205,7 +226,7 @@ export class TranscriptWatcher {
 }
 
 function fresh(id: string, sessionId: string, agent: boolean, path: string | null): Tail {
-  return { id, sessionId, agent, sidechain: agent && !sessionId, path, lookedAt: 0, offset: 0, rest: '', decoder: new StringDecoder('utf8'), transcript: emptyTranscript(id), dirty: false }
+  return { id, sessionId, agent, sidechain: agent && !sessionId, path, lookedAt: 0, offset: 0, rest: '', decoder: new StringDecoder('utf8'), transcript: emptyTranscript(id), dirty: false, fold: newFold(id), activityDirty: false }
 }
 
 /**
@@ -227,9 +248,15 @@ function consume(t: Tail, fd: number, end: number, partialStart = false): void {
       lines.shift()
       skip = false
     }
-    for (const line of lines) if (applyLine(t.transcript, line, t.sidechain)) t.dirty = true
+    for (const line of lines) {
+      const o = parseLine(line)
+      if (!o) continue
+      if (applyEntry(t.transcript, o, t.sidechain)) t.dirty = true
+      if (foldActivity(t.fold, o, t.sidechain)) t.activityDirty = true
+    }
     // Trimmed as it goes, not once at the end, so a tool result's search for its call stays short.
     trimTranscript(t.transcript)
+    trimActivity(t.fold.activity)
   }
 }
 

@@ -24,7 +24,7 @@ import type { MusicHost } from './music'
 import { recorderSmoke } from './smoke-recorder'
 import { leashSmoke } from './smoke-leash'
 import { codexSmoke } from './smoke-codex'
-import { agentsSmoke, transcriptsSmoke } from './smoke-agents'
+import { activitySmoke, agentsSmoke, transcriptsSmoke } from './smoke-agents'
 import type { Recorder } from './recorder'
 
 interface Ctx {
@@ -886,6 +886,7 @@ async function sessions(check: (name: string, ok: boolean, detail?: string) => v
   await sleep(200)
   await agentsSmoke(check, ctx, id)
   await transcriptsSmoke(check, ctx, id)
+  await activitySmoke(check, ctx, id)
 
   if (process.env.WORKSHOP_SHOT_SESSION) {
     await sleep(800)

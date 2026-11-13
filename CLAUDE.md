@@ -302,6 +302,16 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   line (`codexKillLine`); no pause. Tiles: Codex has no `--plugin-dir`, so each server starts `bin/workshop-mcp.mjs` (`-c mcp_servers.workshop`, `env_vars` passing the session's WORKSHOP_*), a relay listing core's `/core/tools` (a tool per tile with door ops, its skills as the description, and `doc`; `src/shared/door-tools.ts`) and calling the door's own `/tile/<id>`; Codex asks its own approval before each call (an MCP elicitation), shown on the same card; Allow is that call once. Usage: the plan's windows (`account/rateLimits/read` at join, then `account/rateLimits/updated`) after Claude's in the top bar behind a `codex` tag, each labelled by its length (a free plan has one 30-day window; `src/shared/usage.ts`). Hook ids
   match through `isSession` (never on ''). Smoke: `test/fixtures/fake-codex/codex` (speaks the
   app-server protocol), `smoke-codex.ts`.
+- `activity` (bridge 1.10, `src/shared/activity.ts`): `workshop.sessions.activity(id)` /
+  `watchActivity`, what a session does, never what it says: model steps (an assistant `message.id`,
+  from the line before it to its last), tool calls with only the input fields that name what they
+  touched (path, command, description, url, skill, id) and their end (`PreToolUse:<tool> hook
+  error:` is a refusal), hooks (context with `[#n]` record numbers as digits, permission answers),
+  compactions, background tasks to their notification, turn ends. Folded by the transcript tailer
+  from the same lines (each parsed once), the session's subagents and helpers woven in with
+  `agent` (`core.activity`). Needs `sessions`; with `net` it needs a person's review
+  (`needsReview`). Made for the Session map tile (`DoshaLabs/workshop-session-map`, lot-map's MIT drawing
+  code unchanged); Codex sessions have none yet.
 - `transcripts` (bridge 1.7): `workshop.sessions.transcript(id)` / `watchTranscript`, the parsed
   blocks a session tile draws, needs `sessions` too; a loud line in the menu and the install prompt;
   `tile check` prints `review` for transcripts with net.
@@ -590,6 +600,7 @@ Behind a permission:
 workshop.storage.get/set/watch     // "storage": one JSON store per tile, written atomically by main
 workshop.sessions.list/watch       // "sessions": "read"  → name, start folder (project), repo root (root), status, focused
 workshop.sessions.transcript(id) / watchTranscript(id, fn)  // "transcripts" (+ "sessions", bridge ^1.7) → the conversation, parsed (see the safeguard)
+workshop.sessions.activity(id) / watchActivity(id, fn)  // "activity" (+ "sessions", bridge ^1.10) → steps, tool calls and what they touched, hooks; never prose
 workshop.sessions.launch({ folder, worktree })  // "sessions": "launch" → the new-session form filled in; the user presses Start
 workshop.sessions.paste(id, text)  // "sessions": "write" → type into a session
 workshop.usage.get/watch           // "usage"             → costs and rate-limit windows, computed by core
@@ -616,7 +627,7 @@ never a subagent's. It needs `sessions` too. The menu row and the install prompt
 line of its own (`TRANSCRIPTS_WARNING`). A tile that asks for BOTH `transcripts` and `net` gets a
 manual review before it is listed, because that pairing is the only way a conversation can leave
 the machine: `needsReview` in `src/shared/permissions.ts`, printed by `tile check` as `review` and
-in `--json`. Everything else in the index stays automated.
+in `--json`. `activity` with `net` is routed the same way: a command line can hold a key. Everything else in the index stays automated.
 
 The Spend tile does not need transcripts: core computes costs and exposes them as `usage`.
 

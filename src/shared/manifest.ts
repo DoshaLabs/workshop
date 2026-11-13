@@ -6,8 +6,8 @@
 import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
-/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). 1.7: `transcripts` (a session's conversation, parsed). 1.8: the `float` view (a tile with `"float": true` popped out into a small square the user drags anywhere), and `sessions.watch` fires at once with the list. 1.9: `viewer` (a picture the tile hands to core's file viewer, with a caption, where the user may crop and save it). */
-export const BRIDGE_VERSION = '1.9.0'
+/** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). 1.7: `transcripts` (a session's conversation, parsed). 1.8: the `float` view (a tile with `"float": true` popped out into a small square the user drags anywhere), and `sessions.watch` fires at once with the list. 1.9: `viewer` (a picture the tile hands to core's file viewer, with a caption, where the user may crop and save it). 1.10: `activity` (what a session does: its model steps, tool calls with what they touched, hooks, tasks; never its prose). */
+export const BRIDGE_VERSION = '1.10.0'
 
 /** The first bridge with `sessions: "launch"`: a tile asking for it must not claim to run on an older one. */
 export const LAUNCH_SINCE = '1.4.0'
@@ -24,6 +24,9 @@ export const MUSIC_SHOW_SINCE = '1.6.0'
 
 /** The first bridge with `transcripts` (`workshop.sessions.transcript`). The key was accepted before and did nothing. */
 export const TRANSCRIPTS_SINCE = '1.7.0'
+
+/** The first bridge with `activity` (`workshop.sessions.activity`). */
+export const ACTIVITY_SINCE = '1.10.0'
 
 /** A tile's own origin is tile://<id>/. */
 export const TILE_SCHEME = 'tile'
@@ -65,6 +68,13 @@ export interface Permissions {
    * tile asking for it AND `net` gets a person's review before the index lists it.
    */
   transcripts?: boolean
+  /**
+   * `sessions.activity(id)` and `watchActivity` (bridge 1.10): what a session does, as events: model
+   * steps, each tool call with the fields that say what it touched (a path, a shell command, an
+   * address), hooks, compactions, background tasks. Never the conversation's prose. Needs `sessions`;
+   * with `net` a person reviews the tile before the index lists it (a command can hold a secret).
+   */
+  activity?: boolean
   usage?: boolean
   door?: DoorPermission
   notify?: boolean
@@ -143,7 +153,7 @@ export const DOOR_TIMEOUT_MAX = 120_000
 export const BACKEND_TIMEOUT_DEFAULT = 10_000
 export const BACKEND_TIMEOUT_MAX = 120_000
 
-const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'viewer', 'music', 'net', 'oauth', 'backend'])
+const KNOWN = new Set(['storage', 'sessions', 'transcripts', 'activity', 'usage', 'door', 'notify', 'files', 'camera', 'microphone', 'overlay', 'viewer', 'music', 'net', 'oauth', 'backend'])
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -258,7 +268,7 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
   if (!isObj(p)) errors.push('permissions: must be an object')
   else {
     for (const k of Object.keys(p)) if (!KNOWN.has(k)) errors.push(`permissions.${k}: not a permission this core knows`)
-    for (const k of ['storage', 'transcripts', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'viewer', 'music'] as const) {
+    for (const k of ['storage', 'transcripts', 'activity', 'usage', 'notify', 'files', 'camera', 'microphone', 'overlay', 'viewer', 'music'] as const) {
       if (p[k] === undefined) continue
       if (typeof p[k] !== 'boolean') errors.push(`permissions.${k}: must be true or false`)
       else if (p[k]) permissions[k] = true
@@ -274,6 +284,13 @@ export function checkManifest(raw: unknown, opts: CheckOptions = {}): Checked {
       else if (range && semver.validRange(range) && semver.lt(semver.minVersion(range) ?? '0.0.0', TRANSCRIPTS_SINCE)) {
         errors.push(`permissions.transcripts is bridge ${TRANSCRIPTS_SINCE.replace(/\.0$/, '')}; set "workshop" to "^${TRANSCRIPTS_SINCE.replace(/\.0$/, '')}" or later`)
         delete permissions.transcripts
+      }
+    }
+    if (permissions.activity) {
+      if (!p.sessions) errors.push('permissions.activity: also ask for "sessions" ("read" is enough): activity is asked for by the session\'s id')
+      else if (range && semver.validRange(range) && semver.lt(semver.minVersion(range) ?? '0.0.0', ACTIVITY_SINCE)) {
+        errors.push(`permissions.activity is bridge ${ACTIVITY_SINCE.replace(/\.0$/, '')}; set "workshop" to "^${ACTIVITY_SINCE.replace(/\.0$/, '')}" or later`)
+        delete permissions.activity
       }
     }
     if (p.door !== undefined) {

@@ -53,6 +53,7 @@ user is shown the list.
 | `"net": ["api.example.com", "*.example.org"]` | https / wss to exactly these hosts. No IPs, no `localhost`, no bare `*`. `*.x.com` does not include `x.com`. |
 | `"sessions": "read"`, `"launch"` or `"write"` | `workshop.sessions`. Each takes the one before: `launch` adds `launch` (core's new-session form, filled in; needs `"workshop": "^1.4"`), `write` adds `paste` |
 | `"transcripts": true` | `workshop.sessions.transcript(id)` and `watchTranscript`: what you typed into a session and what it answered. Needs `"sessions"` too and `"workshop": "^1.5"`. The user is warned loudly at install. With `net` as well, the index lists the tile only after a person has read its code. |
+| `"activity": true` | `workshop.sessions.activity(id)` and `watchActivity`: what a session does (each model step, each tool call with the path, command or address it touched, hooks, background tasks), never what it says. Needs `"sessions"` too and `"workshop": "^1.10"`. With `net` as well, the index lists the tile only after a person has read its code: a command line can hold a key. |
 | `"usage": true` | `workshop.usage` |
 | `"notify": true` | `workshop.notify` |
 | `"door": { "ops": ["add", "list"], "timeoutMs": 10000 }` | `workshop.door`: Claude sessions can call these ops |
@@ -141,6 +142,16 @@ await workshop.sessions.transcript(id)      // "transcripts" (bridge 1.7): { id,
                                             // { kind: 'text', text (markdown), ts }, { kind: 'tool', name, label,
                                             // done, error, ts, path? }. null for a closed session. Not the raw file.
 workshop.sessions.watchTranscript(id, (t) => {})   // the same, on every change; returns a function that stops it
+await workshop.sessions.activity(id)        // "activity" (bridge 1.10): { id, found, events, agents }: what the session
+                                            // DOES, never what it says. Events, oldest first (the last 300):
+                                            // { kind: 'prompt', at }, { kind: 'step', id, model, at, end, agent? } (a model
+                                            // request), { kind: 'tool', id, name, input, at, end?, status: 'run'|'ok'|'err'|'block',
+                                            // task?, agent? }, { kind: 'hook', what: 'block'|'context'|'allow'|'deny', event,
+                                            // tool?, at, records? }, { kind: 'compact', at, end }, { kind: 'task', task, status, at },
+                                            // { kind: 'end', at, aborted }. A tool's `input` holds only file_path, notebook_path,
+                                            // path, command, description, url, skill, id: never a file's text or an edit.
+                                            // `agent`: a subagent's or helper's id (agents: [{ id, running }]). null for Codex.
+workshop.sessions.watchActivity(id, (a) => {})     // the same, on every change; returns a function that stops it
 
 await workshop.usage.get(); workshop.usage.watch((u) => {})   // rate-limit windows, per-session cost and context %
 

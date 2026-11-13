@@ -37,6 +37,7 @@ import { REC, REC_DEFAULTS } from '@shared/recorder'
 import { launchRequest, type LaunchPrefill, type SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
 import type { Transcript } from '@shared/transcript'
+import type { Activity } from '@shared/activity'
 import { parseBuildInfo } from '@shared/update'
 import { Updater, bundleOf } from './updates'
 import { DevMode } from './devmode'
@@ -323,7 +324,7 @@ function guestOf(e: IpcMainEvent | IpcMainInvokeEvent): Guest | null {
 }
 const tileOf = (e: IpcMainEvent | IpcMainInvokeEvent): Tile | null => guestOf(e)?.tile ?? null
 
-function need(e: IpcMainInvokeEvent | IpcMainEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage' | 'overlay' | 'viewer' | 'transcripts'): Guest {
+function need(e: IpcMainInvokeEvent | IpcMainEvent, perm?: 'storage' | 'notify' | 'files' | 'sessions' | 'usage' | 'overlay' | 'viewer' | 'transcripts' | 'activity'): Guest {
   const g = guestOf(e)
   if (!g) throw new Error('not a tile')
   if (perm && !g.tile.manifest.permissions[perm]) throw new Error(`this tile did not ask for "${perm}" in tile.json`)
@@ -578,6 +579,22 @@ function tileTranscript(id: unknown): Transcript | null {
 function pushTranscript(t: Transcript): void {
   for (const { g, ids } of transcriptWatch.values()) if (ids.has(t.id) && g.tile.manifest.permissions.transcripts && !g.wc.isDestroyed()) g.wc.send(CH.tileTranscriptChanged, t.id, t)
 }
+/** "activity" (bridge 1.10): which sessions' activity each tile page watches, by webContents id. */
+const activityWatch = new Map<number, { g: Guest; ids: Set<string> }>()
+function tileActivity(id: unknown): Activity | null {
+  const sid = String(id)
+  if (!/^[0-9a-f]{6}$/.test(sid) || !core?.sessions.find(sid)) throw new Error('sessions.activity: no such session')
+  return core.activity(sid)
+}
+/** Computed once per change, and only when some page watches that session. */
+function pushActivity(sid: string): void {
+  let a: Activity | null | undefined
+  for (const { g, ids } of activityWatch.values()) {
+    if (!ids.has(sid) || !g.tile.manifest.permissions.activity || g.wc.isDestroyed()) continue
+    if (a === undefined) a = core?.activity(sid) ?? null
+    if (a) g.wc.send(CH.tileActivityChanged, sid, a)
+  }
+}
 function pushUsage(u: Usage): void {
   for (const g of liveByTile.values()) if (g.tile.manifest.permissions.usage) g.wc.send(CH.tileUsageChanged, u)
 }
@@ -638,6 +655,27 @@ function bridge(): void {
       const wcId = g.wc.id
       transcriptWatch.set(wcId, (w = { g, ids: new Set() }))
       g.wc.once('destroyed', () => transcriptWatch.delete(wcId))
+    }
+    if (on === true) w.ids.add(String(id))
+    else w.ids.delete(String(id))
+  })
+  ipcMain.handle(CH.tileActivityGet, (e, id: unknown) => {
+    need(e, 'activity')
+    return tileActivity(id)
+  })
+  ipcMain.on(CH.tileActivityWatch, (e, id: unknown, on: unknown) => {
+    let g: Guest
+    try {
+      g = need(e, 'activity')
+      tileActivity(id)
+    } catch {
+      return
+    }
+    let w = activityWatch.get(g.wc.id)
+    if (!w) {
+      const wcId = g.wc.id
+      activityWatch.set(wcId, (w = { g, ids: new Set() }))
+      g.wc.once('destroyed', () => activityWatch.delete(wcId))
     }
     if (on === true) w.ids.add(String(id))
     else w.ids.delete(String(id))
@@ -1131,6 +1169,7 @@ app.whenReady().then(async () => {
     onState: pushSessions,
     onUsage: pushUsage,
     onTranscript: pushTranscript,
+    onActivity: pushActivity,
     // Which session made a commit (main/commits.ts): to the backends, whose History tab tags with it.
     onCommits: (all) => backends.setCommits(all)
   })
