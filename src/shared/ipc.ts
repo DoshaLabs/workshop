@@ -141,6 +141,7 @@ export const CH = {
   /** A permission prompt answered from a session's tile: (id, askId, allow) → whether it was still open. */
   sessionPermission: 'ws:core:session-permission',
   pickFolder: 'ws:core:pick-folder',
+  newProject: 'ws:core:new-project',
   ptyInput: 'ws:core:pty-input', // send
   ptyResize: 'ws:core:pty-resize', // send
   ptyTitle: 'ws:core:pty-title', // send

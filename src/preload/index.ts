@@ -56,6 +56,8 @@ const core = {
   /** Answer a permission prompt from the session's tile. False if the terminal answered it first. */
   answerPermission: (id: string, askId: string, allow: boolean): Promise<boolean> => ipcRenderer.invoke(CH.sessionPermission, id, askId, allow),
   pickFolder: (start?: string): Promise<string | null> => ipcRenderer.invoke(CH.pickFolder, start),
+  /** Name a new project folder in the Mac's save dialog (opened beside `near`); main makes it. Null if cancelled. */
+  newProject: (near?: string): Promise<string | null> => ipcRenderer.invoke(CH.newProject, near),
   ptyInput: (id: string, data: string): void => ipcRenderer.send(CH.ptyInput, id, data),
   ptyResize: (id: string, cols: number, rows: number): void => ipcRenderer.send(CH.ptyResize, id, cols, rows),
   setTitle: (id: string, title: string): void => ipcRenderer.send(CH.ptyTitle, id, title),

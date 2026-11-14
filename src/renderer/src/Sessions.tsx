@@ -60,7 +60,6 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
   const filePicker = useRef<HTMLInputElement>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [typing, setTyping] = useState(recent.length === 0)
   /** The worktree's name a tile asked for (workshop.sessions.launch); cleared when the box is unticked. */
   const [branch, setBranch] = useState('')
   const startButton = useRef<HTMLButtonElement>(null)
@@ -165,8 +164,13 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
     }
   }
   const choose = (): void => void window.core.pickFolder(cwd).then((p) => p && setCwd(p))
+  const create = (): void =>
+    void window.core
+      .newProject(recent[0])
+      .then((p) => p && setCwd(p))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)))
   // The recent folders as cards, the chosen one first if it is not among them.
-  const cards = recent.slice(0, 6)
+  const cards = cwd && !recent.slice(0, 6).includes(cwd) ? [cwd, ...recent.slice(0, 5)] : recent.slice(0, 6)
   const codex = cli === 'codex' && hasCodex
   const models = codex ? CODEX_MODELS : MODELS
   const modes = codex ? CODEX_MODES : PERMISSION_MODES
@@ -178,6 +182,26 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
       <div className="launch-hero">
         <KnotCanvas mode="rest" size={112} className="launch-knot" />
         <h1>What are you working on?</h1>
+      </div>
+
+      <div className="launch-section launch-where-to">
+        <div className="launch-folders">
+          <button className="launch-folder open" onClick={create} title="Name a new folder and start there">
+            New Project
+          </button>
+          <button className="launch-folder open" onClick={choose} title="Choose a folder in the Finder">
+            Open Folder
+          </button>
+          {cards.map((r) => (
+            <button key={r} className={`launch-folder${r === cwd ? ' on' : ''}`} onClick={() => setCwd(r)} title={r}>
+              {base(r)}
+              {/* Two recent folders with one name: the parent tells them apart. */}
+              {cards.some((o) => o !== r && base(o) === base(r)) && (
+                <span>{tilde(r.replace(/\/[^/]*\/?$/, '')) || '/'}</span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {hasCodex && (
@@ -262,7 +286,7 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
             }}
           />
           <span className="launch-where" title={cwd || undefined}>
-            {cwd ? <>in <b>{base(cwd)}</b></> : 'Pick a folder below'}
+            {cwd ? <>in <b>{base(cwd)}</b></> : 'Pick a folder above'}
           </span>
           <button ref={startButton} className="launch-go" disabled={!cwd || busy} onClick={() => void start()}>
             {busy ? 'Starting…' : 'Start session'}
@@ -271,35 +295,6 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
         </div>
       </div>
       {error && <p className="launch-error">{error}</p>}
-
-      <div className="launch-section">
-        <h2>Folder</h2>
-        {cards.length > 0 && (
-          <div className="launch-folders">
-            {cards.map((r) => (
-              <button key={r} className={`launch-folder${r === cwd ? ' on' : ''}`} onClick={() => setCwd(r)} title={r}>
-                <b>{base(r)}</b>
-                <span>{'\u200e' + (tilde(r.replace(/\/[^/]*\/?$/, '')) || '/') + '\u200e'}</span>
-              </button>
-            ))}
-            <button className="launch-folder other" onClick={choose}>
-              <b>Another folder…</b>
-              <span>opens the Finder</span>
-            </button>
-          </div>
-        )}
-        {typing || cards.length === 0 || !cards.includes(cwd) ? (
-          <span className="launch-path">
-            <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder="~/code/my-project" spellCheck={false} />
-            {cards.length === 0 && <button onClick={choose}>Choose…</button>}
-          </span>
-        ) : (
-          <button className="launch-path-show" onClick={() => setTyping(true)} title="Type a path instead">
-            Type a path instead
-          </button>
-        )}
-      </div>
-
 
       <div className="launch-section">
         <h2>Model</h2>

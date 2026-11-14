@@ -3,9 +3,9 @@
 // with. main/index.ts starts it and hands tiles what their permissions allow.
 
 import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { CH } from '@shared/ipc'
 import { isSession, type NewSessionOpts, type SessionView, type SessionsState } from '@shared/sessions'
 import type { Usage } from '@shared/usage'
@@ -353,6 +353,24 @@ export async function startSessions(o: Options): Promise<CoreSessions> {
     if (!w) return null
     const r = await dialog.showOpenDialog(w, { properties: ['openDirectory', 'createDirectory'], defaultPath: typeof start === 'string' && existsSync(start) ? start : undefined })
     return r.canceled ? null : r.filePaths[0]
+  })
+  // New Project: the save dialog names a folder (beside the last project, else in home) and main makes it.
+  // An existing folder of that name is simply chosen; a file of that name is refused.
+  handle(CH.newProject, async (near?: string) => {
+    const w = o.win()
+    if (!w) return null
+    const parent = typeof near === 'string' && existsSync(near) ? dirname(near) : homedir()
+    const r = await dialog.showSaveDialog(w, {
+      title: 'New project',
+      buttonLabel: 'Create',
+      nameFieldLabel: 'Project name:',
+      defaultPath: join(parent, 'new-project'),
+      properties: ['createDirectory'],
+    })
+    if (r.canceled || !r.filePath) return null
+    if (existsSync(r.filePath) && !statSync(r.filePath).isDirectory()) throw new Error(`${r.filePath} is a file, not a folder`)
+    mkdirSync(r.filePath, { recursive: true })
+    return r.filePath
   })
   // The preview pane (track E): files read and written for the window, and a session's `doc open`.
   const preview = startPreview({ win: o.win, handle })

@@ -2322,44 +2322,40 @@ a.md-path:hover {
   font-weight: 700;
   color: var(--ws-ink);
 }
-.launch-folders {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+/* Where the session runs, straight under the question: pills that wrap, Open Folder first. */
+.launch-where-to {
+  align-items: center;
   gap: 8px;
 }
-.launch-folder {
+.launch-folders {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-width: 0;
-  text-align: left;
-  padding: 11px 14px;
-  border-radius: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.launch-folder {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 14px;
+  border-radius: 999px;
   border: 1px solid var(--ws-line);
   background: color-mix(in srgb, var(--ws-panel) 70%, transparent);
   color: var(--ws-ink);
   font: inherit;
+  font-size: 14px;
+  font-weight: 600;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
 }
-.launch-folder b {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 16px;
-  font-weight: 700;
-}
 .launch-folder span {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  direction: rtl;
-  text-align: left;
   color: var(--ws-muted);
-  font-size: 13px;
+  font-size: 12px;
+  font-weight: 500;
 }
 .launch-folder:hover {
   border-color: color-mix(in srgb, var(--ws-accent) 50%, var(--ws-line));
@@ -2368,58 +2364,9 @@ a.md-path:hover {
   border-color: var(--ws-accent);
   background: color-mix(in srgb, var(--ws-accent) 16%, var(--ws-panel));
 }
-.launch-folder.other {
-  border-style: dashed;
-  background: transparent;
-}
-.launch-folder.other b {
-  color: var(--ws-muted);
-  font-weight: 600;
-}
-.launch-path {
-  display: flex;
-  gap: 8px;
-}
-.launch-path input {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--ws-font-mono);
-  font-size: 14px;
-  color: var(--ws-ink);
-  background: var(--ws-panel);
-  border: 1px solid var(--ws-line);
-  border-radius: 10px;
-  padding: 10px 12px;
-  outline: none;
-}
-.launch-path input:focus {
-  border-color: var(--ws-accent);
-}
-.launch-path button,
-.launch-path-show {
-  font: inherit;
-  font-size: 14px;
-  color: var(--ws-muted);
-  background: transparent;
-  border: 1px solid var(--ws-line);
-  border-radius: 10px;
-  padding: 8px 14px;
-  cursor: pointer;
-}
-.launch-path-show {
-  align-self: flex-start;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-color: transparent;
-  padding: 2px 0;
-  font-size: 14px;
-}
-.launch-path-show:hover {
-  color: var(--ws-ink);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+/* Only a touch heavier than its neighbours (Nunito is variable, so 680 is a real weight). */
+.launch-folder.open {
+  font-weight: 680;
 }
 .launch-pills {
   display: flex;
