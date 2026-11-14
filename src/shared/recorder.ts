@@ -139,8 +139,9 @@ export const REC_DEFAULTS: RecPrefs = { sound: true, mic: false, guides: true, f
 export function cleanPrefs(raw: unknown, base: RecPrefs = REC_DEFAULTS): RecPrefs {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
   const pick = (k: 'sound' | 'mic' | 'guides'): boolean => (typeof r[k] === 'boolean' ? (r[k] as boolean) : base[k])
-  const fit: RecFit = r.fit === 'reel' || r.fit === 'center' || r.fit === 'brand' ? r.fit : (base.fit ?? 'reel')
-  return { sound: pick('sound'), mic: pick('mic'), guides: pick('guides'), fit }
+  // Always the 9:16 frame: the Column and Brand choices were taken out of the bar (14 Nov 2026), so
+  // settings saved with either read as a reel.
+  return { sound: pick('sound'), mic: pick('mic'), guides: pick('guides'), fit: 'reel' }
 }
 
 export type RecPhase = 'idle' | 'countdown' | 'recording' | 'saving' | 'saved' | 'error'

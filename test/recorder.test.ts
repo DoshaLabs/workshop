@@ -84,9 +84,10 @@ describe('settings', () => {
   it('prefs: booleans only, field by field', () => {
     expect(cleanPrefs(undefined)).toEqual(REC_DEFAULTS)
     expect(cleanPrefs({ sound: false, mic: 'yes', guides: false, extra: 1 })).toEqual({ sound: false, mic: false, guides: false, fit: 'reel' })
-    expect(cleanPrefs({ mic: true }, { sound: false, mic: false, guides: false, fit: 'center' })).toEqual({ sound: false, mic: true, guides: false, fit: 'center' })
+    expect(cleanPrefs({ mic: true }, { sound: false, mic: false, guides: false, fit: 'center' })).toEqual({ sound: false, mic: true, guides: false, fit: 'reel' })
     expect(cleanPrefs({ fit: 'square' }).fit).toBe('reel')
-    expect(cleanPrefs({ fit: 'center' }).fit).toBe('center')
+    expect(cleanPrefs({ fit: 'center' }).fit).toBe('reel')
+    expect(cleanPrefs({ fit: 'brand' }).fit).toBe('reel')
     // Settings saved before `fit` existed read as the 9:16 frame.
     expect(cleanPrefs({ sound: true, mic: false, guides: true }, { sound: true, mic: false, guides: true } as never).fit).toBe('reel')
   })

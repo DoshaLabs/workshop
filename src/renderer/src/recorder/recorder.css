@@ -141,26 +141,31 @@ body,
   flex: none;
 }
 .rec-bar .rec-go {
-  min-width: 70px;
-  color: var(--live);
-  background: color-mix(in srgb, var(--live) 14%, transparent);
-  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  padding: 0;
+  background: transparent;
+  color: var(--ws-muted);
 }
-.rec-go span {
+.rec-bar .rec-go:hover:not(:disabled) {
+  background: transparent;
   color: var(--ws-ink);
 }
+/* Counting down: already red, steady. Recording: a slow red flash. */
+.rec-bar .rec-go.is-counting,
 .rec-bar .rec-go.is-live {
-  animation: rec-pulse 1.2s ease-in-out infinite;
+  color: var(--live);
 }
-@keyframes rec-pulse {
+.rec-bar .rec-go.is-live {
+  animation: rec-flash 2.4s ease-in-out infinite;
+}
+@keyframes rec-flash {
   50% {
-    background: color-mix(in srgb, var(--live) 32%, transparent);
+    color: color-mix(in srgb, var(--live) 25%, var(--ws-muted));
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .rec-bar .rec-go.is-live {
     animation: none;
-    background: color-mix(in srgb, var(--live) 28%, transparent);
   }
 }
 .rec-space {
@@ -194,53 +199,4 @@ body,
   line-height: 1.25;
   overflow: hidden;
   cursor: pointer;
-}
-
-/* ---- What to film: the 9:16 frame, or the center column. ---- */
-.rec-fit {
-  display: inline-flex;
-  margin: 0 4px;
-  padding: 2px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--ws-line) 60%, transparent);
-}
-.rec-bar .rec-fit button {
-  height: 26px;
-  padding: 0 9px;
-  font-size: 12px;
-  font-weight: 700;
-  border-radius: 7px;
-}
-.rec-bar .rec-fit button.on {
-  color: var(--ws-bg);
-  background: var(--ws-accent);
-}
-
-/* The center column: the frame sits on the column exactly and follows it, so nothing drags; its bar
-   is above it, in workshop's top bar, where there is always room (the column's foot is often the
-   screen's). */
-.rec.fit-center .rec-frame {
-  inset: 46px 0 0 0;
-  border-radius: 0 0 12px 12px;
-  cursor: default;
-}
-.rec.fit-center .rec-bar {
-  top: 0;
-  bottom: auto;
-  border-radius: 12px 12px 0 0;
-  border-top: 0;
-  border-bottom: 1px solid var(--ws-line);
-  cursor: default;
-}
-
-/* ---- The brand clip's preview: its 1080 × 1920 canvas, scaled into the frame's inside (also 9:16). */
-.rec-brand {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-.rec-brand canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
 }
