@@ -7,7 +7,7 @@ import semver from 'semver'
 
 /** The bridge this core implements. A tile's `workshop` range must accept it. */
 /** 1.1: `overlay` (the tile's page over the whole window). 1.2: `backend` (the trusted tier, built-in tiles only). 1.3: `music` (Spotify and Music, read and driven by core). 1.4: `sessions: "launch"` (open the new-session form, filled in). 1.5: `oauth` (a sign-in's loopback callback, caught by core). 1.6: `music.show()` (the player to the front). 1.7: `transcripts` (a session's conversation, parsed). 1.8: the `float` view (a tile with `"float": true` popped out into a small square the user drags anywhere), and `sessions.watch` fires at once with the list. 1.9: `viewer` (a picture the tile hands to core's file viewer, with a caption, where the user may crop and save it). 1.10: `activity` (what a session does: its model steps, tool calls with what they touched, hooks, tasks; never its prose). */
-export const BRIDGE_VERSION = '1.10.0'
+export const BRIDGE_VERSION = '1.11.0'
 
 /** The first bridge with `sessions: "launch"`: a tile asking for it must not claim to run on an older one. */
 export const LAUNCH_SINCE = '1.4.0'

@@ -20,12 +20,14 @@
 //   session's own git holds the index.
 // - The page says what it saw (`expect`: the worktree's commit and main's); if either moved since,
 //   nothing is done.
+// - Each step goes in the repository's operation log with what undoing it needs (oplog.mjs).
 
 import { existsSync } from 'node:fs'
 import { lstat, readlink, realpath, stat, symlink, unlink } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { failure, git, status } from './git.mjs'
 import { NOT_QUIET, overlaps, parseDiff, parseWorktreeList, pickBase, shortPath, staleness } from './parse.mjs'
+import { record } from './oplog.mjs'
 
 /** A write may take this long (a rebase of many commits); past it git is stopped and the repository put back. */
 export const WRITE_MS = 45_000
@@ -64,6 +66,12 @@ async function aheadBehind(root, baseOid, head) {
   if (r.code !== 0) return [null, null]
   const [behind, ahead] = text(r).split(/\s+/).map(Number)
   return [behind, ahead]
+}
+
+/** The commit checked out at `path` now. */
+async function headAt(path) {
+  const r = await git(path, ['rev-parse', '-q', '--verify', 'HEAD'], { cap: 4096 })
+  return r.code === 0 ? text(r) : null
 }
 
 /** The git paths that say an operation is under way in a worktree. */
@@ -277,7 +285,11 @@ export async function rebase(body, ctx) {
   const [behind] = await aheadBehind(w.path, base.oid, w.head)
   if (behind === 0) return { done: true, nothing: true, said: `already on top of ${base.name}` }
   const r = await git(w.path, ['rebase', base.oid], { write: true, timeout: WRITE_MS })
-  if (r.code === 0 && !(await underWay(w.path))) return { done: true, said: `rebased ${w.branch} onto ${base.name}` }
+  if (r.code === 0 && !(await underWay(w.path))) {
+    const said = `rebased ${w.branch} onto ${base.name}`
+    await record(w.path, { kind: 'rebase', said, undo: { path: w.path, branch: w.branch, before: w.head, after: await headAt(w.path) } }).catch(() => {})
+    return { done: true, said }
+  }
   const files = await conflicts(w.path)
   const back = await putBack(w.path, ['rebase', '--abort'])
   if (!back) return { done: false, stuck: true, files, said: `the rebase stopped and could not be undone: run git rebase --abort in ${w.path}` }
@@ -301,7 +313,11 @@ export async function merge(body, ctx) {
   const [, ahead] = await aheadBehind(w.path, base.oid, w.head)
   if (ahead === 0) return { done: true, nothing: true, said: `${base.name} already has everything on ${w.branch}` }
   const r = await git(target.path, ['merge', '--no-edit', w.branch], { write: true, timeout: WRITE_MS })
-  if (r.code === 0 && !(await underWay(target.path))) return { done: true, said: `merged ${w.branch} into ${base.name}` }
+  if (r.code === 0 && !(await underWay(target.path))) {
+    const said = `merged ${w.branch} into ${base.name}`
+    await record(target.path, { kind: 'merge', said, undo: { path: target.path, branch: base.name, before: target.head, after: await headAt(target.path) } }).catch(() => {})
+    return { done: true, said }
+  }
   const files = await conflicts(target.path)
   const back = await putBack(target.path, ['merge', '--abort'])
   if (!back) return { done: false, stuck: true, files, said: `the merge stopped and could not be undone: run git merge --abort in ${target.path}` }
@@ -334,10 +350,15 @@ export async function remove(body, ctx) {
     for (const [at, to] of unlinked) await symlink(to, at).catch(() => {})
     throw new Refused(`git worktree remove: ${failure(r, 'git worktree remove', WRITE_MS)}`)
   }
-  if (!w.branch) return { done: true, said: 'removed the worktree' }
+  const undo = w.branch && w.head ? { root: main.path, path: w.path, branch: w.branch, tip: w.head } : null
+  if (!w.branch) {
+    await record(main.path, { kind: 'remove', said: `removed the worktree ${shortPath(w.path, main.path, '')}`, undo }).catch(() => {})
+    return { done: true, said: 'removed the worktree' }
+  }
   // Deleted where main is checked out, so `branch -d` judges "merged" against main.
   const at = list.find((x) => x.branch === base.name && x.prunable === null)?.path ?? main.path
   const d = await git(at, ['branch', '-d', w.branch], { write: true, timeout: WRITE_MS })
-  if (d.code !== 0) return { done: true, said: `removed the worktree; kept the branch ${w.branch} (${failure(d, 'git branch -d')})` }
-  return { done: true, said: `removed the worktree and the branch ${w.branch}` }
+  const said = d.code !== 0 ? `removed the worktree; kept the branch ${w.branch} (${failure(d, 'git branch -d')})` : `removed the worktree and the branch ${w.branch}`
+  await record(main.path, { kind: 'remove', said, undo }).catch(() => {})
+  return { done: true, said }
 }

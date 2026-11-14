@@ -539,9 +539,15 @@ async function createTile(name: string, idea: string): Promise<{ id: string; fol
  * conversation). `project` is the folder the session started in; `root` the project it belongs
  * to (the repository's root, shared by its worktrees: project.ts).
  */
-function tileSessions(s: SessionsState): { id: string; name: string; project: string; root: string; status: string; focused: boolean; open: boolean }[] {
-  return s.sessions.map((v) => ({ id: v.id, name: v.name, project: v.cwd, root: roots.get(v.id, v.cwd), status: v.status, focused: v.id === s.focus, open: v.open }))
+function tileSessions(s: SessionsState): { id: string; name: string; project: string; root: string; status: string; focused: boolean; open: boolean; band: number | null }[] {
+  return s.sessions.map((v) => ({ id: v.id, name: v.name, project: v.cwd, root: roots.get(v.id, v.cwd), status: v.status, focused: v.id === s.focus, open: v.open, band: sessionBands.get(v.id) ?? null }))
 }
+/**
+ * The head colour (1-4, --ws-head-N) each session tile in the window's column wears, as the window
+ * reports it (bridge 1.11): it depends on the column's order and on which session's terminal is in
+ * the center, which only the window knows. null for a session with no tile (centered, or parked).
+ */
+let sessionBands = new Map<string, number>()
 const lastPaste = new Map<string, number>()
 const roots = new ProjectRoots()
 // The file viewer's rule for web pages: their folder only inside an open session's folder or project.
@@ -870,6 +876,13 @@ function bridge(): void {
   ipcMain.handle(CH.columnGet, (e) => {
     if (e.sender !== win?.webContents) throw new Error('core only')
     return settings.get().column ?? null
+  })
+  ipcMain.on(CH.sessionBands, (e, b: unknown) => {
+    if (e.sender !== win?.webContents || !b || typeof b !== 'object') return
+    const next = new Map(Object.entries(b as Record<string, unknown>).filter((x): x is [string, number] => Number.isInteger(x[1]) && (x[1] as number) >= 1 && (x[1] as number) <= 4))
+    if (next.size === sessionBands.size && [...next].every(([k, v]) => sessionBands.get(k) === v)) return
+    sessionBands = next
+    if (core) pushSessions(core.sessions.getState())
   })
   ipcMain.handle(CH.columnSet, (e, c: unknown) => {
     if (e.sender !== win?.webContents) throw new Error('core only')

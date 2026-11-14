@@ -252,3 +252,159 @@ export function refsShown(refs) {
   const order = { head: 0, branch: 1, tag: 2, remote: 3 }
   return [...(refs ?? [])].sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name))
 }
+
+// ---- lanes (the redesign: each working tree a lane, coloured as its session's tile)
+
+/** The head colour (1-4) a lane wears: its first session's band in the column, or null (in the center, or none known). */
+export function bandOf(w, sessions) {
+  for (const s of w.sessions ?? []) {
+    const b = (sessions ?? []).find((x) => x.id === s.id)?.band
+    if (Number.isInteger(b) && b >= 1 && b <= 4) return b
+  }
+  return null
+}
+
+/** The status a lane shows: the most urgent of its sessions' (needs you, then busy, starting, idle). */
+export function laneStatus(w, sessions) {
+  const order = ['blocked', 'busy', 'starting', 'idle', 'unknown', 'dead']
+  const st = (w.sessions ?? []).map((s) => (sessions ?? []).find((x) => x.id === s.id)?.status ?? 'unknown')
+  return order.find((o) => st.includes(o)) ?? 'unknown'
+}
+
+/** Words for a status, as a lane says it. */
+export const STATUS_WORDS = { blocked: 'needs you', busy: 'working', starting: 'starting', idle: 'idle', unknown: '', dead: 'ended' }
+
+/**
+ * Lanes of one project changing the same files now (uncommitted): [{ a, b, files }] by lane name.
+ * Worktrees cannot see each other's uncommitted work, so this is when a merge will conflict.
+ */
+export function laneOverlaps(p) {
+  const out = []
+  const lanes = (p?.worktrees ?? []).filter((w) => !w.error && w.files?.length)
+  for (let i = 0; i < lanes.length; i++)
+    for (let j = i + 1; j < lanes.length; j++) {
+      const mine = new Set(lanes[i].files.map((f) => f.path))
+      const files = lanes[j].files.map((f) => f.path).filter((f) => mine.has(f))
+      if (files.length) out.push({ a: laneName(lanes[i]), b: laneName(lanes[j]), files })
+    }
+  return out
+}
+
+/** What a lane is called: its sessions' names, else its worktree's. */
+export const laneName = (w) => names(w.sessions ?? []) || w.name
+
+/** The share of a lane's changed lines added and removed, for its bar (percent, adding to at most 100). */
+export function barOf(w) {
+  const add = w.add ?? 0
+  const del = w.del ?? 0
+  const t = add + del
+  if (!t) return { add: 0, del: 0 }
+  return { add: Math.round((add / t) * 100), del: 100 - Math.round((add / t) * 100) }
+}
+
+/** The files a lane shows as chips: the most changed first, at most `n`; and how many more. */
+export function chipFiles(w, n = 3) {
+  const files = [...(w.files ?? [])].sort((a, b) => (b.add ?? 0) + (b.del ?? 0) - ((a.add ?? 0) + (a.del ?? 0)))
+  return { shown: files.slice(0, n), more: Math.max(0, (w.count ?? files.length) - n) }
+}
+
+/** A path's last part, the folder before it, for chips and trees. */
+export function splitPath(p) {
+  const i = p.lastIndexOf('/')
+  return i < 0 ? { dir: '', name: p } : { dir: p.slice(0, i), name: p.slice(i + 1) }
+}
+
+/** Files by folder, folders in order: [{ dir, files }]. */
+export function byFolder(files) {
+  const m = new Map()
+  for (const f of files) {
+    const { dir } = splitPath(f.path)
+    if (!m.has(dir)) m.set(dir, [])
+    m.get(dir).push(f)
+  }
+  return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([dir, list]) => ({ dir, files: list }))
+}
+
+// ---- notes: a review's comments, sent to the session as one message
+
+/** The most a message to a session may hold (core's paste takes 10,000 characters). */
+export const NOTES_CHARS = 9000
+
+/**
+ * The message a lane's notes become: one line to say what they are, then each note with its file
+ * and line. Cut (and said so) past NOTES_CHARS.
+ */
+export function notesMessage(notes) {
+  const head = notes.length === 1 ? 'A review note on your uncommitted changes:' : `${notes.length} review notes on your uncommitted changes:`
+  const body = notes.map((n, i) => {
+    const where = n.line ? `${n.path}:${n.line}` : n.path
+    const quote = n.code ? `\n   > ${n.code.trim().slice(0, 160)}` : ''
+    return `${i + 1}. ${where}${quote}\n   ${n.text.trim().replace(/\n+/g, '\n   ')}`
+  })
+  let text = [head, ...body].join('\n')
+  if (text.length > NOTES_CHARS) text = `${text.slice(0, NOTES_CHARS - 40)}\n… (cut: too long to send at once)`
+  return text
+}
+
+// ---- the Worktrees board
+
+/** Which column of the board a worktree goes in: working (a session is in it, or main is), ready (commits main lacks, no session), stale, or idle. */
+export function boardGroup(w) {
+  if (w.stale) return 'stale'
+  if (w.sessions?.length || w.main || w.isBase) return 'working'
+  if ((w.ahead ?? 0) > 0) return 'ready'
+  return 'idle'
+}
+export const BOARD = [
+  ['working', 'Working'],
+  ['ready', 'Ready to merge'],
+  ['idle', 'Idle'],
+  ['stale', 'Stale']
+]
+
+/** A divergence bar's blocks: behind main on the left, ahead on the right, each at most `max` (the rest said in words). */
+export function divergence(w, max = 6) {
+  return { behind: Math.min(w.behind ?? 0, max), ahead: Math.min(w.ahead ?? 0, max) }
+}
+
+// ---- the operation log
+
+/** "12:41" today, "Tue" this week, else "4 Nov". */
+export function when(ms, now = Date.now()) {
+  const d = new Date(ms)
+  const n = new Date(now)
+  if (d.toDateString() === n.toDateString()) return d.toTimeString().slice(0, 5)
+  if (now - ms < 6 * 86_400_000) return d.toLocaleDateString('en-GB', { weekday: 'short' })
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+}
+
+/** "2m", "3h", "2d": a short age for dense rows. */
+export function short(ms, now = Date.now()) {
+  const s = Math.max(0, Math.round((now - ms) / 1000))
+  if (s < 60) return 'now'
+  if (s < 3600) return `${Math.floor(s / 60)}m`
+  if (s < 86_400) return `${Math.floor(s / 3600)}h`
+  if (s < 86_400 * 30) return `${Math.floor(s / 86_400)}d`
+  return new Date(ms).toISOString().slice(0, 10)
+}
+
+// ---- pull requests
+
+/** The pull request whose branch a lane is on, if the last answer has one. */
+export const prOfBranch = (prs, branch) => (branch ? (prs ?? []).find((p) => p.head === branch) ?? null : null)
+
+/** Words for a review decision. */
+export const REVIEW_WORDS = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes requested', REVIEW_REQUIRED: 'review requested' }
+
+/** "41s", "1m 12s", "" for a check's time. */
+export function took(ms) {
+  if (ms == null) return ''
+  const s = Math.round(ms / 1000)
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+/** What "Ask a session to fix it" types into the session. */
+export function fixMessage(p, c, log) {
+  const tail = (log ?? []).slice(-30).join('\n')
+  return `The check "${c.name}" failed on pull request #${p.number} (${p.title}), branch ${p.head}.${tail ? `\nThe end of its log:\n${tail}` : ''}\nPlease find the cause and fix it.`
+}

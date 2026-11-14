@@ -124,7 +124,8 @@ await workshop.storage.get(key)             // any JSON value, or null
 await workshop.storage.set(key, value)      // null removes it. 5 MB for the whole tile.
 workshop.storage.watch(key, (value) => {})  // also fires for your own writes
 
-await workshop.sessions.list()              // [{ id, name, project, root, status, focused, open }]
+await workshop.sessions.list()              // [{ id, name, project, root, status, focused, open, band }]
+// band (bridge 1.11): 1-4, the --ws-head-N its tile in the column wears (null: no tile, it is in the center)
                                             // project: the folder the session started in
                                             // root: the project it belongs to: its git repository's root
                                             //   (every worktree of one repo shares it), else the start folder.
@@ -264,8 +265,14 @@ what survives a reinstall and is shared between instances. Keep real data there.
 - Use the `--ws-*` variables for every colour so the tile follows the user's theme, light or dark:
   `--ws-bg`, `--ws-panel` (the tile's own surface), `--ws-ink`, `--ws-muted`, `--ws-line`,
   `--ws-accent`, the status colours `--ws-busy`, `--ws-idle`, `--ws-blocked`, `--ws-starting`,
-  `--ws-dead`, and `--ws-green` and `--ws-red` for added and removed, good and bad (both read as
-  small text on `--ws-panel`).
+  `--ws-dead`, and `--ws-green` and `--ws-red` for added and removed, good and bad. Since bridge
+  1.11 also `--ws-yellow`, `--ws-blue`, `--ws-magenta`, `--ws-cyan` (the terminal's, for code and
+  warnings) and `--ws-accent-ink` (the accent as text; `--ws-accent` is a fill and does not always
+  read as text). Each of these seven reads as small text (4.5:1) on `--ws-panel` and on a chip of
+  its own 16% tint (`color-mix(in srgb, var(--ws-yellow) 16%, var(--ws-panel))`), in every theme;
+  so does `--ws-panel` as text on a fill of any of them. For diffs: `--ws-add-bg` / `--ws-del-bg`
+  (a row) and `--ws-add-mark` / `--ws-del-mark` (a changed word) keep `--ws-ink` readable. The
+  session head colours `--ws-head-1` … `--ws-head-4` take `--ws-ink`.
 - Use workshop's fonts so the tile looks at home: `var(--ws-font)` for the interface,
   `var(--ws-font-mono)` for code and paths, `var(--ws-font-serif)` for prose that is read (an
   article, a note). Workshop loads the faces into the page itself; the page's CSP must allow

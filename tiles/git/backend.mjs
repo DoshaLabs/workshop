@@ -12,7 +12,13 @@ import { changes, diff, worktreeTop } from './lib/git.mjs'
 import { group } from './lib/parse.mjs'
 import { diffAgainstBase, listWorktrees, merge, readProject, rebase, remove } from './lib/worktrees.mjs'
 import { projectHistory, showCommit } from './lib/history.mjs'
-import { isSha, logLimit } from './lib/log.mjs'
+import { isSha, logLimit, logPath } from './lib/log.mjs'
+import { baseOf } from './lib/worktrees.mjs'
+import { commit as commitStaged, discard, fetch, pop, pull, push, quietIn, stage, stash, unstage } from './lib/write.mjs'
+import { list as oplog, undo } from './lib/oplog.mjs'
+import { readRefs } from './lib/refs.mjs'
+import { failedLog, openPr, prs, rerun } from './lib/gh.mjs'
+import { recent } from './lib/git.mjs'
 
 /** A folder's worktree top is asked of git once a minute at most (it changes only if the worktree is removed). */
 const TOP_MS = 60_000
@@ -145,6 +151,7 @@ export default function ({ handle, sessions, commits, onCommits, emit }) {
   handle('history', async (body) => {
     const list = known(body?.sessions)
     const limit = logLimit(body?.limit)
+    const path = logPath(body?.path)
     const roots = [...new Set(list.map((s) => s.root))]
     const all = sessions()
     const now = Date.now()
@@ -152,7 +159,7 @@ export default function ({ handle, sessions, commits, onCommits, emit }) {
       roots.map(async (root) => {
         const name = root.replace(/\/+$/, '').split('/').pop() || root
         try {
-          const h = await once(`history ${root} ${limit}`, () => projectHistory(root, { limit, sessions: all.filter((s) => s.root === root), topOf, records, now }))
+          const h = await once(`history ${root} ${limit} ${path ?? ''}`, () => projectHistory(root, { limit, sessions: all.filter((s) => s.root === root), topOf, records, path, now }))
           return { root, name, ...h }
         } catch (e) {
           return { root, name, commits: [], more: false, error: e.message }
@@ -175,4 +182,85 @@ export default function ({ handle, sessions, commits, onCommits, emit }) {
   handle('rebase', write(rebase))
   handle('merge', write(merge))
   handle('remove', write(remove))
+
+  // ---- writes on one session's working tree (lib/write.mjs has the rules)
+
+  /** The working tree a session the page names is in; refused for one core does not know or one outside git. */
+  async function treeOf(id) {
+    const [s] = known([id])
+    if (!s) throw new Error('no such session')
+    const top = await topOf(s.folder)
+    if (!top) throw new Error(`${s.name} is not working in a git repository`)
+    return { s, top }
+  }
+  /** One at a time, like the worktree writes; `fn(top, body, { quiet })`. */
+  const onTree = (fn) => async (body) => {
+    if (writing) throw new Error('another git action is still running')
+    writing = true
+    try {
+      const { top } = await treeOf(body?.session)
+      return await fn(top, body ?? {}, { quiet: quietIn(sessions(), topOf) })
+    } finally {
+      writing = false
+      tops.clear()
+    }
+  }
+  // { session, path, hunk?, header? } → { said }
+  handle('stage', onTree((top, b) => stage(top, b)))
+  handle('unstage', onTree((top, b) => unstage(top, b)))
+  handle('discard', onTree((top, b, c) => discard(top, b, c)))
+  // { session, message } → { said, sha }
+  handle('commitstaged', onTree((top, b) => commitStaged(top, b)))
+  // { session } → { said }
+  handle('push', onTree((top) => push(top)))
+  handle('pull', onTree((top, _b, c) => pull(top, c)))
+  handle('fetch', onTree((top) => fetch(top)))
+  handle('stash', onTree((top, _b, c) => stash(top, c)))
+  // { session, sha } → { said }
+  handle('pop', onTree((top, b, c) => pop(top, b, c)))
+
+  // ---- a project's operation log, refs and pull requests, named by a root core gave a session
+
+  const rootOf = (body) => {
+    const root = body?.root
+    if (typeof root !== 'string' || !sessions().some((s) => s.root === root)) throw new Error('no session works in that project')
+    return root
+  }
+  // { root } → { entries: [{ id, at, kind, said, undone, undoable }] } (newest last)
+  handle('oplog', async (body) => ({ entries: await oplog(rootOf(body)) }))
+  // { root, id } → { said }
+  handle('undo', async (body) => {
+    const root = rootOf(body)
+    if (writing) throw new Error('another git action is still running')
+    writing = true
+    try {
+      const quiet = quietIn(sessions(), topOf)
+      return { said: await undo(root, String(body?.id ?? ''), { quietAt: quiet }) }
+    } finally {
+      writing = false
+      tops.clear()
+    }
+  })
+  // { root } → { branches, remotes, tags, stashes }
+  handle('refs', async (body) => readRefs(rootOf(body)))
+  // {} → { commands: [{ at, program, cwd, args, ms, code, write }] }: what the tile ran, newest last.
+  handle('cmdlog', async () => ({ commands: recent() }))
+  // { root, which: open | review | merged } → { prs, base }
+  handle('prs', async (body) => {
+    const root = rootOf(body)
+    const b = await baseOf(root).catch(() => null)
+    return prs(root, ['open', 'review', 'merged'].includes(body?.which) ? body.which : 'open', b?.name ?? null)
+  })
+  // { root, run } → { lines, more }
+  handle('checklog', async (body) => failedLog(rootOf(body), body?.run))
+  // { root, run } → { said }
+  handle('rerun', async (body) => rerun(rootOf(body), body?.run))
+  // { root, path } → { said, url }: push the worktree's branch and open a pull request into main.
+  handle('openpr', async (body) => {
+    const { root, path } = await named(body)
+    const w = (await listWorktrees(root)).find((x) => x.path === path)
+    const b = await baseOf(root)
+    if (!b) throw new Error('this repository has no main or master branch')
+    return openPr(path, w?.branch ?? null, b.name)
+  })
 }

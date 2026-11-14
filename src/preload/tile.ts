@@ -314,7 +314,7 @@ if (hello) {
       forget: (handle: string): Promise<boolean> => gate('files', () => ipcRenderer.invoke(CH.filesForget, handle))
     },
     sessions: {
-      /** The sessions: [{ id, name, project (the start folder), root (its repo root), status, focused, open }]. Needs "sessions": "read", "launch" or "write". */
+      /** The sessions: [{ id, name, project (the start folder), root (its repo root), status, focused, open, band (1-4: the --ws-head-N its tile wears, null with no tile; bridge 1.11) }]. Needs "sessions": "read", "launch" or "write". */
       list: (): Promise<unknown> => gate('sessions', () => ipcRenderer.invoke(CH.tileSessionsList)),
       /** Calls fn with the list at once, then whenever it changes. */
       watch: (fn: (list: unknown) => void): (() => void) => {

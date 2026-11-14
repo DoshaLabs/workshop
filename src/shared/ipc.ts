@@ -180,6 +180,8 @@ export const CH = {
   // the tile column's state (off, extra instances, heights), kept in core's settings
   columnGet: 'ws:core:column-get',
   columnSet: 'ws:core:column-set',
+  /** The window's session bands (which --ws-head-N each session tile wears), for tiles' session lists. */
+  sessionBands: 'ws:core:session-bands',
   // the mascot (§8): core window ⇄ main
   mascotGet: 'ws:core:mascot-get',
   mascotSave: 'ws:core:mascot-save',

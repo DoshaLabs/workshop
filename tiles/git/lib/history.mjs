@@ -16,10 +16,10 @@ const DIFF_BYTES = 3 << 20
  * The newest `limit` commits on every branch, tag and remote of the repository at `root` (and
  * every worktree's HEAD, which --all includes), newest first by commit date; the stash is left out.
  * One more is asked for than shown, to know whether there are more. A repository with no commits
- * has an empty log.
+ * has an empty log. `path` keeps the commits that touch it (a page's `path:` search).
  */
-export async function readLog(root, limit) {
-  const r = await git(root, ['log', '--exclude=refs/stash', '--all', '--date-order', '-z', '--decorate=full', `--format=${LOG_FORMAT}`, '-n', String(limit + 1), '--'], { cap: LOG_BYTES })
+export async function readLog(root, limit, path = null) {
+  const r = await git(root, ['log', '--exclude=refs/stash', '--all', '--date-order', '-z', '--decorate=full', `--format=${LOG_FORMAT}`, '-n', String(limit + 1), '--', ...(path ? [path] : [])], { cap: LOG_BYTES })
   if (r.code !== 0 && !r.cut) {
     // Before the first commit there is nothing to log; git says so on stderr, which is not an error here.
     if (/does not have any commits|bad default revision|unknown revision/.test(r.err)) return { commits: [], more: false }
@@ -34,8 +34,8 @@ export async function readLog(root, limit) {
  * parked: a parked one's commits are still its own); `topOf` finds the worktree a folder is in;
  * `records` is core's Map sha → { session, name }.
  */
-export async function projectHistory(root, { limit, sessions, topOf, records, now = Date.now() }) {
-  const [log, worktrees, base] = await Promise.all([readLog(root, limit), listWorktrees(root).catch(() => []), baseOf(root).catch(() => null)])
+export async function projectHistory(root, { limit, sessions, topOf, records, path = null, now = Date.now() }) {
+  const [log, worktrees, base] = await Promise.all([readLog(root, limit, path), listWorktrees(root).catch(() => []), baseOf(root).catch(() => null)])
   const placed = await Promise.all(
     sessions.map(async (s) => {
       const top = await topOf(s.folder)

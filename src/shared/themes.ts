@@ -1,7 +1,7 @@
 // Theme catalog shared by main (window background at boot, every tile's --ws-* variables) and
 // the renderer (CSS variables + xterm palettes). Carried over from deck's src/shared/themes.ts. Every family has a light and a dark variant; `appearance` in settings
 // picks which one is live. Keep this file dependency-free (the colour maths it borrows from ./knot is pure too).
-import { ensureContrast, hex, parseColor } from './knot'
+import { contrast, ensureContrast, hex, luminance, parseColor, type RGB } from './knot'
 
 export type Appearance = 'system' | 'light' | 'dark'
 
@@ -736,6 +736,74 @@ function readable(color: string, v: ThemeVariant): string {
   return c && panel && ink ? hex(ensureContrast(c, [panel], ink, 4.5)) : color
 }
 
+/** How much of a colour a tinted chip lays over the panel (`color-mix(in srgb, X 16%, panel)`). */
+export const TINT = 0.16
+
+/** `a` laid over `b` at `share`, channel by channel in sRGB, as CSS color-mix(in srgb) does. */
+function over(a: number[], b: number[], share: number): [number, number, number] {
+  return [0, 1, 2].map((i) => Math.round(a[i] * share + b[i] * (1 - share))) as [number, number, number]
+}
+
+/**
+ * `base` tinted over the panel as strongly as `max` allows while the ink still reads on it (4.5:1):
+ * a diff's row and word backgrounds. A theme whose ink is weak on its own panel (Solarized light,
+ * 5:1) gets a fainter tint rather than unreadable code.
+ */
+function strongestTint(base: RGB, panel: RGB, ink: RGB, max: number): RGB {
+  for (let share = max; share > 0.03; share -= 0.01) {
+    const t = over(base, panel, share)
+    if (contrast(ink, t) >= 4.5) return t
+  }
+  return over(base, panel, 0.03)
+}
+
+/**
+ * `c` as small text reading 4.5:1 on every surface: moved toward the ink first, and past it, toward
+ * black on a light panel or white on a dark one, when the ink itself is not enough. The colour's own
+ * 16% tint (a chip) is one of the surfaces, asked again as the colour moves.
+ */
+function readableOn(c: RGB, surfaces: RGB[], panel: RGB, ink: RGB): RGB {
+  const far: RGB = luminance(panel) > 0.18 ? [0, 0, 0] : [255, 255, 255]
+  const ok = (x: RGB): boolean => [...surfaces, over(x, panel, TINT)].every((s) => contrast(x, s) >= 4.5)
+  for (let step = 0; step <= 20; step++) {
+    const x = step <= 10 ? over(ink, c, step / 10) : over(far, ink, (step - 10) / 10)
+    if (ok(x)) return x
+  }
+  return far
+}
+
+/** A diff's backgrounds and the colours a tile writes text in, for one variant (see themeVars). */
+function tileColours(v: ThemeVariant): Record<string, string> {
+  const panel = parseColor(v.panel)
+  const ink = parseColor(v.ink)
+  const green = parseColor(readable(v.term.green, v))
+  const red = parseColor(readable(v.term.red, v))
+  if (!panel || !ink || !green || !red) return {}
+  const addBg = strongestTint(green, panel, ink, 0.14)
+  const delBg = strongestTint(red, panel, ink, 0.14)
+  const addMark = strongestTint(green, panel, ink, 0.32)
+  const delMark = strongestTint(red, panel, ink, 0.32)
+  const surfaces = [panel, addBg, delBg, addMark, delMark]
+  const text = (s: string): string => {
+    const c = parseColor(s)
+    return c ? hex(readableOn(c, surfaces, panel, ink)) : s
+  }
+  return {
+    // Green and red again, now also readable on the diff's own backgrounds (a string in an added line).
+    '--ws-green': text(hex(green)),
+    '--ws-red': text(hex(red)),
+    '--ws-add-bg': hex(addBg),
+    '--ws-del-bg': hex(delBg),
+    '--ws-add-mark': hex(addMark),
+    '--ws-del-mark': hex(delMark),
+    '--ws-yellow': text(v.term.yellow),
+    '--ws-blue': text(v.term.blue),
+    '--ws-magenta': text(v.term.magenta),
+    '--ws-cyan': text(v.term.cyan),
+    '--ws-accent-ink': text(v.accent)
+  }
+}
+
 export function themeVars(v: ThemeVariant): Record<string, string> {
   return {
     '--ws-bg': v.bg,
@@ -753,6 +821,11 @@ export function themeVars(v: ThemeVariant): Record<string, string> {
     // Added and removed, good and bad (a diff's counts, a passing check): the terminal's own green
     // and red, moved toward the ink where needed so small text in them reads on the panel (4.5:1).
     '--ws-green': readable(v.term.green, v),
-    '--ws-red': readable(v.term.red, v)
+    '--ws-red': readable(v.term.red, v),
+    // A diff's backgrounds (rows, then changed words), as strong as the ink allows; then the
+    // terminal's other four and the accent as text that reads (4.5:1) on the panel, on those, and on
+    // a chip of its own 16% tint (TINT), so a tile can colour code, warnings and buttons in every
+    // theme. --ws-accent itself stays the theme's: a fill, not always readable as text.
+    ...tileColours(v)
   }
 }

@@ -67,6 +67,9 @@ export function SessionColumn({
   const drag = useReorder('sessions', onMove)
   const pack = useAgents()
   const bands = new Map(open.filter((s) => s.id !== center).map((s, i) => [s.id, (i % HEADS) + 1]))
+  // Tiles hear which colour each session wears (workshop.sessions' `band`), so a Git lane matches its tile.
+  const bandKey = [...bands].map(([id, b]) => `${id}:${b}`).join(' ')
+  useEffect(() => window.core.setSessionBands(Object.fromEntries(bands)), [bandKey])
   const pick = (s: SessionView): void => {
     onPick()
     void (s.open ? window.core.focusSession(s.id) : window.core.resume(s.id))

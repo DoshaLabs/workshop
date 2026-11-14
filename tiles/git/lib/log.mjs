@@ -114,5 +114,16 @@ export function logLimit(n) {
   return Math.min(LOG_MAX, Math.max(LOG_PAGE, v))
 }
 
+/**
+ * A path a page may search the log by: relative, at most 500 characters, no NUL, and never one git
+ * would read as an option or as pathspec magic (a leading '-' or ':'). null when there is none.
+ */
+export function logPath(p) {
+  if (typeof p !== 'string') return null
+  const t = p.trim().replace(/^\.\//, '')
+  if (!t || t.length > 500 || t.includes('\0') || /^[-:]/.test(t) || t.startsWith('/')) return null
+  return t
+}
+
 /** A commit's sha as a page may name one: 40 hex (sha-1) or 64 (sha-256). */
 export const isSha = (s) => typeof s === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(s)

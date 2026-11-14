@@ -101,6 +101,54 @@ export async function gitSmoke(check: Check, { win, liveByTile, core, backends }
   check('git door: show answers the session with its own changes', /"shown":\s*true/.test(shown) && /"branch":\s*"side"/.test(shown), shown.slice(-400))
   check('git door: show opens the pane with that worktree unfolded', (await inPage('workshop.view')) === 'pane' && (await inPage(`${line(side)}.getAttribute('aria-expanded')`)) === 'true')
 
+  // The review (the redesign): a lane's session wears its column band; a file is staged from its head;
+  // a note on a line goes to the session as one typed message; the whole window is the studio.
+  const bands = (await inPage(`workshop.sessions.list().then((l) => l.filter((s) => [${JSON.stringify(main)}, ${JSON.stringify(also)}, ${JSON.stringify(wt)}].includes(s.id)).map((s) => s.band))`)) as (number | null)[]
+  check('git: sessions carry the head colour their tile wears (bridge 1.11), none for the one in the center', bands.filter((b) => b != null).every((b) => b! >= 1 && b! <= 4) && bands.some((b) => b != null), JSON.stringify(bands))
+  await inPage(`${line(repo)}.click(); true`)
+  const dfile = (p: string): string => `document.querySelector('.dfile[data-file=${JSON.stringify(p)}]')`
+  await waitFor('the main lane’s review', async () => (await inPage(`!!${dfile('a.txt')}?.querySelector('[data-act="stage"]')`)) === true, 10_000).catch(() => undefined)
+  await inPage(`${dfile('a.txt')}.querySelector('[data-act="stage"]').click(); true`)
+  const staged = (): string => execFileSync('git', ['diff', '--cached', '--name-only'], { cwd: repo, encoding: 'utf8' }).trim()
+  await waitFor('a.txt to be staged', async () => staged() === 'a.txt', 10_000).catch(() => undefined)
+  check('git review: Stage on a file’s head stages it, and only it', staged() === 'a.txt', staged())
+  await waitFor('the head to say so', async () => /staged/.test(await inPage(`${dfile('a.txt')}?.querySelector('.dfile-head')?.innerText ?? ''`)), 10_000).catch(() => undefined)
+  check('git review: the file says it is staged, and the dock offers its commit', /staged/.test(await inPage(`${dfile('a.txt')}.querySelector('.dfile-head').innerText`)) && /Commit 1 staged/.test(await inPage(`document.querySelector('[data-act="commit"]')?.textContent ?? ''`)))
+  execFileSync('git', ['restore', '--staged', 'a.txt'], { cwd: repo })
+
+  await inPage(`${dfile('notes.md')}.querySelector('.l.a .no:nth-child(2)').click(); true`)
+  await waitFor('the note editor', async () => (await inPage(`!!document.querySelector('[data-key="note"]')`)) === true, 5000).catch(() => undefined)
+  await inPage(`(() => { const t = document.querySelector('[data-key="note"]'); t.value = 'Say where the notes come from.'; t.dispatchEvent(new Event('input')); [...document.querySelectorAll('.rnote button')].find((b) => /Add note/.test(b.textContent)).click(); return true })()`)
+  await waitFor('the note and Send', async () => (await inPage(`!!document.querySelector('[data-act="send"]')`)) === true, 5000).catch(() => undefined)
+  check('git review: a click on a line number leaves a note under that line', /Say where the notes come from/.test(await inPage(`${dfile('notes.md')}?.innerText ?? ''`)))
+  await inPage(`document.querySelector('[data-act="send"]').click(); true`)
+  // The lane holds git-main and git-also; notes go to its first session (or the one picked).
+  const laneScreens = async (): Promise<string> => (await screen(main)) + (await screen(also))
+  await waitFor('the note to reach the session', async () => /review note on your uncommitted changes/.test(await laneScreens()), 10_000).catch(() => undefined)
+  const toast = (await inPage(`document.getElementById('toast')?.textContent ?? ''`)) as string
+  check('git review: Send notes types them into the lane’s session as one message', /review note on your uncommitted changes/.test(await laneScreens()) && (await inPage(`!!document.querySelector('[data-act="send"]')`)) === false, `toast: ${toast} | ${(await laneScreens()).replace(/\s+/g, ' ').slice(-300)}`)
+
+  // The whole window needs real input in the page: a real click on "Whole window".
+  const spot = (await inPage(`(() => { const b = document.querySelector('[data-act="whole"]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } })()`)) as { x: number; y: number } | null
+  if (spot) {
+    page().sendInputEvent({ type: 'mouseDown', ...spot, button: 'left', clickCount: 1 })
+    page().sendInputEvent({ type: 'mouseUp', ...spot, button: 'left', clickCount: 1 })
+  }
+  await waitFor('the whole window', async () => (await inPage('workshop.view')) === 'overlay' && (await inPage(`!!document.querySelector('.studio')`)) === true, 8000).catch(() => undefined)
+  check('git studio: "Whole window" opens the review studio over the window: lanes, files, one diff', (await inPage('workshop.view')) === 'overlay' && (await inPage(`document.querySelectorAll('.studio > section').length`)) === 3)
+  await waitFor('the command log', async () => /\$ git/.test(await inPage(`document.getElementById('foot').innerText`)), 8000).catch(() => undefined)
+  check('git studio: its foot shows the git the tile ran', /\$ git /.test(await inPage(`document.getElementById('foot').innerText`)))
+  if (process.env.WORKSHOP_SHOT_GIT) {
+    await sleep(800)
+    const shot = await Promise.race([win.webContents.capturePage().catch(() => null), sleep(3000).then(() => null)])
+    if (shot) {
+      await mkdir(process.env.WORKSHOP_SHOT_GIT, { recursive: true })
+      await writeFile(join(process.env.WORKSHOP_SHOT_GIT, 'studio-window.png'), shot.toPNG())
+    }
+  }
+  await inPage('workshop.closeOverlay()').catch(() => undefined)
+  await waitFor('the pane again', async () => (await inPage('workshop.view')) !== 'overlay', 5000).catch(() => undefined)
+
   if (process.env.WORKSHOP_SHOT_GIT) {
     const dir = process.env.WORKSHOP_SHOT_GIT
     await mkdir(dir, { recursive: true })

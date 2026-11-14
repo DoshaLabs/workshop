@@ -53,15 +53,36 @@ const SHOW_BYTES = 256 << 10
 /** Files listed per worktree in the summary; the rest are counted. */
 export const LIST_FILES = 300
 
-/** Runs git in `cwd`: { code, out (Buffer), cut, timedOut, err }. Never throws. `write` drops the read-only guards (see WRITE_ENV). */
-export function git(cwd, args, { cap = STATUS_BYTES, timeout = TIMEOUT_MS, write = false } = {}) {
+// ---- the command log: what the tile ran, newest last, for the whole-window view's foot (it shows
+// the exact git each action ran, as Sublime Merge and lazygit do). Arguments, never output.
+
+const LOG_KEEP = 60
+const ran = []
+/** Notes one command: `what` is its argv after the program's name. */
+export function note(program, cwd, args, { ms, code, write }) {
+  ran.push({ at: Date.now(), program, cwd, args: args.map(String).map((a) => (a.length > 200 ? `${a.slice(0, 200)}…` : a)), ms, code, write: !!write })
+  if (ran.length > LOG_KEEP) ran.splice(0, ran.length - LOG_KEEP)
+}
+/** The commands run, newest last; `writes` keeps only the ones that changed something. */
+export const recent = ({ writes = false } = {}) => ran.filter((r) => !writes || r.write)
+
+/**
+ * Runs git in `cwd`: { code, out (Buffer), cut, timedOut, err }. Never throws. `write` drops the
+ * read-only guards (see WRITE_ENV); `input` is written to git's stdin (a patch for `git apply`).
+ */
+export function git(cwd, args, { cap = STATUS_BYTES, timeout = TIMEOUT_MS, write = false, input = null } = {}) {
+  const started = Date.now()
   return new Promise((resolve) => {
     let child
     try {
-      child = spawn('git', [...(write ? WRITE_BASE : BASE), '-C', cwd, ...args], { env: write ? WRITE_ENV : ENV, stdio: ['ignore', 'pipe', 'pipe'] })
+      child = spawn('git', [...(write ? WRITE_BASE : BASE), '-C', cwd, ...args], { env: write ? WRITE_ENV : ENV, stdio: [input == null ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
     } catch (e) {
       resolve({ code: -1, out: Buffer.alloc(0), cut: false, timedOut: false, err: e.message })
       return
+    }
+    if (input != null) {
+      child.stdin.on('error', () => {})
+      child.stdin.end(input)
     }
     const chunks = []
     let size = 0
@@ -92,6 +113,7 @@ export function git(cwd, args, { cap = STATUS_BYTES, timeout = TIMEOUT_MS, write
     })
     child.on('close', (code) => {
       clearTimeout(timer)
+      note('git', cwd, args, { ms: Date.now() - started, code: code ?? -1, write })
       resolve({ code: code ?? -1, out: Buffer.concat(chunks), cut, timedOut, err: err.trim() })
     })
   })

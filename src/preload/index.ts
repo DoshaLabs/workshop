@@ -84,6 +84,8 @@ const core = {
   /** The tile column's state, kept in core's settings; null until it has first been saved. */
   column: (): Promise<ColumnState | null> => ipcRenderer.invoke(CH.columnGet),
   setColumn: (c: ColumnState): Promise<void> => ipcRenderer.invoke(CH.columnSet, c),
+  /** Which head colour (1-4) each session tile in the column wears; a session in the center has none. */
+  setSessionBands: (bands: Record<string, number>): void => ipcRenderer.send(CH.sessionBands, bands),
   // the mascot
   mascot: (): Promise<ActiveMascot | null> => ipcRenderer.invoke(CH.mascotGet),
   /** Saves a pack made in the setup screen (its PNG as bytes) and makes it the active one. */

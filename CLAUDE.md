@@ -120,7 +120,8 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   records sha → session id and name in `<profile>/commits.json` (atomic, 90 days, 5,000; never
   the command). Backends get the records (`commits` message) and may `emit` events to their pages
   (`workshop.backend.onEvent`).
-- Bridge: `sessions.list/watch/paste` (no titles: they quote the conversation) and
+- Bridge: `sessions.list/watch/paste` (no titles: they quote the conversation; `band`, bridge 1.11, the
+  head colour the window gives the session's tile, reported by `SessionColumn.tsx`) and
   `usage.get/watch` (the two windows, and per session context % and cost, from the status line).
 - `sessions: "launch"` (bridge 1.4; read < launch < write): `workshop.sessions.launch({ folder,
   worktree? })` opens the launcher filled in, Start focused, only from a real click in the page.
@@ -156,24 +157,24 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   and PKCE S256, needs a click in the page (once per input, like the overlay), answers only that
   path with Host `127.0.0.1:47800`, and serves fixed pages. Core never sees a token: the tile
   exchanges the code through `net`. Smoke (`smoke-oauth.ts`, `test/fixtures/oauth`) uses a free port.
-- `tiles/git/` (track C, `docs/progress/2026-11-10-git.md`): the Git tile, built in with a
-  backend, read-only. Changes: every open session by project, one line per working tree (sessions
-  sharing one are named together) with branch, files and `+n −m` against HEAD (untracked lines
-  counted, binary not), unfolding to the diff the backend parsed into hunks. The page names
-  sessions by id; the backend finds their folders. Every git call: argv, no shell,
-  GIT_OPTIONAL_LOCKS=0, no pager or colour, a timeout and a cap. Door: `git show`.
-  Worktrees: every worktree of each open session's project, with its sessions, ahead / behind main
-  (origin/HEAD, else main, else master), clean or dirty, a stale filter and a warning when two touch
-  one file; diff against main, rebase, merge into main (where main is checked out) and remove once
-  merged, each destructive one two clicks, refused while a session there is busy or the tree is
-  dirty (an untracked link into another worktree, main's node_modules say, is not dirt: remove deletes
-  the link), a conflict aborted at once (`docs/progress/2026-11-10-worktrees.md`).
-  History: the log across every branch of each open session's project (300, then more), each
-  commit tagged with its session: exact when core saw the session make it, "probably <name>" when
-  it is on that session's worktree branch and made in its lifetime, else nothing; a click unfolds
-  the diff; "Today, by session" groups the last 24 hours (`docs/progress/2026-11-10-history.md`).
-  PRs says "Coming".
-- Theme variables include `--ws-green` and `--ws-red` (the terminal's, at 4.5:1 on the panel), and
+- `tiles/git/` (track C; redesigned 14 Nov 2026, `docs/progress/2026-11-14-git-redesign.md`): the Git
+  tile, built in with a backend. Lanes (the column): each open session's working tree as a lane in
+  its session tile's colour (`band`), with branch, files, `+n −m`, what waits to push or pull, its
+  PR's checks, and a warning when two lanes change one file. Review (the pane): a file tree with
+  viewed ticks, diffs coloured by file type with changed words marked (`dist/diff.js`), unified or
+  split, notes on lines sent to the session as one typed message (`sessions: "write"`), stage or
+  discard a file or one hunk, commit, push, pull. The whole window (`overlay`): Fork's layout,
+  a ⌘K palette and the git each action ran (`cmdlog`). History: a graph coloured by session
+  (`dist/graph.js`), exact or "probably", search with `session:` `path:` `author:` `since:`
+  (`dist/query.js`), "Today, by session". Worktrees: a board (Working, Ready, Idle, Stale), ahead
+  / behind as a bar, rebase, merge, remove, open a PR (each two clicks, refused while a session there
+  is busy or the tree is dirty). Every step goes in `<common dir>/workshop-oplog.json` and can be
+  undone (⌘Z twice; `lib/oplog.mjs`): reset --keep / --soft, never --hard, refs never added. PRs:
+  `gh pr list`, checks, a failed log's end, re-run, "Ask a session to fix it". Every git and gh call:
+  argv, no shell, a timeout and a cap; reads with GIT_OPTIONAL_LOCKS=0; never force.
+- Theme variables include `--ws-green`, `--ws-red`, `--ws-yellow`, `--ws-blue`, `--ws-magenta`, `--ws-cyan` and
+  `--ws-accent-ink` (each 4.5:1 on the panel, a diff's backgrounds `--ws-add-bg` / `--ws-del-bg` /
+  `--ws-add-mark` / `--ws-del-mark`, and its own 16% tint; `test/themes.test.ts`), and
   `--ws-head-1` … `--ws-head-4`: each variant's four session-head colours (`heads`, hand-picked from the
   family's hues, warm and cool in turn; Glass's a quarter turn apart from its tint), cycled down the
   session column (`data-band`, a pack wears its parent's), ink at 4.5:1 on all (`test/themes.test.ts`).
@@ -453,8 +454,9 @@ say plainly that we provide no ROMs, discs or BIOS files.
 One tile, four tabs. It ships in core because worktrees are tied to how sessions start. It is
 built ON the tile contract (trusted tier) so that tier is exercised before strangers use it.
 
-- **Changes** (built: `tiles/git`; sessions in one worktree share a line). Every open session, grouped by project: a line per session with branch, files
-  touched and `+n −m`; click one to unfold its diffs. (deck's version shows only the focused
+- **Lanes and the review** (built; redesigned 14 Nov 2026 after lazygit, GitButler, Fork, Sublime Merge
+  and delta). Every open session's working tree as a lane, grouped by project; a click opens its
+  review in the pane, read like a pull request, with notes sent back to the session. (deck's version shows only the focused
   session; `src/main/git.ts` there is the starting point, including `GIT_OPTIONAL_LOCKS=0` so a
   poll never fights Claude for the index lock.)
 - **Worktrees** (built; Open a PR waits for the PRs tab). One row per worktree in the project: the session that owns it, its branch, ahead
@@ -464,10 +466,12 @@ built ON the tile contract (trusted tier) so that tier is exercised before stran
   chat in a worktree" creates the worktree, the branch and the session in one step.
 - **History** (built: exact from a PostToolUse hook, else a visible guess; the filter is "Today, by session"). The commit log across all branches, each commit tagged with the session that made
   it; click one for its diff. A "what did Claude do today" filter (24 hours, by session).
-- **PRs and CI.** Your open pull requests and whether checks pass, through the `gh` CLI.
+- **PRs and CI** (built). Your pull requests and their checks through the `gh` CLI; a failing check
+  goes to the session on that branch.
 
-Destructive actions (merge, rebase, remove) are two clicks in place: the first arms the button
-red for three seconds, the second acts. The tile never force-pushes.
+Destructive actions (merge, rebase, remove, discard, undo, open a PR) are two clicks in place: the
+first arms the button red for three seconds, the second acts. The tile never force-pushes, and
+every step it takes can be undone from its operation log.
 
 ---
 
@@ -673,7 +677,7 @@ This generalizes what deck does by hand for each tile (`/deck:mol`, `/deck:remin
 | PS1 | Sandboxed | files, storage |
 | Spotify | Sandboxed | music (core drives Spotify.app and Music.app by AppleScript; art through the tile's origin); net and oauth for recent plays, playlists and search (Spotify's web API) |
 | PS2 | Trusted | backend (PCSX2) |
-| Git (core) | Trusted | backend (`git`, `gh`), sessions launch |
+| Git (core) | Trusted | backend (`git`, `gh`), sessions write, overlay |
 
 ---
 
