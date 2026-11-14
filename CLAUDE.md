@@ -99,7 +99,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   interface, JetBrains Mono for terminals and code, Source Serif 4 for prose that is read. Tiles
   get them as `--ws-font`, `--ws-font-mono`, `--ws-font-serif`; the bridge loads the faces from
   `tile://<id>/~fonts/`, so a tile's CSP needs `font-src 'self'`. Latin subsets only.
-- Themes: deck's whole catalog (`src/shared/themes.ts`), saved by main (`src/main/settings.ts`),
+- Themes: deck's whole catalog (`src/shared/themes.ts`; Robin's Egg is the default, `DEFAULT_THEME_ID`), saved by main (`src/main/settings.ts`),
   picked from the top bar, pushed to every tile as `--ws-*`. Deep Space's sky is
   `src/renderer/src/cosmos.ts`. Glass is solid until its picture wall comes over from deck.
 - Sessions (`src/main/core-sessions.ts` wires them): `sessions.ts` (tmux + node-pty, park /
@@ -403,7 +403,7 @@ are actually building tiles.
 | Launcher | The empty center pane: start a session (folder, worktree, model, permission mode) |
 | Preview pane | Read, tick task boxes in, and edit a file a session points at |
 | Wolfpack | A session's subagents and helper sessions as one pack tile under it; kill built, pause waits on the leash |
-| All themes | Deep Space is the default |
+| All themes | Robin's Egg is the default (Colin, 14 Nov 2026; Deep Space was) |
 | Wikipedia + weather + clock tile | Asks for your city on first run (deck defaults to Portland, Maine) |
 | Git tile | One tile, four tabs (section 4); Changes built |
 | Files tile | A plain directory tree |

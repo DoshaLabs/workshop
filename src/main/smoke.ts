@@ -570,11 +570,11 @@ async function files(check: (name: string, ok: boolean, detail?: string) => void
   for (const [k, ok] of Object.entries(w)) check(`files, tile without the permission: ${k}`, ok === true)
 }
 
-/** The theme picker's choice reaches every tile at once, is saved, and Deep Space puts up its sky. */
+/** Robin's Egg is the default; the theme picker's choice reaches every tile at once, is saved, and Deep Space puts up its sky. */
 async function themes(check: (name: string, ok: boolean, detail?: string) => void, { win, liveByTile, userData }: Ctx): Promise<void> {
   const panel = (): Promise<unknown> => liveByTile.get('probe')!.wc.executeJavaScript(`getComputedStyle(document.documentElement).getPropertyValue('--ws-panel').trim()`)
   await liveByTile.get('probe')!.wc.executeJavaScript(`window.themeSeen = null; workshop.theme.onChange((v) => { window.themeSeen = v['--ws-panel'] }); true`)
-  check('themes: Deep Space is the default, with its sky', (await win.webContents.executeJavaScript(`!!document.querySelector('.cosmos-wall') && document.documentElement.dataset.wall === 'true'`)) === true)
+  check('themes: Robin\'s Egg is the default, with no sky', (await win.webContents.executeJavaScript(`!document.querySelector('.cosmos-wall') && document.documentElement.dataset.wall !== 'true'`)) === true)
   await win.webContents.executeJavaScript(`window.core.setSettings({ theme: 'gruvbox', appearance: 'light' }).then(() => true)`)
   await sleep(200)
   check('themes: a tile is repainted', (await panel()) === '#fbf1c7', String(await panel()))

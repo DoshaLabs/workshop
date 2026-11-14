@@ -710,8 +710,8 @@ export function forcesDark(themeId: string): boolean {
 }
 
 export const THEMES: ThemeFamily[] = [cream, solarized, gruvbox, catppuccin, nord, graphite, robin, glass, cosmos]
-/** Deep Space is workshop's default (CLAUDE.md §3). */
-export const DEFAULT_THEME_ID = COSMOS_ID
+/** Robin's Egg is workshop's default (Colin, 14 Nov 2026; CLAUDE.md §3). */
+export const DEFAULT_THEME_ID = robin.id
 
 export function themeById(id: string): ThemeFamily {
   return THEMES.find((t) => t.id === id) ?? cream
