@@ -15,7 +15,7 @@ export type VoiceCommand =
   | { kind: 'step'; dir: 1 | -1 }
   | { kind: 'scroll'; how: ScrollHow; times: number }
   | { kind: 'key'; key: 'escape' | 'enter' }
-  /** `draft`: typed into the prompt but not sent (speech that was not a command); "send it" sends. */
+  /** `draft`: typed into the prompt but not sent (speech that was not a command); "over" sends. */
   | { kind: 'prompt'; text: string; n?: number; name?: string; draft?: boolean }
   | { kind: 'new-session' }
   | { kind: 'record' }
@@ -132,7 +132,7 @@ export function parseVoice(heard: string): VoiceCommand {
   if (/^(?:scroll |go |jump |take me )?(?:to )?(?:the )?(?:top|beginning|start of (?:the )?(?:conversation|chat))$/.test(s)) return { kind: 'scroll', how: 'top', times: 1 }
   if (/^(?:scroll |go |jump |take me )?(?:to )?(?:the )?(?:bottom|end|latest|newest)$|^jump to bottom$|^back to (?:the )?(?:bottom|latest)$/.test(s)) return { kind: 'scroll', how: 'bottom', times: 1 }
   if (/^(?:escape|interrupt|cancel that|stop that|stop it|stop claude|press escape)$/.test(s)) return { kind: 'key', key: 'escape' }
-  if (/^(?:press )?(?:enter|return|submit|send it)$/.test(s)) return { kind: 'key', key: 'enter' }
+  if (/^(?:press )?(?:enter|return|submit|send it|over|over and out)$/.test(s)) return { kind: 'key', key: 'enter' }
 
   // ---- the recorder
   if (/^(?:start |stop )?record(?:ing)?$|^(?:open|close) the recorder$|^screen record$/.test(s)) return { kind: 'record' }
@@ -203,7 +203,7 @@ export function describeVoice(c: VoiceCommand): string {
       return c.times > 1 && !['top', 'bottom'].includes(c.how) ? `${what[c.how]} ×${c.times}` : what[c.how]
     }
     case 'key': return c.key === 'escape' ? 'Esc' : 'Enter'
-    case 'prompt': return `${c.draft ? 'Typed (say “send it”)' : c.n ? `To session ${c.n}` : c.name ? `To “${c.name}”` : 'Typed'}: ${c.text}`
+    case 'prompt': return `${c.draft ? 'Typed (say “over”)' : c.n ? `To session ${c.n}` : c.name ? `To “${c.name}”` : 'Typed'}: ${c.text}`
     case 'new-session': return 'New session'
     case 'record': return 'Recorder'
     case 'stop-listening': return 'Stopped listening'

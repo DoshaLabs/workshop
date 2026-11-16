@@ -260,10 +260,10 @@ export function App() {
           // Just an ID or a name said on its own ("b2", "slay ten"): that session.
           const own = sessionById(c.text, open)
           if (own) return shortcut({ kind: 'id', id: own.id }) ? done(label(own.id)) : no('Close the preview first')
-          // Anything else is dictation: typed into the focused session's prompt, not sent ("send it" sends).
+          // Anything else is dictation: typed into the focused session's prompt, not sent ("over" sends).
           if (!focus) return no(`Not a command: “${c.text}”`)
           const r = await window.core.voice.act({ kind: 'prompt', text: c.text, draft: true }, { sessionId: focus.id })
-          return r.ok ? done(`Typed into ${label(focus.id)} (say “send it”)`) : r
+          return r.ok ? done(`Typed into ${label(focus.id)} (say “over”)`) : r
         }
         case 'focus': {
           if (!keys[c.n - 1]) return no(`There is no session ${c.n} (${keys.length} open)`)

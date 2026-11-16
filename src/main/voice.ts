@@ -49,7 +49,7 @@ const MODEL_PLACES = (): string[] => {
 }
 
 /** Words whisper should expect: it spells them right when it has seen them. */
-const PROMPT = 'Workshop voice commands: session three, next session, page up, page down, scroll up one response, Spotify, Pomodoro, remind me to, take a note.'
+const PROMPT = 'Workshop voice commands: session three, next session, page up, page down, scroll up one response, Spotify, Pomodoro, remind me to, take a note, over.'
 
 const HEAR_TIMEOUT_MS = 20_000
 const MAX_WAV = 2 * 1024 * 1024 // 60 s of 16 kHz 16-bit mono is 1.9 MB

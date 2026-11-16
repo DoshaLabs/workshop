@@ -2,7 +2,7 @@
 // listening on: the microphone stays open, each thing you say (speech, then 0.7 s of quiet) is cut
 // out, written down by whisper.cpp on this Mac, parsed into one command and done. The button shows
 // what it heard and what it did. A sentence that is not a command is typed into the focused session's
-// prompt as a draft, never sent until you say "send it".
+// prompt as a draft, never sent until you say "over".
 //
 // The window does what it can itself (App.tsx's `run`: focus a session, scroll its terminal, open
 // the launcher, the recorder); tiles, music and typed prompts go through main.

@@ -220,7 +220,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   `WORKSHOP_WHISPER_MODEL`, else `~/dictator/models/ggml-small.en.bin`, `~/.workshop/whisper/`,
   Homebrew's share folder; neither is shipped, the button says what is missing). `parseVoice` turns
   the text into one command; anything else is dictation, typed into the focused session's prompt
-  but not sent ("send it" / "enter" sends). The window does sessions
+  but not sent ("over", the radio word, sends; so do "send it" / "enter"). The window does sessions
   (by ID, the two characters a session's name ends with: "session b2", "six d", "slay ten", or the ID alone; then by folder or title; a plain number no ID matches is the ⌘ number; `sessionTag`, `spelled`, `sessionById`, `matchSession`; whisper's prompt carries the open names; "next session"), the focused
   terminal ("page up/down", "scroll up/down", "top", "bottom": keys and SGR wheel reports Claude
   Code's fullscreen renderer binds; "up one response" wheels until a ⏺ or ❯ line reaches the top,
