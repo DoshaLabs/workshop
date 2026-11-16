@@ -193,7 +193,7 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
 - Usage: the top bar's 5-hour and weekly meters are always there (a dash and a tooltip until a
   session reports); each session shows its context % and cost.
 - Shortcuts (`src/shared/shortcuts.ts`): ⌘1–9 (sessions in the order they were started), ⌘[ ⌘],
-  ⌘N, ⌘⇧O (the screen recorder). Main catches them in `before-input-event` on core's window and every tile's page.
+  ⌘N, ⌘⇧O (the screen recorder), ⌘⇧L (voice commands). Main catches them in `before-input-event` on core's window and every tile's page.
 - The tile column's state (off, extra instances, heights) is `settings.column` in core's
   settings (`src/shared/column.ts`), migrated once from the window's old localStorage.
 - The status mark (section 8): the Knot (`src/shared/knot.ts`, `Knot.tsx`) on every session and
@@ -211,6 +211,26 @@ from the Knot. Core's own files (`tmux.conf`, `bin`, `tiles`, `template`, `asset
   microphone, into `~/Movies/workshop/` (ffmpeg makes it Instagram's H.264 if installed). Core's
   own, on its own partition: tiles still get no screen capture. Smoke films a test pattern, never
   the screen.
+- Voice commands (`src/main/voice.ts`, grammar and audio helpers in `src/shared/voice.ts`, tested by
+  `test/voice.test.ts`; the button `src/renderer/src/VoiceButton.tsx`; Colin, 16 Nov 2026): the top
+  bar's Voice button, beside Record, or ⌘⇧L (`isVoiceKey`, caught by main like ⌘⇧O) turns listening
+  on. The window opens the mic (core's own window; main asks macOS first), cuts speech at 0.7 s of
+  quiet (`Utterances`, a floor that follows the room), resamples to 16 kHz WAV and hands each
+  utterance to main, which runs whisper.cpp's `whisper-cli` on this Mac (model:
+  `WORKSHOP_WHISPER_MODEL`, else `~/dictator/models/ggml-small.en.bin`, `~/.workshop/whisper/`,
+  Homebrew's share folder; neither is shipped, the button says what is missing). `parseVoice` turns
+  the text into one command; anything else is dictation, typed into the focused session's prompt
+  but not sent ("send it" / "enter" sends). The window does sessions
+  (by ID, the two characters a session's name ends with: "session b2", "six d", "slay ten", or the ID alone; then by folder or title; a plain number no ID matches is the ⌘ number; `sessionTag`, `spelled`, `sessionById`, `matchSession`; whisper's prompt carries the open names; "next session"), the focused
+  terminal ("page up/down", "scroll up/down", "top", "bottom": keys and SGR wheel reports Claude
+  Code's fullscreen renderer binds; "up one response" wheels until a ⏺ or ❯ line reaches the top,
+  `responseRows`), Esc / Enter, "new session", "record". Main does the rest through the tiles' own
+  doors under the caller name `voice`: Reminders ("remind me to…", "take a note…", "log…", filed
+  under the focused session's folder), Pomodoro (its "Let Claude sessions use the timer" setting
+  applies), Spotify (`play <what>`, the tile's door op, searching with the user's sign-in); music
+  transport and volume through core's music host; "tell session 2 to…" / "type …" pasted as a
+  prompt. The button shows what it did for 4.5 s, what it heard on hover. Not in smoke yet.
+  No model reads what was heard: a sentence the rules cannot read is only ever typed as a draft (Colin, 16 Nov 2026: a Haiku fallback was tried and removed).
 - Preview pane (`PreviewPane.tsx`, `preview-store.ts`, `src/main/preview.ts`): a file a session
   points at, in the center. Markdown through the tree with live task boxes (one character
   written), code and text in mono with line numbers, `edit` and ⌘S; writes locked to the mtime

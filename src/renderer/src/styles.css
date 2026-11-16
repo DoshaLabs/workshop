@@ -2004,6 +2004,48 @@ a.md-path:hover {
   }
 }
 
+/* Voice commands (VoiceButton.tsx): the record button's size. On, the accent, its mic glowing with
+   what it hears; it says what it did for a few seconds, green or red. */
+.voice-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 340px;
+}
+.voice-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-btn-mic {
+  display: inline-flex;
+  border-radius: 50%;
+  transition: box-shadow 80ms linear;
+}
+.voice-btn.is-on {
+  color: var(--ws-accent);
+  border-color: var(--ws-accent);
+}
+.voice-btn.is-on .voice-btn-mic {
+  box-shadow: 0 0 0 calc(var(--voice-level, 0) * 5px) color-mix(in srgb, var(--ws-accent) 35%, transparent);
+}
+.voice-btn[data-phase='working'] .voice-btn-mic,
+.voice-btn[data-phase='starting'] .voice-btn-mic {
+  animation: rec-btn-pulse 0.9s ease-in-out infinite;
+}
+.voice-btn.said-ok {
+  color: var(--ws-green);
+}
+.voice-btn.said-no {
+  color: var(--ws-red);
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-btn .voice-btn-mic {
+    animation: none !important;
+    transition: none;
+  }
+}
+
 /* Install update (UpdateButton.tsx): the record button's size; the accent while there is an
    update or one is under way, the blocked colour when the build failed. */
 .update-btn {

@@ -14,7 +14,8 @@ import { SessionColumn } from './SessionColumn'
 import { Guard } from './Guard'
 import { setPalette } from './terminals'
 import { shortcutOrder, type LaunchPrefill, type SessionsState } from '@shared/sessions'
-import { stepFrom } from '@shared/shortcuts'
+import { stepFrom, type Shortcut } from '@shared/shortcuts'
+import { describeVoice, matchSession, numberOf, sessionById, sessionTag, type VoiceCommand } from '@shared/voice'
 import { LEGACY_KEYS, firstColumn, legacyColumn, type ColumnState, type FloatAt } from '@shared/column'
 import { MAX_SPAN } from '@shared/manifest'
 import type { Usage } from '@shared/usage'
@@ -25,6 +26,7 @@ import { Float } from './Float'
 import { TilePicker } from './TilePicker'
 import { MascotSetup } from './MascotSetup'
 import { RecordButton } from './RecordButton'
+import { VoiceButton, scrollSession, type VoiceOutcome } from './VoiceButton'
 import { UpdateButton } from './UpdateButton'
 import { AppMark } from './Knot'
 import { PreviewPane } from './PreviewPane'
@@ -211,26 +213,98 @@ export function App() {
   sessionsRef.current = sessions
   const sessionOrderRef = useRef(sessionOrder)
   sessionOrderRef.current = sessionOrder
-  useEffect(
-    () =>
-      window.core.onShortcut((s) => {
-        if (!closeDoc()) return
-        if (s.kind === 'new') {
-          setPane(null)
-          setOverlay(null)
-          setLauncher(true)
-          return
+  /** A shortcut, or a voice command that is one: returns the session it went to, or null. */
+  const shortcut = useCallback((s: Shortcut | { kind: 'id'; id: string }): string | null => {
+    if (!closeDoc()) return null
+    if (s.kind === 'new') {
+      setPane(null)
+      setOverlay(null)
+      setLauncher(true)
+      return null
+    }
+    const st = sessionsRef.current
+    const keys = shortcutOrder(st, sessionOrderRef.current)
+    const id = s.kind === 'id' ? s.id : s.kind === 'focus' ? (keys[s.n - 1] ?? null) : stepFrom(keys, st?.focus ?? null, s.dir)
+    if (!id) return null
+    setPane(null)
+    setOverlay(null)
+    setLauncher(false)
+    void window.core.focusSession(id)
+    return id
+  }, [])
+  useEffect(() => window.core.onShortcut((s) => void shortcut(s)), [shortcut])
+
+  // Voice commands (VoiceButton.tsx): what the window does itself; tiles, music and prompts go to main.
+  const voiceRun = useCallback(
+    async (c: VoiceCommand): Promise<VoiceOutcome> => {
+      const st = sessionsRef.current
+      const keys = shortcutOrder(st, sessionOrderRef.current)
+      const open = (st?.sessions ?? []).filter((x) => x.open)
+      const focus = open.find((x) => x.id === st?.focus) ?? null
+      const label = (id: string): string => {
+        const n = keys.indexOf(id) + 1
+        const x = open.find((y) => y.id === id)
+        return x?.name ?? (n > 0 ? `session ${n}` : 'session')
+      }
+      /** The session a spoken name means: its ID or name (matchSession), else a ⌘ number. */
+      const find = (said: string): string | null => {
+        const hit = matchSession(said, open)
+        if (hit) return hit.id
+        const n = numberOf(said.trim())
+        return Number.isInteger(n) && n >= 1 ? (keys[n - 1] ?? null) : null
+      }
+      const done = (say?: string): VoiceOutcome => ({ ok: true, say: say ?? describeVoice(c) })
+      const no = (say: string): VoiceOutcome => ({ ok: false, say })
+      switch (c.kind) {
+        case 'unknown': {
+          // Just an ID or a name said on its own ("b2", "slay ten"): that session.
+          const own = sessionById(c.text, open)
+          if (own) return shortcut({ kind: 'id', id: own.id }) ? done(label(own.id)) : no('Close the preview first')
+          // Anything else is dictation: typed into the focused session's prompt, not sent ("send it" sends).
+          if (!focus) return no(`Not a command: “${c.text}”`)
+          const r = await window.core.voice.act({ kind: 'prompt', text: c.text, draft: true }, { sessionId: focus.id })
+          return r.ok ? done(`Typed into ${label(focus.id)} (say “send it”)`) : r
         }
-        const st = sessionsRef.current
-        const keys = shortcutOrder(st, sessionOrderRef.current)
-        const id = s.kind === 'focus' ? (keys[s.n - 1] ?? null) : stepFrom(keys, st?.focus ?? null, s.dir)
-        if (!id) return
-        setPane(null)
-        setOverlay(null)
-        setLauncher(false)
-        void window.core.focusSession(id)
-      }),
-    []
+        case 'focus': {
+          if (!keys[c.n - 1]) return no(`There is no session ${c.n} (${keys.length} open)`)
+          const id = shortcut({ kind: 'focus', n: c.n })
+          return id ? done(`Session ${label(id)}`) : no('Close the preview first')
+        }
+        case 'focus-name': {
+          const id = find(c.name)
+          if (!id) return no(`No session “${c.name}” (${open.map((x) => sessionTag(x.name) ?? x.name).join(', ')})`)
+          return shortcut({ kind: 'id', id }) ? done(label(id)) : no('Close the preview first')
+        }
+        case 'step': {
+          const id = shortcut({ kind: 'step', dir: c.dir })
+          return id ? done(`Session ${label(id)}`) : no('No sessions open')
+        }
+        case 'new-session':
+          shortcut({ kind: 'new' })
+          return done()
+        case 'record':
+          await window.core.recorder.toggle()
+          return done()
+        case 'scroll': {
+          if (!focus) return no('No session in focus to scroll')
+          const why = await scrollSession(focus.id, c.how, c.times)
+          return why ? no(why) : done()
+        }
+        case 'key':
+          if (!focus) return no('No session in focus')
+          window.core.ptyInput(focus.id, c.key === 'escape' ? '\x1b' : '\r')
+          return done()
+        case 'prompt': {
+          const target = c.n ? keys[c.n - 1] : c.name ? find(c.name) : focus?.id
+          if (!target) return no(c.name ? `No session “${c.name}”` : c.n ? `There is no session ${c.n}` : 'No session in focus to type into')
+          const r = await window.core.voice.act(c, { sessionId: target })
+          return r.ok ? done(`To ${label(target)}: ${c.text}`) : r
+        }
+        default:
+          return window.core.voice.act(c, { sessionId: focus?.id ?? null, cwd: focus?.cwd ?? null })
+      }
+    },
+    [shortcut]
   )
 
   useEffect(() => {
@@ -330,6 +404,7 @@ export function App() {
         <UsageMeter usage={usage} sessions={sessions} />
         <DevModeButton />
         <UpdateButton />
+        <VoiceButton run={voiceRun} />
         <RecordButton />
         <button className="ghost small" title="The mascot: a sprite in every session's head" onClick={() => setMascotSetup((v) => !v)}>
           Mascot

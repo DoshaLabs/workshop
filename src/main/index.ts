@@ -11,7 +11,7 @@ import { pathToFileURL } from 'node:url'
 import { CH, type DoorCall, type ThemeState, type TileHead, type TileHello, type TileView } from '@shared/ipc'
 import { BRIDGE_VERSION } from '@shared/manifest'
 import { FONT_VARS } from '@shared/fonts'
-import { isRecorderKey, shortcutOf } from '@shared/shortcuts'
+import { isRecorderKey, isVoiceKey, shortcutOf } from '@shared/shortcuts'
 import { EMPTY_COLUMN, cleanColumn } from '@shared/column'
 import { COSMOS_ID, forcesDark, resolveVariant, seeThrough, themeVars } from '@shared/themes'
 import { SettingsStore, type Settings } from './settings'
@@ -28,6 +28,7 @@ import { ProjectRoots } from './project'
 import { Backends, utilitySpawn, type BackendTile, type UtilityProcessLike } from './backend'
 import { backendEnv } from './backend-protocol'
 import { shellEnv } from './env'
+import { Voice, startVoice } from './voice'
 import { startMusic, type MusicBridge } from './music-bridge'
 import { OAUTH_PORT, OAuthHost } from './oauth'
 import { fetchSpotifyArt, osascriptRunner } from './music'
@@ -204,6 +205,11 @@ function coreShortcuts(wc: WebContents): void {
     if (isRecorderKey(input)) {
       ev.preventDefault()
       recorder?.toggle()
+      return
+    }
+    if (isVoiceKey(input)) {
+      ev.preventDefault()
+      win?.webContents.send(CH.voiceToggle)
       return
     }
     const s = shortcutOf(input)
@@ -1142,6 +1148,10 @@ app.whenReady().then(async () => {
   oauth = new OAuthHost({ port: SMOKE ? await freePort() : OAUTH_PORT, open: openForTile })
   bridge()
   music = startMusic({ guest: guestOf, ...(SMOKE ? smokeMusicIo : { runner: osascriptRunner, fetchArt: fetchSpotifyArt }) })
+  startVoice(
+    new Voice({ door, music: () => music?.host ?? null, sessions: () => core?.sessions ?? null, userData: app.getPath('userData'), win: () => win?.webContents ?? null, env: shellEnv }),
+    (e) => e.sender === win?.webContents
+  )
   recorder = new Recorder({
     userData: app.getPath('userData'),
     audioSource: coreFile('native', 'recaudio.swift'),

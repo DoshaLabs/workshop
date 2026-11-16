@@ -208,6 +208,12 @@ export const CH = {
   recToggle: 'ws:core:rec-toggle',
   recStateGet: 'ws:core:rec-state-get',
   recState: 'ws:core:rec-state', // main → window
+  // voice commands (main/voice.ts): the top bar's Voice button and ⌘⇧L
+  voiceReady: 'ws:core:voice-ready',
+  voiceMic: 'ws:core:voice-mic',
+  voiceHear: 'ws:core:voice-hear', // window → main: one utterance as a WAV; whisper's text back
+  voiceAct: 'ws:core:voice-act', // window → main: a command the window cannot do itself
+  voiceToggle: 'ws:core:voice-toggle', // main → window: ⌘⇧L
   // install update (main/updates.ts): the top bar's button, packaged app only
   updateGet: 'ws:core:update-get',
   updateInstall: 'ws:core:update-install',

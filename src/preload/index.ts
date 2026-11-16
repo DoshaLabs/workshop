@@ -12,6 +12,7 @@ import { MENU, type IndexState, type InstallRecord, type InstallRequest, type Pe
 import type { PreviewDoc, PreviewRef, PreviewWrite } from '../shared/preview'
 import type { ViewDoc } from '../shared/viewer'
 import type { RecState } from '../shared/recorder'
+import type { VoiceCommand } from '../shared/voice'
 import type { AppUpdate, DevMode } from '../shared/update'
 import type { AccountsState, Cli, SignInHow } from '../shared/accounts'
 import { CH, type ThemeState, type TileHead, type TileInfo, type TileProblem, type TileView } from '../shared/ipc'
@@ -132,6 +133,14 @@ const core = {
     toggle: (): Promise<void> => ipcRenderer.invoke(CH.recToggle),
     state: (): Promise<RecState> => ipcRenderer.invoke(CH.recStateGet),
     onState: (fn: (s: RecState) => void) => on(CH.recState, fn)
+  },
+  /** Voice commands (main/voice.ts): whisper.cpp on this Mac writes down each utterance; the window acts on it. */
+  voice: {
+    ready: (): Promise<{ ok: boolean; whisper: string | null; model: string | null; why?: string }> => ipcRenderer.invoke(CH.voiceReady),
+    mic: (): Promise<string | null> => ipcRenderer.invoke(CH.voiceMic),
+    hear: (wav: Uint8Array): Promise<string> => ipcRenderer.invoke(CH.voiceHear, wav),
+    act: (c: VoiceCommand, ctx: { sessionId?: string | null; cwd?: string | null }): Promise<{ ok: boolean; say: string }> => ipcRenderer.invoke(CH.voiceAct, c, ctx),
+    onToggle: (fn: () => void) => on(CH.voiceToggle, fn)
   },
   /** Install update (main/updates.ts): whether the repo the app was built from has changed, and building and swapping in the new app. */
   update: {

@@ -158,6 +158,22 @@ export function focusTerminal(id: string): void {
   entries.get(id)?.term.focus()
 }
 
+/** What a session's terminal shows now, one string per row, top first; null if it has none yet. (Voice: finding a response.) */
+export function screenLines(id: string): string[] | null {
+  const e = entries.get(id)
+  if (!e) return null
+  const b = e.term.buffer.active
+  const out: string[] = []
+  for (let y = 0; y < e.term.rows; y++) out.push(b.getLine(b.viewportY + y)?.translateToString(true) ?? '')
+  return out
+}
+
+/** The terminal's middle cell, 1-based, where a wheel report "points" (voice scrolling). */
+export function middleCell(id: string): { col: number; row: number } {
+  const e = entries.get(id)
+  return e ? { col: Math.max(1, Math.floor(e.term.cols / 2)), row: Math.max(1, Math.floor(e.term.rows / 2)) } : { col: 40, row: 12 }
+}
+
 /** The cell size xterm is drawing at (the private numbers its fit addon reads). */
 function cellSize(term: Terminal): { w: number; h: number } | null {
   type Core = { _renderService?: { dimensions?: { css: { cell: { width: number; height: number } } } } }

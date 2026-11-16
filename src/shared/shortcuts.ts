@@ -36,6 +36,11 @@ export function isRecorderKey(i: KeyInput): boolean {
   return i.type === 'keyDown' && i.meta && i.shift && !i.control && !i.alt && ((i.key || '').toLowerCase() === 'o' || i.code === 'KeyO')
 }
 
+/** ⌘⇧L: voice commands on or off (the top bar's Voice button). Main hands it to the window. */
+export function isVoiceKey(i: KeyInput): boolean {
+  return i.type === 'keyDown' && i.meta && i.shift && !i.control && !i.alt && ((i.key || '').toLowerCase() === 'l' || i.code === 'KeyL')
+}
+
 /**
  * The session a step lands on: the next or previous in `order` (⌘1–9's order) after `current`,
  * wrapping. From nothing, ⌘] takes the first and ⌘[ the last.
