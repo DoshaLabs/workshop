@@ -79,8 +79,8 @@ const SPAWN_COLS = 120
 const SPAWN_ROWS = 40
 /** Bracketed paste lands first; ⏎ follows a beat later. */
 const PASTE_ENTER_MS = 40
-const RECENT_KEEP = 10
-const RECENT_SHOW = 6
+const RECENT_KEEP = 16
+const RECENT_SHOW = 12
 
 /** `~` and `~/x` as the shell would read them; anything else as given, resolved. */
 export function expandHome(p: string): string {

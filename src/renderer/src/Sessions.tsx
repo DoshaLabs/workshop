@@ -42,6 +42,9 @@ const thumbOf = (f: File): Promise<string | undefined> =>
         r.readAsDataURL(f)
       })
 
+/** Recent folders shown as pills: two rows or so at the launcher's width. */
+const SHOWN = 12
+
 export function Launcher({ recent, prefill, onStarted }: { recent: string[]; prefill?: LaunchPrefill; onStarted: () => void }) {
   const [cwd, setCwd] = useState(recent[0] ?? '')
   const [worktree, setWorktree] = useState(false)
@@ -170,7 +173,7 @@ export function Launcher({ recent, prefill, onStarted }: { recent: string[]; pre
       .then((p) => p && setCwd(p))
       .catch((e: unknown) => setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e)))
   // The recent folders as cards, the chosen one first if it is not among them.
-  const cards = cwd && !recent.slice(0, 6).includes(cwd) ? [cwd, ...recent.slice(0, 5)] : recent.slice(0, 6)
+  const cards = cwd && !recent.slice(0, SHOWN).includes(cwd) ? [cwd, ...recent.slice(0, SHOWN - 1)] : recent.slice(0, SHOWN)
   const codex = cli === 'codex' && hasCodex
   const models = codex ? CODEX_MODELS : MODELS
   const modes = codex ? CODEX_MODES : PERMISSION_MODES
