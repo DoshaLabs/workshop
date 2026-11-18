@@ -36,6 +36,9 @@ interface Runtime {
   tmuxAlive: boolean
   title: string
   pty?: pty.IPty
+  /** When the current client was attached, and how many in a row died within FAST_EXIT_MS. */
+  attachedAt?: number
+  fastExits?: number
   userDetached: boolean
   /**
    * Whether Claude's turn is open, as the hooks tell it. `claude agents --json` says busy while a
@@ -79,6 +82,13 @@ const SPAWN_COLS = 120
 const SPAWN_ROWS = 40
 /** Bracketed paste lands first; ⏎ follows a beat later. */
 const PASTE_ENTER_MS = 40
+/**
+ * A client that dies this soon after attaching failed to attach (a tmux client and server of
+ * different versions after a Homebrew upgrade, no free ptys). Reattaching at once looped and
+ * used up every pty on the Mac (18 Nov 2026), so these back off and give up after a few.
+ */
+const FAST_EXIT_MS = 3000
+const FAST_EXIT_MAX = 3
 const RECENT_KEEP = 16
 const RECENT_SHOW = 12
 
@@ -540,8 +550,17 @@ export class SessionManager {
       env: this.o.env as Record<string, string>
     })
     r.pty = p
+    r.attachedAt = Date.now()
     p.onData((d) => this.o.events.data(id, d))
-    p.onExit(() => void this.handlePtyExit(id))
+    p.onExit(() => {
+      // node-pty does not always close the master fd on its own; a leaked one per attach adds up.
+      try {
+        ;(p as unknown as { destroy?: () => void }).destroy?.()
+      } catch {
+        /* already closed */
+      }
+      void this.handlePtyExit(id)
+    })
   }
 
   private async handlePtyExit(id: string): Promise<void> {
@@ -554,8 +573,17 @@ export class SessionManager {
     const alive = await this.o.tmux.hasSession(rec.tmuxName)
     r.tmuxAlive = alive
     if (alive && !r.userDetached) {
-      this.attach(id) // the client died but the session is fine (rare): reattach in place
-      return
+      // The client died but the session is fine: reattach in place, unless it keeps dying at once.
+      const fast = Date.now() - (r.attachedAt ?? 0) < FAST_EXIT_MS
+      r.fastExits = fast ? (r.fastExits ?? 0) + 1 : 0
+      if (r.fastExits < FAST_EXIT_MAX) {
+        setTimeout(() => {
+          if (!this.quitting && !r.pty && !r.userDetached) this.attach(id)
+        }, fast ? 500 * r.fastExits : 0)
+        return
+      }
+      console.error(`[sessions] ${rec.tmuxName}: tmux attach failed ${FAST_EXIT_MAX} times in a row; parked`)
+      r.fastExits = 0
     }
     this.parked(rec)
   }
